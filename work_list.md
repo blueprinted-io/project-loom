@@ -183,11 +183,8 @@ Resolution plan for document cleanup (agreed)
   - Approval requires human review.
   - New model version is published; affected records are flagged for update.
 
-19) Plain-language standard (SOLVED)
+19) Plain-language standard (NEW)
 - Problem: Document is too technical for non‑specialist stakeholders.
 - Needed: Define a lower reading level and enforce plain‑language style.
 - Decision: Target reading level and style rules.
-- Response (agreed direction):
-  - Aim for a reading level around grade 9 or lower.
-  - Use short sentences, simple words, and active voice.
-  - Avoid jargon unless it is defined in the glossary.
+- System specific terms (such as terminology entries) are not to be subjected to the plain-language standard.
