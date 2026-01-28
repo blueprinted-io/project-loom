@@ -47,7 +47,19 @@ you:
 
 - how it will be delivered
 
-- This document is the contract.
+## Scope
+
+This document covers procedural execution: how to configure, operate,
+and complete technical tasks and workflows. It does not cover
+diagnostics, troubleshooting, strategic decision-making, or tool and
+architecture selection.
+
+## Plain-Language Standard
+
+This document must stay readable for non-specialists. Use short
+sentences, simple words, and active voice. Avoid jargon unless it is
+defined in the glossary. Aim for a reading level around grade 9 or
+lower, and favor clarity over formal or academic wording.
 
 # What Is Learning
 
@@ -75,9 +87,9 @@ The sequence is as follows:
     experiences.
 
 4.  **We validate learning through knowledge checks and examinations.**
-    These confirm that learners can perform the required actions and
-    apply them in context. (Note: Examinations will be covered in a
-    separate standard.)
+    These confirm that learners can perform the required steps and apply
+    them in context. (Note: Assessment is deferred for MVP and will be
+    covered in a separate standard.)
 
 In short, learning is part of a strategic continuum, from business
 intent, to defined objectives, to structured content, to measurable
@@ -90,6 +102,9 @@ Before any content development or standardization activities begin,
 clear learning objectives must be established. These objectives
 articulate the desired learner outcomes and provide the foundation for
 all subsequent design, development, and evaluation work.
+
+In this standard, objectives belong to workflows and are defined by the
+organization. Tasks do not have objectives; they have outcomes.
 
 Once objectives have been defined and aligned to business or
 organizational goals, the Learning Content Standards described in this
@@ -110,13 +125,12 @@ structure.
 |----|----|----|
 | **Facts** | the literal information the learner must know | What |
 | **Concepts** | the mental models built from those facts | Why |
-| **Procedural Steps** | the actions the learner must perform | How |
-|  | <img src="media/image2.svg" style="width:0.40698in;height:0.40698in"
-alt="Caret Down with solid fill" /> |  |
-| **Task** | a set of procedural steps producing one outcome |  |
-| **Workflow** | a sequence of tasks producing a larger outcome |  |
+| **Steps** | the steps the learner must perform | How |
+|  |  |  |
+| **Task** | a procedure of steps producing one outcome |  |
+| **Workflow** | a sequence of tasks producing a larger objective |  |
 
-## Heirarchical Diagram:
+## Hierarchical Diagram:
 
 <img src="../assets/triangle.png" style="width:6in;height:4in"
 alt="A pyramid of steps with text AI-generated content may be incorrect." />
@@ -131,7 +145,7 @@ alt="A pyramid of steps with text AI-generated content may be incorrect." />
 demonstrate how the learning components fit together before applying the
 same structure to real technical tasks.*
 
-### Objective
+### Outcome
 
 Perform a complete tooth‑brushing routine that effectively removes
 plaque.
@@ -194,7 +208,7 @@ plaque.
 *(No analogy is required for this example, as the concepts are already
 familiar and concrete.)*
 
-### Procedural Steps (the actions performed to complete the task)
+### Procedure (the steps performed to complete the task)
 
 1.  Apply toothpaste to the brush.
 
@@ -217,9 +231,6 @@ Each step is atomic, observable, and does not embed reasoning.
 ### Task (single outcome)
 
 #### Task: Brush your teeth
-
-- **Objective:** Perform a complete tooth‑brushing routine that
-  effectively removes plaque while avoiding gum damage.
 
 - **Outcome:** All surfaces of the teeth and gumline have been cleaned.
 
@@ -251,7 +262,7 @@ Each step is atomic, observable, and does not embed reasoning.
 
   3.  Understanding of safe brushing pressure
 
-- **Procedural Steps:**  
+- **Procedure (Steps):**  
   (as above)
 
 This is a complete, atomic task producing one outcome.
@@ -277,7 +288,7 @@ you might have a nighttime routine which might have:
 
 But does not have “Comb your hair” and has other tasks instead.
 
-**Workflow Outcome:**  
+**Workflow Objective:**  
 A basic morning personal hygiene routine has been completed.
 
 ### Purpose of this Example
@@ -301,7 +312,7 @@ technical task using the same structure shown in Example 1.*
 *It shows the transition from a simple conceptual model to an applied
 technical workflow.*
 
-### Objective
+### Outcome
 
 Configure immutability on a backup repository to protect backup data
 from modification or deletion during the defined lock period.
@@ -338,7 +349,7 @@ deletion of backup data, even by administrators.
 The immutability duration must meet or exceed organizational retention
 requirements.
 
-P**rocedural Steps (actions performed to complete the task):**
+### Procedure (steps performed to complete the task):
 
 1.  Open the backup console.
 
@@ -357,10 +368,6 @@ P**rocedural Steps (actions performed to complete the task):**
 ### Task (single outcome):
 
 Task: Enable immutability on a backup repository
-
-- **Objective:** Configure immutability on a backup repository to
-  protect backup data from modification or deletion during the defined
-  lock period.
 
 - **Outcome:** The repository becomes protected by an immutability
   period preventing modification or deletion of stored backup objects.
@@ -389,7 +396,7 @@ Workflow: Configure ransomware-resilient backup storage
 
 4.  Run an initial backup job to confirm proper data protection.
 
-**Workflow Outcome:**
+**Workflow Objective:**
 
 Backups are protected by immutability, ensuring stored data cannot be
 altered or deleted during the defined lock period.
@@ -405,9 +412,10 @@ workflow relevant to engineers and SMEs.
 ## What a Workflow Is
 
 A workflow is a defined sequence of tasks that together produce one
-meaningful, verifiable outcome. It represents an actual transformation
+meaningful, verifiable objective. It represents an actual transformation
 in the system, not a topic, not a lesson, and not a collection of
-loosely related actions.
+loosely related steps.
+Workflows contain tasks only; they do not contain other workflows.
 
 ### Single-Task Workflows
 
@@ -419,8 +427,8 @@ same structure, and subject to the same quality rules.
 
 ### Core Tasks
 
-These are the tasks that directly produce the workflow outcome. If a
-core task is removed, the outcome cannot be achieved.
+These are the tasks that directly produce the workflow objective. If a
+core task is removed, the objective cannot be achieved.
 
 ### Prerequisite Tasks
 
@@ -447,6 +455,13 @@ prerequisite in another(s).
 
 This is expected and desirable.
 
+## Variants
+
+Workflow variants are expressed by composition, not conditional steps.
+If a workflow needs an extra capability (for example, enabling
+encryption), add that as a separate task and include or omit it at the
+workflow level.
+
 ## Workflow Documentation Structure
 
 - **Overview** – what the workflow achieves and why it matters.
@@ -455,7 +470,7 @@ This is expected and desirable.
 
 - **Tasks** – the core tasks that produce the outcome.
 
-- **Expected Outcome** – the observable system state when complete.
+- **Objective** – the measurable outcome the workflow achieves.
 
 ## Safety Rules
 
@@ -465,14 +480,16 @@ To maintain consistency and prevent design drift:
 
 2.  Core tasks must not be moved into prerequisites.
 
-3.  A workflow must have one clearly defined outcome.
+3.  A workflow must have one clearly defined objective.
 
-4.  If the outcome cannot be stated clearly, the workflow is likely
+4.  If the objective cannot be stated clearly, the workflow is likely
     mis-scoped.
 
 5.  Core tasks must be atomic, outcome-driven, and testable.
 
 6.  Single-task workflows are valid and follow the same rules.
+
+7.  Task outcomes must roll up to the workflow objective.
 
 # Task Standards
 
@@ -490,7 +507,7 @@ A task is not:
 
 - a workflow,
 
-- a collection of unrelated actions,
+- a collection of unrelated steps,
 
 - a concept explanation,
 
@@ -506,26 +523,30 @@ Every task contains five elements:
 
 2.  **Facts** – literal information the learner must know beforehand.
 
-3.  **Concept** – the mental model required to understand why the steps
-    work.
+3.  **Concepts** – the mental models required to understand why the
+    steps work.
 
-4.  **Procedure** – the ordered steps that perform the task.
+4.  **Procedure** – the named sequence of steps that perform the task.
 
 5.  **Dependencies** – prerequisites that must already be true or
     completed.
+
+Steps are stored as a Steps array within the Procedure.
 
 If any of these components is missing, the task cannot be validated.
 
 ## Procedure and Steps
 
-The **procedure** is the sequence of **steps** used to complete the
-task.
+The **procedure** is the named sequence of **steps** used to complete
+the task.
 
 Steps must follow strict rules:
 
-- Steps are **actions**, not tasks.
+- The procedure name is required, and steps are stored as a Steps array.
 
-- One action per step.
+- Steps are **atomic instructions**, not tasks.
+
+- One operation per step.
 
 - No compound or nested steps.
 
@@ -556,7 +577,7 @@ A task becomes invalid if:
 
 - it contains **more than one outcome**
 
-- it embeds **subtasks** or multi-part actions
+- it embeds **subtasks** or multi-part steps
 
 - it requires knowledge not expressed through its facts, concept, or
   dependencies
@@ -586,7 +607,7 @@ A task cannot pass review unless all criteria are met:
 
 1.  It produces **one** testable outcome.
 
-2.  Its steps contain **actions only**, written cleanly and atomically.
+2.  Its steps are **atomic and imperative**, written cleanly.
 
 3.  All required concepts and facts are provided.
 
@@ -611,7 +632,7 @@ Concepts explain:
 
 - **why** the procedure matters (what is the value?)
 
-- **why** the mechanism exists **(**what issue is being addressed?)
+- **why** the mechanism exists (what issue is being addressed?)
 
 - **how** the system behaves
 
@@ -631,6 +652,12 @@ A concept is **not**:
 
 A concept exists solely to support task execution by giving the learner
 the right mental model.
+
+## Causality Rule
+
+A concept must explain the system pressure that created the mechanism.
+If it does not answer “why was this feature designed, and what problem
+did it solve,” it does not belong in the concept.
 
 ## Required Structure
 
@@ -668,13 +695,21 @@ A data‑defined record provides:
 
 2.  **Facts** – literal information the learner must know beforehand.
 
-3.  **Concept** – the mental model required to understand why the steps
-    work.
+3.  **Concepts** – the mental models required to understand why the
+    steps work.
 
-4.  **Procedure** – the ordered steps that perform the task.
+4.  **Procedure** – the named sequence of steps that perform the task.
 
 5.  **Dependencies** – prerequisites that must already be true or
     completed.
+
+A workflow record provides:
+
+1.  **Objective** – the measurable outcome defined by the organization.
+
+2.  **Prerequisites** – required tasks or conditions.
+
+3.  **Tasks** – ordered task references that produce the objective.
 
 If a task or workflow record is wrong, every derived learning format
 becomes wrong. Tasks and workflows are not internal documentation. They
@@ -690,9 +725,9 @@ It defines the procedure required to complete a single action sequence.
 
 - A task produces one outcome.
 
-- The procedure is composed of ordered Actions (procedural steps).
+- The procedure is composed of ordered Steps.
 
-- Each action is written in imperative form.
+- Each step is written in imperative form.
 
 - A task is self‑contained — all execution detail is defined in its
   record.
@@ -708,19 +743,20 @@ It defines how tasks combine to produce a larger result.
 
 - A workflow consists of ordered Task references, not procedural steps.
 
-- Each task listed is required to produce the workflow outcome.
+- Each task listed is required to produce the workflow objective.
 
 - Workflows link directly to the relevant tasks for execution detail.
-
-- Workflows can be nested — a workflow may include another workflow
-  where appropriate.
+ 
+- The workflow objective is defined by the organization, not by content
+  writers.
+ 
 
 ### Data Schema Relationships
 
 | Entity | Contains | Term Used | Description |
 |----|----|----|----|
-| Task | Actions | Steps | Ordered atomic instructions needed to perform one outcome |
-| Workflow | Tasks | Tasks | Ordered sequence of tasks that together produce a single workflow outcome |
+| Task | Procedure (Steps) | Steps | Ordered atomic instructions needed to perform one outcome |
+| Workflow | Tasks | Tasks | Ordered sequence of tasks that together produce a single workflow objective |
 
 ### Required Fields
 
@@ -732,27 +768,25 @@ Each entity must define the following data fields:
 
 2.  Outcome – description of the result of the task
 
-3.  Prerequisites – required prior knowledge, skills, or dependencies
+3.  Facts – literal information required to execute the task
 
-4.  Actions – ordered list of imperative steps
+4.  Concepts – minimal mental models required to execute the task
 
-5.  Expected Outcome – confirmation of success criteria
+5.  Procedure – named sequence of steps (Steps array)
 
-6.  Post‑Conditions – resulting state after completion
+6.  Dependencies – required prior knowledge, skills, or conditions
+
+7.  Irreversible flag – required if the task cannot be undone
 
 #### Workflow
 
 1.  Title – clear learner‑facing name
 
-2.  Outcome – description of the result of the workflow
+2.  Objective – organization-defined outcome for the workflow
 
 3.  Prerequisites – required tasks or conditions
 
 4.  Tasks – ordered list of task references
-
-5.  Expected Outcome – confirmation of success criteria
-
-6.  Post‑Conditions – resulting state after completion
 
 ### Style Rules
 
@@ -764,35 +798,41 @@ Each entity must define the following data fields:
 
 - Consistent terminology
 
-- Each action must describe a single, clear operation
+- Each step must describe a single, clear operation
 
 ### Rich Media
 
 Screenshots and other rich media are linked media assets used only when
-text cannot be made unambiguous. They are referenced at the action
+text cannot be made unambiguous. They are referenced at the step
 level, not stored inline and are to be stored as linked URLs.
+Assets may point to the internal asset library or approved external
+platforms (graphics, video, audio, Storylane modules, Rise modules,
+and hosted video platforms).
 
 ### Error Prevention
 
-- Actions that are irreversible must be flagged at the data level.
+- Tasks that include irreversible changes must be flagged at the task
+  level.
 
 - Troubleshooting content is not permitted within task or workflow
-  actions.
+  steps.
 
-- Validation rules surface warnings on irreversible actions
+- Validation rules surface warnings on irreversible tasks
   automatically.
 
 ### Quality Gate
 
 Automated validation logic ensures structural integrity:
 
-- Workflow: steps = task references
+- Workflow: tasks only (no steps)
 
-- Task: steps = actions
+- Task: steps only (no tasks)
 
-- Imperative language is enforced at the action level
+- Imperative language is enforced at the step level
 
 - Terminology consistency is verified across all entities
+
+- Circular dependencies and self-references are blocked
 
 ### Structure
 
@@ -845,25 +885,22 @@ outcome and the full procedure required to achieve it.</td>
 <td><ul>
 <li><p>Core of the architecture.</p></li>
 <li><p>Contains all <strong>Facts</strong>, <strong>Concepts</strong>,
-and <strong>Procedural Steps</strong> as arrays within each
+and <strong>Procedure (Steps)</strong> as arrays within each
 record.</p></li>
 <li><p>These elements are <strong>not shared</strong> between Tasks;
 each Task owns its own knowledge and procedure.</p></li>
-<li><p>Future extensions may externalize shared procedural steps if
-reuse becomes needed.</p></li>
 </ul></td>
 </tr>
 <tr>
 <td>Workflow DB</td>
 <td>Defines named workflows as ordered sequences of Task IDs. Provides
-structure for composite outcomes.</td>
+structure for composite objectives.</td>
 <td><ul>
 <li><p>References Tasks by ID only; contains <strong>no procedural
 detail</strong>.</p></li>
 <li><p>Enables composite learning paths without duplicating Task
 data.</p></li>
-<li><p>Workflows may be nested (workflows referencing other
-workflows).</p></li>
+<li><p>Workflows contain tasks only.</p></li>
 </ul></td>
 </tr>
 <tr>
@@ -873,6 +910,7 @@ within Tasks or Workflows.</td>
 <td><ul>
 <li><p>Media stored as linked URLs or file IDs (not inline).</p></li>
 <li><p>Tasks and Workflows reference assets by ID.</p></li>
+<li><p>Links to the asset library and approved external platforms.</p></li>
 <li><p>Supports language localization and asset versioning.</p></li>
 </ul></td>
 </tr>
@@ -886,6 +924,8 @@ MVP).</strong></p></li>
 <li><p>Certification data remains external.</p></li>
 <li><p>Will link to Tasks and Workflows once internal assessment
 features are required.</p></li>
+<li><p>Future intent: build question banks using database content as
+source data for AI.</p></li>
 </ul></td>
 </tr>
 <tr>
@@ -896,7 +936,7 @@ control.</td>
 <li><p><strong>Planned for future implementation (not
 MVP).</strong></p></li>
 <li><p>Will manage automated validation such as imperative‑language
-checks, post‑condition alignment, and version history.</p></li>
+checks, terminology checks, and version history.</p></li>
 </ul></td>
 </tr>
 <tr>
@@ -928,8 +968,8 @@ managed as structured data rather than written documents.
 
 | Database | Purpose | Core Entities |
 |----|----|----|
-| Task (Master) DB | Canonical source of all atomic Task records. Each record defines one outcome and the full procedure required to achieve it. | Task, Procedure, Fact, Concept, Dependency, ExpectedOutcome, PostCondition |
-| Workflow DB | Defines named workflows as ordered sequences of Task IDs. Establishes how Tasks combine to produce composite outcomes. | Workflow, TaskReference, Prerequisite, Outcome, ExpectedOutcome, PostCondition |
+| Task (Master) DB | Canonical source of all atomic Task records. Each record defines one outcome and the full procedure required to achieve it. | Task, Procedure, Step, Dependency |
+| Workflow DB | Defines named workflows as ordered sequences of Task IDs. Establishes how Tasks combine to produce composite objectives. | Workflow, TaskReference, Prerequisite |
 | Asset DB | Stores or references rich media assets (screenshots, diagrams, videos) used within Tasks or Workflows. | Asset, MediaType, UsageContext, Locale, Version |
 | Assessment DB | Defines internal learning checks and evaluations for non‑certified learning. | Assessment, Question, Rubric, Result |
 | Governance / Validation DB | Houses quality rules, style guides, ownership metadata, and version control. | StyleRule, QualityRule, Owner, Version |
@@ -951,8 +991,8 @@ definitions:
 
 - The Task (Master) Database contains all atomic Task records. Each
   record is self‑contained and owns its own knowledge, facts, and
-  procedural data. These components are not shared between Tasks,
-  ensuring accuracy.
+  concepts, and procedural data. These components are not shared between
+  Tasks, ensuring accuracy.
 
 - The Workflow Database defines named workflows as ordered sequences of
   Task IDs. Workflows provide structure and context but contain no
@@ -964,12 +1004,11 @@ Workflows provide compositional flexibility.
 ## Structural Relationships
 
 1.  **Tasks are atomic and self‑contained.**  
-    Each Task defines its own knowledge, concept, procedure, and
-    post‑condition.
+    Each Task defines its own facts, concepts, procedure, and outcome.
 
 2.  **Workflows reference Tasks.  **
     A Workflow record contains ordered Task IDs.  
-    Workflows may include other Workflows for nested compositions.
+    Workflows contain tasks only.
 
 3.  **Assets support Tasks and Workflows.  **
     Tasks and Workflows link to media assets by ID for clarity and
@@ -983,23 +1022,6 @@ Workflows provide compositional flexibility.
     Learner‑facing materials are dynamically assembled from Task and
     Workflow data.
 
-## Post‑Condition ↔ Objective Alignment
-
-Each Task and Workflow defines a PostCondition that must correspond to a
-valid Objective.
-
-| Field | Source | Description |
-|----|----|----|
-| post_condition_id | Learning Content DB | Foreign key linking to Objective.objective_id |
-| objective_id | Objective DB | Canonical learning goal record |
-
-**Governance Rule:** Each Task and Workflow must define a
-post_condition_id that aligns with a valid Objective record. The
-Objective describes the measurable capability or state achieved upon
-completion. Validation ensures semantic and structural alignment between
-post‑condition and objective detail. Discrepancies are flagged
-automatically for review.
-
 ## Validation and Quality Governance
 
 - Imperative Language Enforcement: Each Step within a Task must use
@@ -1008,27 +1030,27 @@ automatically for review.
 - Terminology Consistency: All entities follow defined terminology from
   the governance framework.
 
-- Structural Integrity: Tasks contain only Steps (Actions). Workflows
-  contain only Tasks (no direct Steps). Each Post‑Condition maps to a
-  valid Objective. Each Objective references supporting Facts.
+- Structural Integrity: Tasks contain only Steps. Workflows contain
+  only Tasks (no direct Steps). Circular dependencies and
+  self-references are blocked.
 
-- Error Prevention: Irreversible actions are flagged at the data level.
-  Troubleshooting content is excluded from procedural steps.
+- Error Prevention: Irreversible tasks are flagged at the task level.
+  Troubleshooting content is excluded from steps.
 
-- Version Control: Each record includes version metadata managed by the
-  Governance DB.
+- Validation Split: Structural and terminology checks are automated;
+  correctness is confirmed by human review.
 
 ## Data Hierarchy Diagram (Conceptual)
 
-Fact → Objective → Task → Workflow → Guide → Delivery  
-↓ ↓ ↓  
-Assessment ← Governance ← Asset
+Task (Facts, Concepts, Procedure/Steps) → Workflow (Objective) → Guide → Delivery  
+↓  
+Governance ← Asset
 
 This hierarchy represents both data lineage and learning dependency.
-Facts define what must be known. Objectives define what must be learned.
-Tasks define how to execute. Workflows define how tasks combine. Guides
-form the learner-facing expression. Assessments validate learning.
-Governance ensures integrity.
+Tasks define what must be done. Workflows define how tasks combine to
+achieve an objective. Guides form the learner-facing expression.
+Governance ensures integrity. Assessment is a future layer and is out of
+scope for MVP.
 
 ## Extensibility
 
@@ -1046,6 +1068,90 @@ isolated written guides; they are interrelated data objects governed by
 shared standards. This structure supports automation, maintenance,
 analytics, and AI-assisted content generation—all while preserving the
 clarity and intent of the original governance framework.
+
+## Governance and Versioning (MVP)
+
+All records are governed at the record level.
+
+- Every Task and Workflow starts in an **unconfirmed** state.
+
+- A human reviewer must confirm a record before it can be published.
+
+- AI-assisted ingress is allowed, but AI-created records are still
+  unconfirmed until reviewed by a human.
+
+- Any edit creates a new version. Only one version can be confirmed at a
+  time.
+
+- Older confirmed versions are deprecated, not deleted.
+
+### Required Version Fields (MVP)
+
+- record_id
+
+- version
+
+- status (draft, unconfirmed, confirmed, deprecated)
+
+- created_at, updated_at
+
+- created_by, updated_by
+
+- reviewed_by, reviewed_at
+
+- change_note
+
+### Change Monitoring
+
+An AI agent monitors R\&D changelogs and flags affected Tasks or
+Workflows for review.
+
+## Model Evolution Policy
+
+There are no content exceptions. If a task or workflow does not fit the
+model, it triggers a model change request.
+
+Each model change request must include:
+
+- Problem statement
+
+- Affected records
+
+- Proposed schema or rule change
+
+- Migration impact
+
+All model changes require human approval. When approved, a new model
+version is published and affected records are flagged for update.
+
+## Glossary (Canonical Terms)
+
+- **Objective** – org-defined outcome at the Workflow level. Not authored
+  by content writers.
+
+- **Outcome** – atomic, observable state change produced by a Task.
+
+- **Task** – smallest reusable unit of work that produces one Outcome.
+
+- **Workflow** – ordered composition of Tasks that achieves one
+  Objective.
+
+- **Facts** – literal information required to execute a Task. Stored as
+  an array in the Task.
+
+- **Concepts** – minimal mental models required to execute a Task
+  correctly. Stored as an array in the Task.
+
+- **Procedure** – the named sequence of Steps that executes a Task.
+
+- **Steps** – atomic, imperative instructions within a Procedure. Steps
+  are the only term for atomic actions.
+
+- **Dependencies** – conditions or prerequisites that must be true
+  before a Task can be executed.
+
+- **Prerequisites** – conditions or Tasks that must be true/complete
+  before a Workflow can be executed.
 
 # Appendix I - Guidance for Defining and Writing Learning Objectives
 
