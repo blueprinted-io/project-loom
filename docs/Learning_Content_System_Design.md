@@ -5,6 +5,30 @@ database-defined learning content. It complements
 `Learning_Content_Governance.md`, which covers standards, governance,
 and review rules.
 
+## MVP Scope (System Design)
+
+The MVP supports:
+
+- Create Tasks, validate, and sequence them into Workflows.
+
+- Export Workflows as Markdown, HTML, PDF, and raw data.
+
+- Web UI authoring only (no API in MVP).
+
+- Provide a validated JSON schema for manual import.
+
+Out of scope for MVP:
+
+- Assessment engine (future use of content as AI question bank source).
+
+- Diagnostics and troubleshooting content.
+
+- Localization.
+
+- Asset library hosting (external URLs only for now).
+
+- Agentic authoring (manual authoring only).
+
 # Learning Content Standards (Database‑Defined)
 
 ## Purpose
@@ -24,12 +48,14 @@ A data‑defined record provides:
 3.  **Concepts** – the mental models required to understand why the
     steps work.
 
-4.  **Procedure** – the named sequence of steps that perform the task.
+4.  **Procedure** – the name of the step sequence that performs the
+    task.
 
 5.  **Dependencies** – prerequisites that must already be true or
     completed.
 
-Steps are stored as a Steps array within the Procedure.
+Steps are stored in a separate Steps table linked to the Task version.
+The Procedure is a name field that describes the step sequence.
 
 A workflow record provides:
 
@@ -49,7 +75,7 @@ are the foundation upon which all learning experiences are built.
 
 A Task represents one atomic outcome.
 
-It defines the procedure required to complete a single action sequence.
+It defines the procedure required to complete a single step sequence.
 
 - A task produces one outcome.
 
@@ -78,11 +104,16 @@ It defines how tasks combine to produce a larger result.
 - The workflow objective is defined by the organization, not by content
   writers.
 
+- Task order is strict.
+
+- Workflow prerequisites are external tasks or conditions only (not
+  tasks listed inside the workflow).
+
 ### Data Schema Relationships
 
 | Entity | Contains | Term Used | Description |
 |----|----|----|----|
-| Task | Procedure (Steps) | Steps | Ordered atomic instructions needed to perform one outcome |
+| Task | Procedure name + Steps table | Steps | Ordered atomic instructions needed to perform one outcome |
 | Workflow | Tasks | Tasks | Ordered sequence of tasks that together produce a single workflow objective |
 
 ### Required Fields
@@ -99,11 +130,13 @@ Each entity must define the following data fields:
 
 4.  Concepts – minimal mental models required to execute the task
 
-5.  Procedure – named sequence of steps (Steps array)
+5.  Procedure Name – name of the step sequence
 
 6.  Dependencies – required prior knowledge, skills, or conditions
 
 7.  Irreversible flag – required if the task cannot be undone
+
+8.  Task Assets – optional list of asset objects (url, type, label)
 
 #### Workflow
 
@@ -114,6 +147,147 @@ Each entity must define the following data fields:
 3.  Prerequisites – required tasks or conditions
 
 4.  Tasks – ordered list of task references
+
+## MVP Data Model Notes
+
+### Record Lifecycle Fields (shared by Task and Workflow)
+
+- record_id
+
+- version
+
+- status (draft, submitted, confirmed, deprecated)
+
+- created_at, updated_at
+
+- created_by, updated_by
+
+- reviewed_by, reviewed_at
+
+- change_note
+
+- needs_review_flag
+
+- needs_review_note
+
+Confirmed records are immutable. Edits create a new version starting in
+Submitted.
+
+### Audit Log (MVP)
+
+All record changes and approvals are logged. Each audit entry records:
+
+- record_id and version
+
+- field changed (or operation type)
+
+- old value and new value (or summary)
+
+- actor (user id)
+
+- timestamp
+
+### Task Storage
+
+- Facts and Concepts are stored as arrays inside the Task record.
+
+- Procedure Name is a string field.
+
+- Steps are stored in a separate table linked to the Task version.
+
+- Task Assets are stored as an array of objects (url, type, label).
+
+### Step Storage (normalized table)
+
+Each Step is linked to a specific Task version. Step IDs are version
+scoped.
+
+Required:
+
+- step_text
+
+Optional:
+
+- asset_urls (list)
+
+- ui_hint (plain text, 600 char max)
+
+- additional_info (plain text, 600 char max)
+
+### Workflow Export
+
+Only Workflows are exportable. Single‑task workflows are valid and are
+the smallest exportable learning object.
+
+Export formats: Markdown, HTML, PDF, and raw data (includes asset links
+and version/status metadata).
+
+## MVP Definitions (Lockdown)
+
+### JSON Import Schema (Summary)
+
+The system accepts validated JSON for Tasks and Workflows. JSON maps
+directly to the fields in this document. Steps are included as an array
+in the JSON payload and are persisted into the Steps table.
+
+Minimum JSON structure:
+
+- Task: title, outcome, facts[], concepts[], procedure_name, steps[],
+  dependencies[], irreversible_flag, task_assets[]
+
+- Workflow: title, objective, prerequisites[], tasks[]
+
+### Steps Table (MVP)
+
+Steps are stored in a separate table with ordered sequence.
+
+Required fields:
+
+- step_id (version-scoped)
+
+- task_id
+
+- task_version
+
+- order_index
+
+- step_text
+
+Optional fields:
+
+- asset_urls[]
+
+- ui_hint (plain text, max 600 chars)
+
+- additional_info (plain text, max 600 chars)
+
+### Task Assets (MVP)
+
+Task assets are stored as an array of objects:
+
+- url
+
+- type (image, video, audio, module, link)
+
+- label
+
+### Status Transitions (MVP)
+
+- Draft → Submitted → Confirmed → Deprecated
+
+- Confirmed records are immutable; edits create a new version in
+  Submitted.
+
+### Validation Behavior (MVP)
+
+- Validation produces warnings only.
+
+- Missing required fields block submission.
+
+### Manual Review Flag
+
+- Authors can set needs_review_flag with an optional note to request
+  review or indicate suspected outdated content.
 
 ### Style Rules
 
@@ -132,9 +306,10 @@ Each entity must define the following data fields:
 Screenshots and other rich media are linked media assets used only when
 text cannot be made unambiguous. They are referenced at the step
 level, not stored inline and are to be stored as linked URLs.
-Assets may point to the internal asset library or approved external
-platforms (graphics, video, audio, Storylane modules, Rise modules,
-and hosted video platforms).
+Assets use external URLs in MVP. Supported types include graphics,
+video, audio, Storylane modules, Rise modules, and hosted video
+platforms.
+Tasks may also reference assets at the task level.
 
 ### Error Prevention
 
@@ -146,7 +321,8 @@ and hosted video platforms).
 
 ### Quality Gate
 
-Automated validation logic ensures structural integrity:
+Automated validation checks structure and terminology. In MVP, all
+validation findings are warnings; human review confirms correctness.
 
 - Workflow: tasks only (no steps)
 
@@ -178,11 +354,13 @@ authoritative standards that underpin all learning experiences.
 ## Atomic Ownership of Knowledge and Procedure
 
 Each Task record is self‑contained and owns its own knowledge, facts,
-and procedural data.
+concepts, and procedural data.
 
-These elements are stored as arrays within the Task record and are not
-shared between Tasks to preserve canonical accuracy. The Workflow
-Database provides structure and sequencing without redefining procedure.
+Facts and Concepts are stored as arrays within the Task record. Steps
+are stored in a separate table linked to the Task version. These
+elements are not shared between Tasks to preserve canonical accuracy.
+The Workflow Database provides structure and sequencing without
+redefining procedure.
 
 Assessment, Governance, and Delivery databases are defined conceptually
 but excluded from MVP scope. These will be introduced in later phases
@@ -208,9 +386,10 @@ once core content integrity and authoring workflows are stable.
 outcome and the full procedure required to achieve it.</td>
 <td><ul>
 <li><p>Core of the architecture.</p></li>
-<li><p>Contains all <strong>Facts</strong>, <strong>Concepts</strong>,
-and <strong>Procedure (Steps)</strong> as arrays within each
-record.</p></li>
+<li><p>Contains <strong>Facts</strong> and <strong>Concepts</strong> as
+arrays, plus a <strong>Procedure Name</strong> field.</p></li>
+<li><p>Steps are stored in a separate table linked to the Task
+version.</p></li>
 <li><p>These elements are <strong>not shared</strong> between Tasks;
 each Task owns its own knowledge and procedure.</p></li>
 </ul></td>
@@ -234,8 +413,8 @@ within Tasks or Workflows.</td>
 <td><ul>
 <li><p>Media stored as linked URLs or file IDs (not inline).</p></li>
 <li><p>Tasks and Workflows reference assets by ID.</p></li>
-<li><p>Links to the asset library and approved external platforms.</p></li>
-<li><p>Supports language localization and asset versioning.</p></li>
+<li><p>External URLs only in MVP.</p></li>
+<li><p>Localization and asset versioning are future capabilities.</p></li>
 </ul></td>
 </tr>
 <tr>
@@ -272,7 +451,7 @@ etc.) from canonical data.</td>
 MVP).</strong></p></li>
 <li><p>Pulls from Task, Workflow, and Asset DBs.</p></li>
 <li><p>Supports localization, rendering, and publication
-tracking.</p></li>
+tracking (future).</p></li>
 </ul></td>
 </tr>
 </tbody>
@@ -292,7 +471,7 @@ managed as structured data rather than written documents.
 
 | Database | Purpose | Core Entities |
 |----|----|----|
-| Task (Master) DB | Canonical source of all atomic Task records. Each record defines one outcome and the full procedure required to achieve it. | Task, Procedure, Step, Dependency |
+| Task (Master) DB | Canonical source of all atomic Task records. Each record defines one outcome and the full procedure required to achieve it. | Task, Step, TaskAsset, Dependency |
 | Workflow DB | Defines named workflows as ordered sequences of Task IDs. Establishes how Tasks combine to produce composite objectives. | Workflow, TaskReference, Prerequisite |
 | Asset DB | Stores or references rich media assets (screenshots, diagrams, videos) used within Tasks or Workflows. | Asset, MediaType, UsageContext, Locale, Version |
 | Assessment DB | Defines internal learning checks and evaluations for non‑certified learning. | Assessment, Question, Rubric, Result |
