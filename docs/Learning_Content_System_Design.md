@@ -91,6 +91,9 @@ It defines the procedure required to complete a single step sequence.
 - Tasks are reusable components that can be referenced by multiple
   workflows.
 
+Steps must satisfy **Procedure Step Atomicity** rules (see MVP
+Definitions).
+
 ### Workflow
 
 A Workflow represents a composite outcome made of multiple tasks.
@@ -302,6 +305,58 @@ Task assets are stored as an array of objects:
 - Consistent terminology
 
 - Each step must describe a single, clear operation
+
+### Procedure Step Atomicity
+
+An atomic Step MUST meet all of the following:
+
+- The Step MUST contain one primary action only.
+
+- The Step MUST name an explicit object or target (file, command,
+  config key, UI control, etc.).
+
+- The Step MUST include an observable completion condition (what
+  indicates the step is complete).
+
+- The Step MUST NOT hide tool choice; it MUST specify a concrete method
+  or an approved tool-class pattern (e.g., a text editor with elevated
+  permissions).
+
+Why this exists: atomic steps are executable, reviewable, and
+unambiguous.
+
+### Tool Specificity Policy
+
+- Canonical Task Procedures MUST allow tool-class specificity (e.g., “a
+  text editor”) to remain environment-agnostic.
+
+- Derived or beginner views SHOULD provide concrete tool examples (e.g.,
+  nano or vi) without altering the canonical Step text.
+
+- Environment profiles (future) SHOULD define default tool choices.
+
+Why this exists: tool choice varies by environment, but procedure intent
+must remain stable.
+
+### Example: fstab Step Atomicity
+
+**Bad:** Edit /etc/fstab.
+
+**Good (decomposed Steps):**
+
+1.  Open /etc/fstab in a text editor with elevated permissions.
+
+2.  Insert a new mount entry line containing UUID, mount point,
+    filesystem type, and mount options.
+
+3.  Save the file.
+
+4.  Exit the editor.
+
+5.  Run `mount -a` and confirm it exits successfully.
+
+Why this exists: the example demonstrates single-action steps with
+explicit method and completion checks.
 
 ### Rich Media
 
@@ -544,6 +599,36 @@ Workflows provide compositional flexibility.
 
 - Validation Split: Structural and terminology checks are automated;
   correctness is confirmed by human review.
+
+### Heuristic Validation Rules for Steps (MVP)
+
+These checks SHOULD flag as warnings (not hard failures unless a
+document already defines hard failures):
+
+1.  **Abstract verbs warning:** Validation SHOULD flag steps containing
+    abstract or bundling verbs such as edit, configure, set up, manage,
+    ensure, handle, prepare, troubleshoot. These terms are acceptable
+    only if the Step includes a concrete method (command or tool-class)
+    OR is immediately followed by decomposed Steps that specify method
+    and completion.
+
+2.  **Multi-action detector:** Validation SHOULD flag steps containing
+    conjunctions that imply multiple actions (and, then, also, as well
+    as). Validation SHOULD also flag steps that contain multiple
+    imperatives (heuristic: two verbs in one Step).
+
+3.  **Completion/verification expectation:** If a Step claims a state
+    change (install, mount, enable, add, update, remove), it MUST either
+    include an explicit confirmation check in the same Step or be
+    followed by a Step that confirms it. “Verify it works” is not
+    acceptable; the confirmation MUST name the check (command,
+    observable output, exit code, etc.).
+
+Human review MUST be the final semantic gate for Step correctness and
+intent.
+
+Why this exists: heuristic checks reduce ambiguity, but semantic
+correctness still requires human judgment.
 
 ## Data Hierarchy Diagram (Conceptual)
 
