@@ -932,13 +932,10 @@ misallocation of resources.
 ### Writing Effective Objectives
 
 Objective writing is a discipline of its own, this document will not
-attempt to fully outline it. (For further guidance, speak with Ewan
-Matheson and/or refer to Bloom’s Taxonomy for structuring learning
-outcomes) Although there is one fundamental principle that underpins all
+attempt to fully outline it, although there is one fundamental principle that underpins all
 effective learning design:
 
-> We never teach people to understand something; we teach them to do
-> something.
+> We never teach people to understand something; we teach them to do something.
 
 Learning objectives must therefore be action‑oriented. They should
 describe what the learner will do because of the training, not what they
