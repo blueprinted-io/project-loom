@@ -5,6 +5,8 @@ database-defined learning content. It complements
 `Learning_Content_Governance.md`, which covers standards, governance,
 and review rules.
 
+The application exists to maintain a governed, versioned, and structurally validated corpus of procedural performance units that can be safely reused, reviewed, and aligned to organizational objectives.
+
 ## MVP Scope (System Design)
 
 The MVP supports:
