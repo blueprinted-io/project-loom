@@ -419,6 +419,9 @@ in the system, not a topic, not a lesson, and not a collection of
 loosely related steps.
 Workflows contain tasks only; they do not contain other workflows.
 
+A workflow may reference only **confirmed** Task versions. Unconfirmed
+or draft Tasks are not eligible for workflow composition.
+
 ### Single-Task Workflows
 
 A workflow may consist of one task if that task alone produces the
@@ -502,16 +505,18 @@ To maintain consistency and prevent design drift:
 
 3.  A workflow must not include learning-sequence requirements.
 
-4.  A workflow must have one clearly defined objective.
+4.  A workflow may reference only **confirmed** Task versions.
 
-5.  If the objective cannot be stated clearly, the workflow is likely
+5.  A workflow must have one clearly defined objective.
+
+6.  If the objective cannot be stated clearly, the workflow is likely
     mis-scoped.
 
-6.  Core tasks must be atomic, outcome-driven, and testable.
+7.  Core tasks must be atomic, outcome-driven, and testable.
 
-7.  Single-task workflows are valid and follow the same rules.
+8.  Single-task workflows are valid and follow the same rules.
 
-8.  Task outcomes must roll up to the workflow objective.
+9.  Task outcomes must roll up to the workflow objective.
 
 # Task Standards
 
@@ -797,6 +802,17 @@ All records are governed at the record level.
 - AI-assisted ingress is allowed, but AI-created records are still
   unconfirmed until reviewed by a human.
 
+- Task confirmation is a trust boundary. A Task becomes eligible for
+  reuse and composition only after human confirmation.
+
+- Workflow confirmation and Task confirmation are separate. A Workflow
+  may exist in draft or unconfirmed state, but it MUST be composed
+  exclusively of confirmed Task versions.
+
+- This rule exists to prevent unreviewed meaning from propagating.
+  Workflows amplify Tasks through composition and export, so allowing
+  unconfirmed Tasks would undermine the human‑in‑the‑loop premise.
+
 - Any edit creates a new version. Only one version can be confirmed at a
   time.
 
@@ -850,8 +866,8 @@ version is published and affected records are flagged for update.
 
 - **Task** – smallest reusable unit of work that produces one Outcome.
 
-- **Workflow** – ordered composition of Tasks that achieves one
-  Objective.
+- **Workflow** – ordered composition of **confirmed** Tasks that
+  achieves one Objective.
 
 - **Facts** – literal information required to execute a Task. Stored as
   an array in the Task.

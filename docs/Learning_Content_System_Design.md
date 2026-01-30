@@ -65,6 +65,9 @@ A workflow record provides:
 
 2.  **Tasks** – ordered task references that produce the objective.
 
+Workflow composition is restricted to confirmed Task versions. Tasks
+that are draft or unconfirmed are not eligible for inclusion.
+
 If a task or workflow record is wrong, every derived learning format
 becomes wrong. Tasks and workflows are not internal documentation. They
 are the foundation upon which all learning experiences are built.
@@ -120,6 +123,10 @@ This rule exists because Task Dependencies are the single canonical
 location for executable preconditions. Introducing workflow-level
 prerequisites would duplicate those constraints, create redundancy, and
 allow contradictions to emerge over time.
+
+A Workflow may reference ONLY confirmed Task versions. Unconfirmed or
+draft Task versions are not eligible for inclusion because they have not
+passed human semantic review and cannot be treated as authoritative.
 
 ### Data Schema Relationships
 
@@ -596,7 +603,8 @@ Workflows provide compositional flexibility.
   the governance framework.
 
 - Structural Integrity: Tasks contain only Steps. Workflows contain
-  only Tasks (no direct Steps and no prerequisites). Circular dependencies and
+  only Tasks (no direct Steps and no prerequisites). Workflows may
+  reference only confirmed Task versions. Circular dependencies and
   self-references are blocked.
 
 - Error Prevention: Irreversible tasks are flagged at the task level.
