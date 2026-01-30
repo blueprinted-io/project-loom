@@ -53,7 +53,7 @@ A data‑defined record provides:
 4.  **Procedure** – the name of the step sequence that performs the
     task.
 
-5.  **Dependencies** – prerequisites that must already be true or
+5.  **Dependencies** – conditions that must already be true or
     completed.
 
 Steps are stored in a separate Steps table linked to the Task version.
@@ -63,9 +63,7 @@ A workflow record provides:
 
 1.  **Objective** – the measurable outcome defined by the organization.
 
-2.  **Prerequisites** – required tasks or conditions.
-
-3.  **Tasks** – ordered task references that produce the objective.
+2.  **Tasks** – ordered task references that produce the objective.
 
 If a task or workflow record is wrong, every derived learning format
 becomes wrong. Tasks and workflows are not internal documentation. They
@@ -111,8 +109,17 @@ It defines how tasks combine to produce a larger result.
 
 - Task order is strict.
 
-- Workflow prerequisites are external tasks or conditions only (not
-  tasks listed inside the workflow).
+Workflows MUST NOT define prerequisites or learning-sequence
+requirements. All executable preconditions MUST be declared as Task
+Dependencies at the smallest boundary where they are universally true.
+Knowledge requirements live inside Tasks as Facts and Concepts. Any
+“before starting this workflow” guidance is non-canonical and may be
+derived at delivery time from Task Dependencies.
+
+This rule exists because Task Dependencies are the single canonical
+location for executable preconditions. Introducing workflow-level
+prerequisites would duplicate those constraints, create redundancy, and
+allow contradictions to emerge over time.
 
 ### Data Schema Relationships
 
@@ -149,9 +156,7 @@ Each entity must define the following data fields:
 
 2.  Objective – organization-defined outcome for the workflow
 
-3.  Prerequisites – required tasks or conditions
-
-4.  Tasks – ordered list of task references
+3.  Tasks – ordered list of task references
 
 ## MVP Data Model Notes
 
@@ -240,7 +245,7 @@ Minimum JSON structure:
 - Task: title, outcome, facts[], concepts[], procedure_name, steps[],
   dependencies[], irreversible_flag, task_assets[]
 
-- Workflow: title, objective, prerequisites[], tasks[]
+- Workflow: title, objective, tasks[]
 
 ### Steps Table (MVP)
 
@@ -529,7 +534,7 @@ managed as structured data rather than written documents.
 | Database | Purpose | Core Entities |
 |----|----|----|
 | Task (Master) DB | Canonical source of all atomic Task records. Each record defines one outcome and the full procedure required to achieve it. | Task, Step, TaskAsset, Dependency |
-| Workflow DB | Defines named workflows as ordered sequences of Task IDs. Establishes how Tasks combine to produce composite objectives. | Workflow, TaskReference, Prerequisite |
+| Workflow DB | Defines named workflows as ordered sequences of Task IDs. Establishes how Tasks combine to produce composite objectives. | Workflow, TaskReference |
 | Asset DB | Stores or references rich media assets (screenshots, diagrams, videos) used within Tasks or Workflows. | Asset, MediaType, UsageContext, Locale, Version |
 | Assessment DB | Defines internal learning checks and evaluations for non‑certified learning. | Assessment, Question, Rubric, Result |
 | Governance / Validation DB | Houses quality rules, style guides, ownership metadata, and version control. | StyleRule, QualityRule, Owner, Version |
@@ -591,7 +596,7 @@ Workflows provide compositional flexibility.
   the governance framework.
 
 - Structural Integrity: Tasks contain only Steps. Workflows contain
-  only Tasks (no direct Steps). Circular dependencies and
+  only Tasks (no direct Steps and no prerequisites). Circular dependencies and
   self-references are blocked.
 
 - Error Prevention: Irreversible tasks are flagged at the task level.

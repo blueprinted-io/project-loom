@@ -21,7 +21,7 @@ Goal: enumerate what still needs an answer, a decision, or a fix to keep the mod
 - Response (agreed direction):
   - Task canonical fields: Title, Outcome, Facts, Concepts, Procedure, Dependencies.
   - Procedure contains Steps[] (Steps are the only term for atomic actions).
-  - Workflow canonical fields: Title, Objective, Prerequisites, Tasks.
+  - Workflow canonical fields: Title, Objective, Tasks.
   - Expected Outcome and Post‑Condition are removed; Outcome/Objective are the only outcome fields.
   - Terminology: use “Steps” (not Actions) everywhere; tasks contain Steps, workflows contain Tasks.
 
@@ -123,8 +123,7 @@ Resolution plan for document cleanup (agreed)
   - Concepts: Minimal mental models required to execute a Task correctly. Stored as an array in the Task.
   - Procedure: The named sequence of Steps that executes a Task.
   - Steps: Atomic, imperative actions within a Procedure. Steps are the only term for actions.
-  - Dependencies: Conditions or prerequisites that must be true before a Task can be executed.
-  - Prerequisites: Conditions or Tasks that must be true/complete before a Workflow can be executed.
+  - Dependencies: Conditions that must be true before a Task can be executed.
 
 12) Scope boundary statement (SOLVED)
 - Problem: Out‑of‑scope domains are implied but not explicit.
@@ -152,7 +151,7 @@ Resolution plan for document cleanup (agreed)
   - Automated validation handles structure and terminology.
   - Human reviewers are responsible for correctness and consequence.
 
-15) Circular dependencies and prerequisites (SOLVED)
+15) Circular dependencies (SOLVED)
 - Problem: No rule preventing task/workflow circular dependencies.
 - Needed: Validation rule to prevent cycles and self‑reference.
 - Decision: Where the rule is enforced (authoring tool vs governance DB).

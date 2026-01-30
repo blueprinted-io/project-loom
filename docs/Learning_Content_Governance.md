@@ -432,18 +432,38 @@ same structure, and subject to the same quality rules.
 These are the tasks that directly produce the workflow objective. If a
 core task is removed, the objective cannot be achieved.
 
-### Prerequisite Tasks
+### No Workflow Prerequisites
 
-These are tasks that must already be completed before the workflow
-begins. They enable the workflow but are not part of the transformation
-it performs.
+Workflows MUST NOT define prerequisites of any kind. A workflow consists
+only of Title, Objective, and an ordered list of Task references.
+
+All hard preconditions MUST be expressed as Task Dependencies. If a
+condition must be true for work to be performed, it MUST be declared at
+the Task boundary where it is universally true.
+
+Workflows do not gate execution. They define objective and composition
+only, and MUST NOT declare setup, readiness, permissions, access, or
+“before you begin” conditions.
+
+Learning-sequence prerequisites do not exist in this model. Knowledge
+requirements live inside the Task as Facts and Concepts, and Tasks are
+designed to be learnable in isolation.
+
+Any “before starting this workflow” guidance is non-canonical. Such
+guidance may be derived at delivery time from Task Dependencies, but it
+is not part of the governed model.
+
+This rule exists because Task Dependencies are the single canonical
+location for executable preconditions. Introducing workflow-level
+prerequisites would duplicate those constraints, create redundancy, and
+allow contradictions to emerge over time.
 
 ## Defining Rule
 
 - If the task produces the outcome, it is a core task.
 
-- If the task enables the workflow but does not create the outcome, it
-  is a prerequisite task.
+- If the task does not produce the outcome, it does not belong in the
+  workflow.
 
 This rule is universal and applies regardless of how simple or complex
 the workflow is.
@@ -452,8 +472,7 @@ the workflow is.
 
 Tasks are atomic and reusable.
 
-A task may be a core task in one or multiple workflows and a
-prerequisite in another(s).
+A task may be a core task in one or multiple workflows.
 
 This is expected and desirable.
 
@@ -468,8 +487,6 @@ workflow level.
 
 - **Overview** – what the workflow achieves and why it matters.
 
-- **Prerequisites** – prerequisite tasks, permissions, or conditions.
-
 - **Tasks** – the core tasks that produce the outcome.
 
 - **Objective** – the measurable outcome the workflow achieves.
@@ -478,20 +495,23 @@ workflow level.
 
 To maintain consistency and prevent design drift:
 
-1.  Prerequisite tasks must not appear in the core task list.
+1.  A workflow must contain only Task references and one objective.
 
-2.  Core tasks must not be moved into prerequisites.
+2.  A workflow must not declare any setup, readiness, or access
+    conditions.
 
-3.  A workflow must have one clearly defined objective.
+3.  A workflow must not include learning-sequence requirements.
 
-4.  If the objective cannot be stated clearly, the workflow is likely
+4.  A workflow must have one clearly defined objective.
+
+5.  If the objective cannot be stated clearly, the workflow is likely
     mis-scoped.
 
-5.  Core tasks must be atomic, outcome-driven, and testable.
+6.  Core tasks must be atomic, outcome-driven, and testable.
 
-6.  Single-task workflows are valid and follow the same rules.
+7.  Single-task workflows are valid and follow the same rules.
 
-7.  Task outcomes must roll up to the workflow objective.
+8.  Task outcomes must roll up to the workflow objective.
 
 # Task Standards
 
@@ -530,7 +550,7 @@ Every task contains five elements:
 
 4.  **Procedure** – the named sequence of steps that perform the task.
 
-5.  **Dependencies** – prerequisites that must already be true or
+5.  **Dependencies** – conditions that must already be true or
     completed.
 
 Steps are stored as a Steps array within the Procedure.
@@ -653,7 +673,7 @@ A task may appear:
 
 - as a core task in one workflow
 
-- as a prerequisite in another
+- as a core task in another workflow
 
 No part of the task description should assume where or how it will be
 used.
@@ -844,11 +864,8 @@ version is published and affected records are flagged for update.
 - **Steps** – atomic, imperative instructions within a Procedure. Steps
   are the only term for atomic actions.
 
-- **Dependencies** – conditions or prerequisites that must be true
-  before a Task can be executed.
-
-- **Prerequisites** – conditions or Tasks that must be true/complete
-  before a Workflow can be executed.
+- **Dependencies** – conditions that must be true before a Task can be
+  executed.
 
 # Appendix I - Guidance for Defining and Writing Learning Objectives
 
