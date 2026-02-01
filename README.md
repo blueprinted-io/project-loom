@@ -11,8 +11,8 @@ Instead of writing guides, courses, and videos separately, it defines **Tasks** 
 This is a system for accuracy, reuse, and trust.  
 It is not a teaching philosophy.
 
-For system structure and schema details, see `docs/Learning_Content_System_Design.md`.  
-For standards, governance, and review rules, see `docs/Learning_Content_Governance.md`.
+For system structure and schema details, see [Learning Content System Design](docs/Learning_Content_System_Design.md).  
+For standards, governance, and review rules, see [Learning Content Governance](docs/Learning_Content_Governance.md).
 
 ---
 
@@ -43,7 +43,7 @@ It defines:
 - **Workflows** as ordered compositions of tasks that achieve an objective  
 
 Tasks and workflows are stored as structured records, versioned, reviewed, and governed. All learner-facing materials are assembled from this data, not authored independently.  
-The data model and schema are specified in `docs/Learning_Content_System_Design.md`, and the governance rules are defined in `docs/Learning_Content_Governance.md`.
+The data model and schema are specified in [Learning Content System Design](docs/Learning_Content_System_Design.md), and the governance rules are defined in [Learning Content Governance](docs/Learning_Content_Governance.md).
 
 ---
 
@@ -154,7 +154,7 @@ Because of that:
 
 This prevents silent meaning changes and ensures that derived materials remain trustworthy over time.
 
-Full governance and review requirements are defined in `docs/Learning_Content_Governance.md`. The record lifecycle, validation, and schema structure are defined in `docs/Learning_Content_System_Design.md`.
+Full governance and review requirements are defined in [Learning Content Governance](docs/Learning_Content_Governance.md). The record lifecycle, validation, and schema structure are defined in [Learning Content System Design](docs/Learning_Content_System_Design.md).
 
 ---
 
