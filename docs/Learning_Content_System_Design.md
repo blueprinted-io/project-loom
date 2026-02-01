@@ -645,15 +645,16 @@ correctness still requires human judgment.
 
 ## Data Hierarchy Diagram (Conceptual)
 
-Task (Facts, Concepts, Procedure/Steps) → Workflow (Objective) → Guide → Delivery  
-↓  
-Governance ← Asset
+Task (Facts, Concepts, Procedure/Steps) → Workflow (Objective) → Delivery  
+Assets ↔ Tasks/Workflows  
+Governance applies across all records
 
 This hierarchy represents both data lineage and learning dependency.
 Tasks define what must be done. Workflows define how tasks combine to
-achieve an objective. Guides form the learner-facing expression.
-Governance ensures integrity. Assessment is a future layer and is out of
-scope for MVP.
+achieve an objective. Delivery assembles learner-facing outputs from
+canonical Task and Workflow data. Assets support clarity at the Task or
+Workflow level. Governance ensures integrity across the system.
+Assessment is a future layer and is out of scope for MVP.
 
 ## Extensibility
 
