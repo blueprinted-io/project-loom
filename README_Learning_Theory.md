@@ -51,19 +51,10 @@ When applied to real-world, high-stakes work, Bloom’s taxonomy is structurally
 
 Rather than a ladder, Bloom can be understood as a **two-dimensional structure**.
 
-                 Single Element        Multiple Elements        Action / Output
-──────────────────────────────────────────────────────────────────────────────
-Situated        Analyze               Evaluate                 Create
-Reality         Examine a concept     Compare and judge         Produce novel
-                or system element     competing models          output under
-                in context                                      real constraints
-
-──────────────────────────────────────────────────────────────────────────────
-Training        Remember              Understand                Apply
-Utopia          Recall a fact          Relate facts and          Execute a known
-                or definition          concepts correctly        procedure to
-                                                               produce a defined
-                                                               outcome
+| Row Context | Single Element | Multiple Elements | Action / Output |
+| --- | --- | --- | --- |
+| Situated Reality | Analyze — Examine a concept or system element in context | Evaluate — Compare and judge competing models | Create — Produce novel output under real constraints |
+| Training Utopia | Remember — Recall a fact or definition | Understand — Relate facts and concepts correctly | Apply — Execute a known procedure to produce a defined outcome |
 
 ### The Rows: Where Cognition Can Occur
 
