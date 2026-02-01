@@ -10,7 +10,7 @@ that every piece of content, whether a written guide, workflow, video,
 SCORM module, or live lab, is built on a consistent, testable, and
 scalable structure.
 
-System design details live in `Learning_Content_System_Design.md`.
+System design details live in [Learning Content System Design](Learning_Content_System_Design.md).
 
 It is written for:
 
