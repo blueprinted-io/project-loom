@@ -13,6 +13,9 @@ The answer is yes, provided the system is understood for what it is and what it 
 This is not a general theory of learning.  
 It is a justification for a **bounded, execution-focused learning system** designed to support real-world performance in technical and systems-based domains.
 
+For the system data model and schema, see `docs/Learning_Content_System_Design.md`.  
+For standards, governance, and review rules, see `docs/Learning_Content_Governance.md`.
+
 ---
 
 ## The Central Position
@@ -136,6 +139,8 @@ This reflects well-established cognitive findings:
 
 The system requires all three, without claiming this produces mastery.
 
+The precise field definitions and storage rules for Facts, Concepts, Procedure, and Dependencies are specified in `docs/Learning_Content_System_Design.md`, with usage standards in `docs/Learning_Content_Governance.md`.
+
 ---
 
 ## Why Tasks Are Atomic
@@ -163,6 +168,8 @@ They define **capability dependencies only**.
 Learning sequence, pacing, and instructional strategy vary by context and audience. Encoding them as canonical truth creates rigidity and drift.
 
 This system treats sequencing as a delivery concern, not a content truth.
+
+The canonical workflow rules and governance constraints are defined in `docs/Learning_Content_Governance.md`, with structural constraints and schema detail in `docs/Learning_Content_System_Design.md`.
 
 ---
 
