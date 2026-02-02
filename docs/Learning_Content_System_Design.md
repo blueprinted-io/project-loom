@@ -66,7 +66,7 @@ A workflow record provides:
 2.  **Tasks** – ordered task references that produce the objective.
 
 Workflow composition is restricted to confirmed Task versions. Tasks
-that are draft or unconfirmed are not eligible for inclusion.
+that are draft or submitted are not eligible for inclusion.
 
 If a task or workflow record is wrong, every derived learning format
 becomes wrong. Tasks and workflows are not internal documentation. They
@@ -187,6 +187,20 @@ Each entity must define the following data fields:
 
 - needs_review_note
 
+### Confirmation Rule
+
+Confirmation Rule
+
+A record may only transition to confirmed through the SME Review action.
+
+Confirmation requires reviewed_by and reviewed_at.
+
+Imports cannot set confirmed status. All imported records are draft or submitted, never confirmed.
+
+A record without reviewed_by and reviewed_at is not confirmed, full stop.
+
+This is consistent with the lifecycle fields you already require.
+
 Confirmed records are immutable. Edits create a new version starting in
 Submitted.
 
@@ -305,6 +319,48 @@ Task assets are stored as an array of objects:
 
 - Authors can set needs_review_flag with an optional note to request
   review or indicate suspected outdated content.
+
+### Active Review Definition
+
+#### A. Needs Review flag (record/version)
+
+Fields:
+
+- needs_review_flag: true|false
+
+- needs_review_note: string
+
+- needs_review_at (optional)
+
+- needs_review_by (optional)
+
+Meaning:
+
+This record version may be outdated relative to upstream reality.
+
+Rules:
+
+- Can be set by authors, reviewers, or automated monitors.
+
+- Does not change the status (a confirmed record can be flagged).
+
+- Must be visible in UI anywhere the record appears.
+
+#### B. Update awaiting confirmation (derived UI indicator)
+
+Meaning:
+
+There exists a newer version that is not yet confirmed.
+
+Derived UI signal: update_pending_confirmation
+
+True when:
+
+- Current version is confirmed, and
+
+- There exists a later version with status submitted (or draft if allowed) for the same record_id.
+
+This provides the warning without changing the definition of confirmation.
 
 ### Style Rules
 

@@ -795,23 +795,24 @@ Analogies must:
 
 All records are governed at the record level.
 
-- Every Task and Workflow starts in an **unconfirmed** state.
+- Every Task and Workflow starts in **draft**.
+- A record only enters **submitted** through an explicit Submit action by an author or importer.
 
 - A human reviewer must confirm a record before it can be published.
 
 - AI-assisted ingress is allowed, but AI-created records are still
-  unconfirmed until reviewed by a human.
+  draft or submitted until reviewed by a human.
 
 - Task confirmation is a trust boundary. A Task becomes eligible for
   reuse and composition only after human confirmation.
 
 - Workflow confirmation and Task confirmation are separate. A Workflow
-  may exist in draft or unconfirmed state, but it MUST be composed
+  may exist in draft or submitted state, but it MUST be composed
   exclusively of confirmed Task versions.
 
 - This rule exists to prevent unreviewed meaning from propagating.
   Workflows amplify Tasks through composition and export, so allowing
-  unconfirmed Tasks would undermine the human‑in‑the‑loop premise.
+  draft or submitted Tasks would undermine the human‑in‑the‑loop premise.
 
 - Any edit creates a new version. Only one version can be confirmed at a
   time.
@@ -824,7 +825,7 @@ All records are governed at the record level.
 
 - version
 
-- status (draft, unconfirmed, confirmed, deprecated)
+- status (draft, submitted, confirmed, deprecated)
 
 - created_at, updated_at
 
@@ -833,6 +834,62 @@ All records are governed at the record level.
 - reviewed_by, reviewed_at
 
 - change_note
+
+### Confirmation Rule
+
+Confirmation Rule
+
+A record may only transition to confirmed through the SME Review action.
+
+Confirmation requires reviewed_by and reviewed_at.
+
+Imports cannot set confirmed status. All imported records are draft or submitted, never confirmed.
+
+A record without reviewed_by and reviewed_at is not confirmed, full stop.
+
+This is consistent with the lifecycle fields you already require.
+
+### Active Review Definition
+
+#### A. Needs Review flag (record/version)
+
+Fields:
+
+- needs_review_flag: true|false
+
+- needs_review_note: string
+
+- needs_review_at (optional)
+
+- needs_review_by (optional)
+
+Meaning:
+
+This record version may be outdated relative to upstream reality.
+
+Rules:
+
+- Can be set by authors, reviewers, or automated monitors.
+
+- Does not change the status (a confirmed record can be flagged).
+
+- Must be visible in UI anywhere the record appears.
+
+#### B. Update awaiting confirmation (derived UI indicator)
+
+Meaning:
+
+There exists a newer version that is not yet confirmed.
+
+Derived UI signal: update_pending_confirmation
+
+True when:
+
+- Current version is confirmed, and
+
+- There exists a later version with status submitted (or draft if allowed) for the same record_id.
+
+This provides the warning without changing the definition of confirmation.
 
 ### Change Monitoring
 

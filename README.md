@@ -149,7 +149,7 @@ Because of that:
 - all records are versioned  
 - confirmed records are immutable  
 - human review is mandatory  
-- unconfirmed tasks cannot appear in workflows  
+- draft or submitted tasks cannot appear in workflows  
 - changes are explicit and auditable  
 
 This prevents silent meaning changes and ensures that derived materials remain trustworthy over time.
