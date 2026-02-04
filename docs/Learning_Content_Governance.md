@@ -586,6 +586,22 @@ Steps must follow strict rules:
 
 Steps describe *what the learner does*, not *why they do it*.
 
+### Step Fields (canonical)
+
+A Step is stored as an object with these fields:
+
+- **text** (required): what you are doing (intent).
+
+- **actions** (optional): how to do it (sub-steps). These are tool/environment
+  specific and may include example commands or UI sequences.
+
+- **completion** (required): how you prove the Step is complete. This is
+  usually a human-observable check (command output, exit code, UI state,
+  file content, etc.).
+
+**Important:** confirmation belongs in **completion**. Actions are not a second
+procedure and do not have their own completion criteria.
+
 ### Procedure Step Atomicity
 
 An atomic Step MUST meet all of the following:
@@ -598,9 +614,10 @@ An atomic Step MUST meet all of the following:
 - The Step MUST include an observable completion condition (what
   indicates the step is complete).
 
-- The Step MUST NOT hide tool choice; it MUST specify a concrete method
-  or an approved tool-class pattern (e.g., a text editor with elevated
-  permissions).
+- The Step MUST NOT hide tool choice.
+  - The **text** MUST specify a concrete method *or* an approved tool-class
+    pattern (e.g., “a text editor with elevated permissions”), **or**
+  - The Step MUST provide concrete method guidance in **actions**.
 
 Why this exists: atomic steps are executable, reviewable, and
 unambiguous.
@@ -713,10 +730,17 @@ document already defines hard failures):
 
 1.  **Abstract verbs warning:** Validation SHOULD flag steps containing
     abstract or bundling verbs such as edit, configure, set up, manage,
-    ensure, handle, prepare, troubleshoot. These terms are acceptable
-    only if the Step includes a concrete method (command or tool-class)
-    OR is immediately followed by decomposed Steps that specify method
-    and completion.
+    ensure, handle, prepare, troubleshoot.
+
+    These terms are acceptable only if the Step provides a concrete
+    method either:
+
+    - directly in **text** (command or tool-class), or
+
+    - in **actions** (tool-specific sub-steps), or
+
+    - by being immediately followed by decomposed Steps that specify
+      method and completion.
 
 2.  **Multi-action detector:** Validation SHOULD flag steps containing
     conjunctions that imply multiple actions (and, then, also, as well

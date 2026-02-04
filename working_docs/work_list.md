@@ -22,10 +22,10 @@ Goal: enumerate what still needs an answer, a decision, or a fix to keep the mod
 - Decision: Which field names are authoritative (Outcome vs Expected Outcome vs Post‑Condition)?
 - Response (agreed direction):
   - Task canonical fields: Title, Outcome, Facts, Concepts, Procedure, Dependencies.
-  - Procedure contains Steps[] (Steps are the only term for atomic actions).
+  - Procedure contains Steps[] (Steps are the only canonical procedure layer).
   - Workflow canonical fields: Title, Objective, Tasks.
   - Expected Outcome and Post‑Condition are removed; Outcome/Objective are the only outcome fields.
-  - Terminology: use “Steps” (not Actions) everywhere; tasks contain Steps, workflows contain Tasks.
+  - Terminology: use “Steps” as the canonical procedure unit; each Step may optionally include `actions[]` (how) beneath the Step (what) and `completion` (proof).
 
 3) Resolve “self‑contained tasks” vs shared knowledge (SOLVED)
 - Problem: Tasks are said to own Facts/Concepts, but later Facts/Objectives look shared.
@@ -111,7 +111,7 @@ Resolution plan for document cleanup (agreed)
 - Problem: Terms drift (Facts vs Fact entity; Outcome vs Expected Outcome vs Post‑Condition).
 - Needed: Canonical glossary and cross‑reference list.
 - Decisions and remaining work:
-  - Use “Steps” everywhere; remove “Actions” in schema and rules.
+  - Use “Steps” everywhere as the canonical procedure unit; “actions” is a Step subfield (optional), not a separate entity layer.
   - Facts and Concepts are arrays inside Tasks only (no Fact/Concept entities).
   - Remove Objective DB references and Objective‑Fact linkage from validation/diagrams.
   - Build a glossary section and ensure all expanded definitions match it.
@@ -124,7 +124,7 @@ Resolution plan for document cleanup (agreed)
   - Facts: Literal information required to execute a Task. Stored as an array in the Task.
   - Concepts: Minimal mental models required to execute a Task correctly. Stored as an array in the Task.
   - Procedure: The named sequence of Steps that executes a Task.
-  - Steps: Atomic, imperative actions within a Procedure. Steps are the only term for actions.
+  - Steps: Atomic, imperative units within a Procedure. Each Step has intent (`text`) and proof (`completion`), and may include optional `actions[]` (how-to substeps).
   - Dependencies: Conditions that must be true before a Task can be executed.
 
 12) Scope boundary statement (SOLVED)

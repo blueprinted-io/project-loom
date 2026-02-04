@@ -261,8 +261,10 @@ and version/status metadata).
 ### JSON Import Schema (Summary)
 
 The system accepts validated JSON for Tasks and Workflows. JSON maps
-directly to the fields in this document. Steps are included as an array
-in the JSON payload and are persisted into the Steps table.
+directly to the fields in this document.
+
+Steps are included as an array in the JSON payload and are persisted
+into the Task version as `steps_json` (MVP implementation).
 
 Minimum JSON structure:
 
@@ -271,29 +273,21 @@ Minimum JSON structure:
 
 - Workflow: title, objective, tasks[]
 
-### Steps Table (MVP)
+### Steps Storage (MVP)
 
-Steps are stored in a separate table with ordered sequence.
+In the MVP implementation, Steps are stored inline on the Task version
+record as JSON (`tasks.steps_json`).
 
-Required fields:
+Each Step is an object:
 
-- step_id (version-scoped)
+- `text` (required): what you are doing (intent)
+- `actions` (optional): how to do it (tool/environment specific sub-steps)
+- `completion` (required): how you prove the Step is complete
 
-- task_id
+Notes:
 
-- task_version
-
-- order_index
-
-- step_text
-
-Optional fields:
-
-- asset_urls[]
-
-- ui_hint (plain text, max 600 chars)
-
-- additional_info (plain text, max 600 chars)
+- There is no separate Steps table in the MVP.
+- Optional fields like UI hints or additional step metadata are deferred.
 
 ### Task Assets (MVP)
 
@@ -389,9 +383,9 @@ An atomic Step MUST meet all of the following:
 - The Step MUST include an observable completion condition (what
   indicates the step is complete).
 
-- The Step MUST NOT hide tool choice; it MUST specify a concrete method
-  or an approved tool-class pattern (e.g., a text editor with elevated
-  permissions).
+- The Step MUST NOT hide tool choice.
+  - The Step may specify a concrete method in `text`, or
+  - Provide concrete method guidance in `actions`.
 
 Why this exists: atomic steps are executable, reviewable, and
 unambiguous.
@@ -679,10 +673,17 @@ document already defines hard failures):
 
 1.  **Abstract verbs warning:** Validation SHOULD flag steps containing
     abstract or bundling verbs such as edit, configure, set up, manage,
-    ensure, handle, prepare, troubleshoot. These terms are acceptable
-    only if the Step includes a concrete method (command or tool-class)
-    OR is immediately followed by decomposed Steps that specify method
-    and completion.
+    ensure, handle, prepare, troubleshoot.
+
+    These terms are acceptable only if the Step provides a concrete
+    method either:
+
+    - directly in `text` (command or tool-class), or
+
+    - in `actions` (tool-specific sub-steps), or
+
+    - by being immediately followed by decomposed Steps that specify
+      method and completion.
 
 2.  **Multi-action detector:** Validation SHOULD flag steps containing
     conjunctions that imply multiple actions (and, then, also, as well
