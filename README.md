@@ -179,6 +179,12 @@ If you have ever said “the guide says one thing and reality says another”, t
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
+## Background
+
+- [Statement of Intent](docs/Statement_of_Intent.md)
+- [LearningOps (building learning like software)](docs/LearningOps.md)
+- [Standards context: SCORM, xAPI, cmi5](docs/Standards_SCORM_xAPI_cmi5.md)
+
 ## Quickstart (Run Locally)
 
 The runnable MVP lives in `lcs_mvp/`.
