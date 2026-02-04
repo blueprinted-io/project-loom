@@ -762,7 +762,7 @@ def main() -> None:
     if base_dir not in sys.path:
         sys.path.insert(0, base_dir)
 
-    from app.main import DB_PATH, init_db
+    from app.main import DB_DEMO_PATH as DB_PATH, init_db
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", action="store_true", help="Allow reseeding even if seed marker exists")
