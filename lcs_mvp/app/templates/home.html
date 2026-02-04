@@ -8,6 +8,7 @@
 </div>
 
 <div class="grid">
+  {% if request.state.role in ['viewer','author','reviewer'] %}
   <div class="card">
     <h2>Start here</h2>
     {% if request.state.role == 'author' %}
@@ -18,21 +19,13 @@
         <li><a href="/tasks/new">Create a new Task</a></li>
         <li><a href="/import/pdf">Import source material (PDF → draft)</a></li>
       </ul>
-    {% elif request.state.role in ['reviewer','admin'] %}
+    {% elif request.state.role == 'reviewer' %}
       <p class="muted"><b>Your objective:</b> reduce submitted backlog and confirm only what is verifiably complete.</p>
       <div class="muted" style="margin-top:10px">Suggested first actions:</div>
       <ul>
         <li><a href="/review">Open review queue</a></li>
         <li><a href="/tasks?status=submitted">Browse all submitted Tasks</a></li>
         <li><a href="/workflows?status=submitted">Browse submitted Workflows</a></li>
-      </ul>
-    {% elif request.state.role == 'audit' %}
-      <p class="muted"><b>Your objective:</b> validate traceability and detect unauthorized changes or bypass behavior.</p>
-      <div class="muted" style="margin-top:10px">Suggested first actions:</div>
-      <ul>
-        <li><a href="/audit">Open audit log</a></li>
-        <li><a href="/tasks?status=confirmed">Sample confirmed Tasks</a></li>
-        <li><a href="/workflows?status=confirmed">Sample confirmed Workflows</a></li>
       </ul>
     {% else %}
       <p class="muted">Read-only access. Browse confirmed content.</p>
@@ -43,6 +36,7 @@
       </ul>
     {% endif %}
   </div>
+  {% endif %}
 
   <div class="card">
     <h2>Tasks</h2>

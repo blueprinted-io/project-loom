@@ -41,12 +41,24 @@ a:hover{text-decoration:underline}
 
 .topbar{background:linear-gradient(180deg,var(--brand),var(--brand-2));border-bottom:1px solid rgba(255,255,255,.15)}
 
-.pulse{border-top:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04)}
+.pulse{
+  border-top:1px solid rgba(255,255,255,.18);
+  background:linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.10));
+}
 .pulse-inner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0}
 .pulse-left,.pulse-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.pulse-title{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.78)}
-.pulse-item{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.9);padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.12)}
-.pulse-item.muted{color:rgba(255,255,255,.75)}
+.pulse-title{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.88)}
+.pulse-item{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:12px;
+  color:rgba(255,255,255,.96);
+  padding:5px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.20);
+  background:rgba(255,255,255,.06);
+  box-shadow:0 1px 0 rgba(0,0,0,.25) inset;
+}
+.pulse-item.muted{color:rgba(255,255,255,.82)}
 .topbar .wrap{display:flex;align-items:center;justify-content:space-between;gap:18px}
 .brand{display:flex;flex-direction:column;gap:4px}
 .brand-link{display:flex;align-items:center;gap:12px}
