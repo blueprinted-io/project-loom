@@ -55,13 +55,16 @@
       </div>
       {% endif %}
 
+      {% if request.state.role == 'admin' %}
+      <div class="sidebar-section">
+        <div class="sidebar-title">Admin</div>
+        <a class="navlink" href="/admin/users">Users</a>
+        <a class="navlink" href="/db">Switch database</a>
+      </div>
+      {% endif %}
+
       <div class="sidebar-foot muted">
         Active DB: <b>{{ request.state.db_key }}</b>
-        {% if request.state.role == 'admin' %}
-          <div style="margin-top:8px">
-            <a class="navlink" href="/db">Switch database</a>
-          </div>
-        {% endif %}
       </div>
     </aside>
 

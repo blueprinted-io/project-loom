@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Users</h1>
+<p class="muted">Local demo auth. Admin-only. Passwords are shown for convenience in this MVP.</p>
+
+{% if error %}
+  <div class="card" style="border-left:4px solid #b91c1c">
+    <b>Error</b>
+    <div class="muted">{{ error }}</div>
+  </div>
+{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Create user</h2>
+  <form method="post" action="/admin/users/create" class="grid" style="grid-template-columns: 1fr 180px 1fr 140px; gap: 12px; align-items:end">
+    <div>
+      <label>Username</label>
+      <input name="username" placeholder="bking" required />
+    </div>
+    <div>
+      <label>Role</label>
+      <select name="role" required>
+        {% for r in ['viewer','author','reviewer','audit','admin'] %}
+          <option value="{{ r }}">{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Password (demo)</label>
+      <input name="password" placeholder="password5" required />
+    </div>
+    <div>
+      <button class="btn" type="submit">Create</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Current users</h2>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>username</th>
+        <th>role</th>
+        <th>password</th>
+        <th>status</th>
+        <th style="width: 320px">actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td><code>{{ u.username }}</code></td>
+        <td><span class="badge">{{ u.role }}</span></td>
+        <td><code>{{ u.demo_password }}</code></td>
+        <td>
+          {% if u.disabled_at %}
+            <span class="badge" style="background:#3f3f46">disabled</span>
+          {% else %}
+            <span class="badge" style="background:#14532d">active</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/admin/users/reset" style="display:inline">
+            <input type="hidden" name="username" value="{{ u.username }}" />
+            <input type="hidden" name="password" value="{{ u.demo_password }}" />
+            <button class="btn secondary" type="submit">Reset pw</button>
+          </form>
+
+          {% if not u.disabled_at %}
+          <form method="post" action="/admin/users/disable" style="display:inline">
+            <input type="hidden" name="username" value="{{ u.username }}" />
+            <button class="btn secondary" type="submit">Disable</button>
+          </form>
+          {% else %}
+          <form method="post" action="/admin/users/enable" style="display:inline">
+            <input type="hidden" name="username" value="{{ u.username }}" />
+            <button class="btn secondary" type="submit">Enable</button>
+          </form>
+          {% endif %}
+
+          {% if request.state.user != u.username %}
+          <form method="post" action="/admin/users/delete" style="display:inline" onsubmit="return confirm('Delete user {{ u.username }}?')">
+            <input type="hidden" name="username" value="{{ u.username }}" />
+            <button class="btn secondary" type="submit">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="muted" style="margin-top:12px">Notes: deleting a user revokes their sessions. You cannot delete the currently logged-in user.</p>
+</div>
+
+{% endblock %}

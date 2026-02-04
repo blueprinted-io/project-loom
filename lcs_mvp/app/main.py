@@ -169,6 +169,11 @@ def require(role: Role, action: str) -> None:
         raise HTTPException(status_code=403, detail=f"Forbidden: requires permission {action}")
 
 
+def require_admin(request: Request) -> None:
+    if request.state.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: admin only")
+
+
 def _hash_password(password: str, salt_hex: str) -> str:
     import hashlib
 
@@ -828,6 +833,130 @@ def db_switch(request: Request, db_key: str = Form(DB_KEY_DEMO)):
     resp = RedirectResponse(url="/", status_code=303)
     resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
     return resp
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def admin_users(request: Request, error: str | None = None):
+    require_admin(request)
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT username, role, COALESCE(demo_password, '') AS demo_password, disabled_at FROM users ORDER BY disabled_at IS NOT NULL, role DESC, username ASC"
+        ).fetchall()
+    return templates.TemplateResponse(request, "admin/users.html", {"users": [dict(r) for r in rows], "error": error})
+
+
+@app.post("/admin/users/create")
+def admin_users_create(request: Request, username: str = Form(""), role: str = Form("viewer"), password: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    password = password or ""
+    if not username:
+        raise HTTPException(status_code=400, detail="username is required")
+    if role not in ROLE_ORDER:
+        raise HTTPException(status_code=400, detail="invalid role")
+    if not password:
+        raise HTTPException(status_code=400, detail="password is required")
+
+    import secrets
+
+    salt = secrets.token_bytes(16).hex()
+    with db() as conn:
+        try:
+            conn.execute(
+                """
+                INSERT INTO users(username, role, password_salt_hex, password_hash_hex, demo_password, created_at, created_by)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (username, role, salt, _hash_password(password, salt), password, utc_now_iso(), request.state.user),
+            )
+            audit("user", username, 1, "create", request.state.user, note=f"role={role}")
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="username already exists")
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.post("/admin/users/reset")
+def admin_users_reset(request: Request, username: str = Form(""), password: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    password = password or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username and password required")
+
+    import secrets
+
+    salt = secrets.token_bytes(16).hex()
+    with db() as conn:
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user not found")
+        conn.execute(
+            "UPDATE users SET password_salt_hex=?, password_hash_hex=?, demo_password=? WHERE username=?",
+            (salt, _hash_password(password, salt), password, username),
+        )
+        # Revoke sessions
+        conn.execute("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", (utc_now_iso(), int(row["id"])))
+        audit("user", username, 1, "reset_password", request.state.user)
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.post("/admin/users/disable")
+def admin_users_disable(request: Request, username: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+
+    with db() as conn:
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user not found")
+        conn.execute("UPDATE users SET disabled_at=? WHERE username=?", (utc_now_iso(), username))
+        conn.execute("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", (utc_now_iso(), int(row["id"])))
+        audit("user", username, 1, "disable", request.state.user)
+
+    # If you disabled yourself, you'll be bounced to /login on next request.
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.post("/admin/users/enable")
+def admin_users_enable(request: Request, username: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+
+    with db() as conn:
+        row = conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user not found")
+        conn.execute("UPDATE users SET disabled_at=NULL WHERE username=?", (username,))
+        audit("user", username, 1, "enable", request.state.user)
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.post("/admin/users/delete")
+def admin_users_delete(request: Request, username: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+    if username == request.state.user:
+        raise HTTPException(status_code=400, detail="cannot delete the current user")
+
+    with db() as conn:
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user not found")
+        uid = int(row["id"])
+        conn.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM users WHERE id=?", (uid,))
+        audit("user", username, 1, "delete", request.state.user)
+
+    return RedirectResponse(url="/admin/users", status_code=303)
 
 
 @app.get("/audit", response_class=HTMLResponse)
