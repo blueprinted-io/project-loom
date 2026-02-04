@@ -44,6 +44,7 @@
       </div>
       {% endif %}
 
+      {% if can(request.state.role, 'import:pdf') or can(request.state.role, 'import:json') %}
       <div class="sidebar-section">
         <div class="sidebar-title">Ingestion</div>
         {% if can(request.state.role, 'import:pdf') %}
@@ -53,6 +54,7 @@
           <a class="navlink" href="/import/json">Import JSON</a>
         {% endif %}
       </div>
+      {% endif %}
 
       <div class="sidebar-foot muted">
         Active DB: <b>{{ request.state.db_key }}</b>
