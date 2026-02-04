@@ -175,6 +175,10 @@ If you have ever said “the guide says one thing and reality says another”, t
 
 ---
 
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
 ## Quickstart (Run Locally)
 
 The runnable MVP lives in `lcs_mvp/`.
