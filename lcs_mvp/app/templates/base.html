@@ -37,10 +37,12 @@
         <a class="navlink" href="/workflows">Workflows</a>
       </div>
 
+      {% if can(request.state.role, 'audit:view') %}
       <div class="sidebar-section">
         <div class="sidebar-title">Assurance</div>
         <a class="navlink" href="/audit">Audit Log</a>
       </div>
+      {% endif %}
 
       <div class="sidebar-section">
         <div class="sidebar-title">Ingestion</div>
