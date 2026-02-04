@@ -75,28 +75,53 @@ def derive_actions(step_text: str) -> list[str]:
             path = pm.group(1)
             actions.append(f"sudo nano {path}  # or your editor of choice")
 
-    # 3) Lightweight verb-driven defaults
+    # 3) Debian-biased verb-driven defaults
     if re.search(r"\b(restart|reload)\b", low) and not any("systemctl" in a for a in actions):
-        actions.append("sudo systemctl restart <service>  # replace <service> with the unit name")
+        actions.append("sudo systemctl restart <service>")
+        actions.append("sudo systemctl status <service> --no-pager")
 
     if re.search(r"\b(enable)\b", low) and not any("systemctl" in a for a in actions):
-        actions.append("sudo systemctl enable --now <service>  # replace <service> with the unit name")
+        actions.append("sudo systemctl enable --now <service>")
+        actions.append("systemctl is-enabled <service> && systemctl is-active <service>")
 
-    if re.search(r"\b(install)\b", low) and not any("apt" in a for a in actions):
+    if re.search(r"\b(disable)\b", low) and not any("systemctl" in a for a in actions):
+        actions.append("sudo systemctl disable --now <service>")
+        actions.append("systemctl is-enabled <service> || true")
+
+    if re.search(r"\b(install)\b", low) and not any("apt-get" in a for a in actions):
         actions.append("sudo apt-get update")
-        actions.append("sudo apt-get install -y <package>  # replace <package> with the package name")
+        actions.append("sudo apt-get install -y <package>")
+        actions.append("dpkg -l | grep -i <package> || true")
 
-    if re.search(r"\b(create|add)\b", low) and re.search(r"\b(user|account)\b", low) and not any("useradd" in a for a in actions):
-        actions.append("sudo adduser <username>  # replace <username> with the approved name")
+    if re.search(r"\b(update|upgrade)\b", low) and not any("apt-get" in a for a in actions):
+        actions.append("sudo apt-get update")
+        actions.append("sudo apt-get upgrade -y")
+
+    if re.search(r"\b(create|add)\b", low) and re.search(r"\b(user|account)\b", low) and not any("adduser" in a for a in actions):
+        actions.append("sudo adduser <username>")
+        actions.append("id <username> || getent passwd <username>")
+
+    if re.search(r"\b(group)\b", low) and re.search(r"\b(add|grant)\b", low) and not any("usermod" in a for a in actions):
+        actions.append("sudo usermod -aG <group> <username>")
+        actions.append("id <username>")
+
+    if re.search(r"\b(log|journal)\b", low) and not any("journalctl" in a for a in actions):
+        actions.append("sudo journalctl -u <service> -n 200 --no-pager")
+
+    if re.search(r"\b(mount|fstab)\b", low):
+        actions.append("sudo cp -a /etc/fstab /etc/fstab.bak")
+        actions.append("sudo nano /etc/fstab")
+        actions.append("sudo mount -a")
+        actions.append("findmnt --verify || true")
 
     if re.search(r"\b(record|document)\b", low):
-        actions.append("Update the ticket/runbook entry with the required fields")
-        actions.append("Attach evidence (log excerpt/screenshot/output) as applicable")
+        actions.append("Record the exact commands run and outputs captured")
+        actions.append("Attach relevant evidence (log excerpt / command output)")
 
-    # 4) If still empty, provide generic-but-operational actions
+    # 4) If still empty, provide Debian-operational actions
     if not actions:
-        actions.append("Complete this step using the approved method/tooling for your environment")
-        actions.append("If you used CLI commands, record the exact commands and outputs in the change record")
+        actions.append("Use Debian CLI defaults to perform the change")
+        actions.append("Capture the exact commands and outputs as evidence")
 
     # De-dupe preserving order
     out: list[str] = []
@@ -132,8 +157,21 @@ def normalize_steps(raw: Any) -> list[dict[str, Any]]:
             elif isinstance(actions_raw, str):
                 actions = [ln.strip() for ln in actions_raw.splitlines() if ln.strip()]
 
+            # Rewrite actions if empty or generic placeholders.
             if not actions:
                 actions = derive_actions(text)
+            else:
+                joined = "\n".join(actions).lower()
+                if any(
+                    p in joined
+                    for p in (
+                        "approved method",
+                        "approved tooling",
+                        "capture the exact commands",
+                        "use debian cli defaults",
+                    )
+                ):
+                    actions = derive_actions(text)
 
             out.append({"text": text, "completion": completion, "actions": actions})
 
@@ -166,10 +204,23 @@ def backfill(db_path: str) -> tuple[int, int]:
                     if it.get("actions") is None:
                         needs = True
                         break
-                    if isinstance(it.get("actions"), list) and len(it.get("actions")) == 0:
-                        # aggressively populate empty actions too
-                        needs = True
-                        break
+                    if isinstance(it.get("actions"), list):
+                        if len(it.get("actions")) == 0:
+                            needs = True
+                            break
+                        # If actions are placeholder/generic, rewrite with Debian-biased defaults.
+                        joined = "\n".join([str(x) for x in it.get("actions") if x is not None]).lower()
+                        if any(
+                            p in joined
+                            for p in (
+                                "approved method",
+                                "approved tooling",
+                                "capture the exact commands",
+                                "use debian cli defaults",
+                            )
+                        ):
+                            needs = True
+                            break
         else:
             # non-list values will be normalized; keep conservative and do nothing
             continue

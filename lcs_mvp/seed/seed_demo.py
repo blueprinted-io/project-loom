@@ -62,22 +62,33 @@ def main() -> None:
             actions.append(f"sudo nano {path}  # or your editor of choice")
 
         if re.search(r"\b(restart|reload)\b", low) and not any("systemctl" in a for a in actions):
-            actions.append("sudo systemctl restart <service>  # replace <service> with the unit name")
+            actions.append("sudo systemctl restart <service>")
+            actions.append("sudo systemctl status <service> --no-pager")
 
         if re.search(r"\b(enable)\b", low) and not any("systemctl" in a for a in actions):
-            actions.append("sudo systemctl enable --now <service>  # replace <service> with the unit name")
+            actions.append("sudo systemctl enable --now <service>")
+            actions.append("systemctl is-enabled <service> && systemctl is-active <service>")
+
+        if re.search(r"\b(disable)\b", low) and not any("systemctl" in a for a in actions):
+            actions.append("sudo systemctl disable --now <service>")
+            actions.append("systemctl is-enabled <service> || true")
 
         if re.search(r"\b(install)\b", low) and not any("apt-get" in a for a in actions):
             actions.append("sudo apt-get update")
-            actions.append("sudo apt-get install -y <package>  # replace <package> with the package name")
+            actions.append("sudo apt-get install -y <package>")
+            actions.append("dpkg -l | grep -i <package> || true")
+
+        if re.search(r"\b(update|upgrade)\b", low) and not any("apt-get" in a for a in actions):
+            actions.append("sudo apt-get update")
+            actions.append("sudo apt-get upgrade -y")
 
         if re.search(r"\b(record|document)\b", low):
-            actions.append("Update the ticket/runbook entry with the required fields")
-            actions.append("Attach evidence (log excerpt/screenshot/output) as applicable")
+            actions.append("Record the exact commands run and outputs captured")
+            actions.append("Attach relevant evidence (log excerpt / command output)")
 
         if not actions:
-            actions.append("Complete this step using the approved method/tooling for your environment")
-            actions.append("If you used CLI commands, record the exact commands and outputs in the change record")
+            actions.append("Use Debian CLI defaults to perform the change")
+            actions.append("Capture the exact commands and outputs as evidence")
 
         out: list[str] = []
         seen: set[str] = set()
