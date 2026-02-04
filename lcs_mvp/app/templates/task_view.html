@@ -9,9 +9,6 @@
     <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
 
     {% if can(request.state.role, 'task:revise') %}
-      <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/new-version">
-        <button class="btn" type="submit">New version</button>
-      </form>
       <a class="btn" href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Revise</a>
     {% endif %}
   </div>
