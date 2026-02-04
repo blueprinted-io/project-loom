@@ -2,8 +2,8 @@
 {% block content %}
 <div class="row">
   <div>
-    <h1>Workflow v{{ workflow.version }}</h1>
-    <div class="muted"><code>{{ workflow.record_id }}</code></div>
+    <h1>Workflow</h1>
+    <div class="muted">Version <code>{{ workflow.version }}</code></div>
   </div>
   <div class="row-right">
     <span class="badge badge-{{ workflow.status }}">{{ workflow.status }}</span>
@@ -48,13 +48,7 @@
     </div>
   {% endif %}
 
-  <p class="muted">created_by={{ workflow.created_by }} · created_at={{ workflow.created_at }} · updated_by={{ workflow.updated_by }} · updated_at={{ workflow.updated_at }}</p>
-  {% if workflow.reviewed_by %}
-    <p class="muted">reviewed_by={{ workflow.reviewed_by }} · reviewed_at={{ workflow.reviewed_at }}</p>
-  {% endif %}
-  {% if workflow.change_note %}
-    <p class="muted">change_note={{ workflow.change_note }}</p>
-  {% endif %}
+  <!-- record metadata shown in admin-only section below -->
 
   <h3>Tasks</h3>
   <ol>
@@ -68,6 +62,23 @@
       </li>
     {% endfor %}
   </ol>
+
+  {% if request.state.role == 'admin' %}
+    <details class="card" style="margin-top:14px">
+      <summary><b>Record metadata</b> <span class="muted">(admin only)</span></summary>
+      <div style="margin-top:10px">
+        <p class="muted">record_id=<code>{{ workflow.record_id }}</code> · version=<code>{{ workflow.version }}</code></p>
+        <p class="muted">created_by={{ workflow.created_by }} · created_at={{ workflow.created_at }}</p>
+        <p class="muted">updated_by={{ workflow.updated_by }} · updated_at={{ workflow.updated_at }}</p>
+        {% if workflow.reviewed_by %}
+          <p class="muted">reviewed_by={{ workflow.reviewed_by }} · reviewed_at={{ workflow.reviewed_at }}</p>
+        {% endif %}
+        {% if workflow.change_note %}
+          <p class="muted">change_note={{ workflow.change_note }}</p>
+        {% endif %}
+      </div>
+    </details>
+  {% endif %}
 </div>
 
 <div class="row">

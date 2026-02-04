@@ -2,8 +2,8 @@
 {% block content %}
 <div class="row">
   <div>
-    <h1>Task v{{ task.version }}</h1>
-    <div class="muted"><code>{{ task.record_id }}</code></div>
+    <h1>Task</h1>
+    <div class="muted">Version <code>{{ task.version }}</code></div>
   </div>
   <div class="row-right">
     <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
@@ -32,14 +32,6 @@
   <p><b>Procedure name:</b> {{ task.procedure_name }}</p>
   <p><b>Irreversible:</b> {{ 'yes' if task.irreversible_flag else 'no' }}</p>
 
-  <p class="muted">created_by={{ task.created_by }} · created_at={{ task.created_at }} · updated_by={{ task.updated_by }} · updated_at={{ task.updated_at }}</p>
-  {% if task.reviewed_by %}
-    <p class="muted">reviewed_by={{ task.reviewed_by }} · reviewed_at={{ task.reviewed_at }}</p>
-  {% endif %}
-  {% if task.change_note %}
-    <p class="muted">change_note={{ task.change_note }}</p>
-  {% endif %}
-
   <h3>Facts</h3>
   <ul>
     {% for f in task.facts %}<li>{{ f }}</li>{% endfor %}
@@ -66,6 +58,22 @@
       </li>
     {% endfor %}
   </ol>
+  {% if request.state.role == 'admin' %}
+    <details class="card" style="margin-top:14px">
+      <summary><b>Record metadata</b> <span class="muted">(admin only)</span></summary>
+      <div style="margin-top:10px">
+        <p class="muted">record_id=<code>{{ task.record_id }}</code> · version=<code>{{ task.version }}</code></p>
+        <p class="muted">created_by={{ task.created_by }} · created_at={{ task.created_at }}</p>
+        <p class="muted">updated_by={{ task.updated_by }} · updated_at={{ task.updated_at }}</p>
+        {% if task.reviewed_by %}
+          <p class="muted">reviewed_by={{ task.reviewed_by }} · reviewed_at={{ task.reviewed_at }}</p>
+        {% endif %}
+        {% if task.change_note %}
+          <p class="muted">change_note={{ task.change_note }}</p>
+        {% endif %}
+      </div>
+    </details>
+  {% endif %}
 </div>
 
 <div class="row">
