@@ -1148,6 +1148,8 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
             if confirmed_v is not None and latest_v > int(confirmed_v) and latest["status"] in ("draft", "submitted"):
                 update_pending = True
 
+            tags = _json_load(latest["tags_json"]) if "tags_json" in latest.keys() else []
+
             items.append(
                 {
                     "record_id": rid,
@@ -1156,6 +1158,7 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
                     "status": latest["status"],
                     "needs_review_flag": bool(latest["needs_review_flag"]),
                     "update_pending_confirmation": update_pending,
+                    "tags": tags,
                 }
             )
 
@@ -1648,6 +1651,8 @@ def workflow_create(
     now = utc_now_iso()
 
     refs = _parse_task_refs(task_refs)
+    tags_list = parse_tags(tags)
+    meta_obj = parse_meta(meta)
 
     with db() as conn:
         enforce_workflow_ref_rules(conn, refs)
@@ -1657,10 +1662,11 @@ def workflow_create(
             INSERT INTO workflows(
               record_id, version, status,
               title, objective,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1668,6 +1674,8 @@ def workflow_create(
                 "draft",
                 title.strip(),
                 objective.strip(),
+                _json_dump(tags_list),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
@@ -1765,6 +1773,8 @@ def workflow_revise(
     version: int,
     title: str = Form(...),
     objective: str = Form(...),
+    tags: str = Form(""),
+    meta: str = Form(""),
     task_refs: str = Form(""),
     change_note: str = Form(""),
 ):
@@ -1776,6 +1786,8 @@ def workflow_revise(
         raise HTTPException(status_code=400, detail="change_note is required when creating a new version")
 
     refs = _parse_task_refs(task_refs)
+    tags_list = parse_tags(tags)
+    meta_obj = parse_meta(meta)
 
     with db() as conn:
         src = conn.execute(
@@ -1795,10 +1807,11 @@ def workflow_revise(
             INSERT INTO workflows(
               record_id, version, status,
               title, objective,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1806,6 +1819,8 @@ def workflow_revise(
                 "draft",
                 title.strip(),
                 objective.strip(),
+                _json_dump(tags_list),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
