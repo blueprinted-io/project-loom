@@ -1042,6 +1042,15 @@ def home(request: Request):
     return templates.TemplateResponse(request, "home.html", {})
 
 
+@app.get("/explainer", response_class=HTMLResponse)
+def explainer(request: Request):
+    """Plain-language explainer page.
+
+    Auth required via middleware.
+    """
+    return templates.TemplateResponse(request, "explainer.html", {})
+
+
 # --- DB switching (MVP) ---
 
 @app.get("/_pulse")

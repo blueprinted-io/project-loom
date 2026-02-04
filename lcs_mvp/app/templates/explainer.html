@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>What is this system</h1>
+<p class="muted">A plain-language explainer.</p>
+
+<div class="card">
+  <h2>In one sentence</h2>
+  <p>
+    This is a governed library of small, verifiable procedures (Tasks) that can be reused and combined into bigger goals (Workflows).
+  </p>
+
+  <h2>Why it exists</h2>
+  <ul>
+    <li><b>Consistency:</b> everyone follows the same approved procedure.</li>
+    <li><b>Safety:</b> changes are reviewed before they are treated as “correct”.</li>
+    <li><b>Reusability:</b> we write a good Task once and reuse it everywhere.</li>
+    <li><b>Traceability:</b> every version and decision is recorded.</li>
+  </ul>
+
+  <h2>The two record types</h2>
+
+  <h3>Task</h3>
+  <p class="muted">A Task is the smallest unit of work that changes the world in one observable way.</p>
+  <ul>
+    <li><b>Outcome:</b> the result you can verify.</li>
+    <li><b>Facts:</b> literal info you need before starting.</li>
+    <li><b>Concepts:</b> the mental model (why this works).</li>
+    <li><b>Procedure:</b> a list of Steps.</li>
+    <li><b>Dependencies:</b> what must already be true.</li>
+  </ul>
+
+  <h3>Workflow</h3>
+  <p class="muted">A Workflow is an ordered list of Tasks that achieves one objective.</p>
+  <ul>
+    <li>Workflows contain <b>Tasks</b>, not low-level steps.</li>
+    <li>The Workflow objective is the “why are we doing this?” for the group of Tasks.</li>
+  </ul>
+
+  <h2>What is a Step</h2>
+  <p>A Step is one unit of procedure inside a Task.</p>
+  <ul>
+    <li><b>Step text (required):</b> what you are doing.</li>
+    <li><b>Actions (optional):</b> how to do it (tool-specific sub-steps).</li>
+    <li><b>Completion (required):</b> how you prove the step is done.</li>
+  </ul>
+  <p class="muted">Important: confirmation lives in <b>Completion</b>. Actions do not have their own completion rules.</p>
+
+  <h2>Status, in plain language</h2>
+  <ul>
+    <li><b>Draft:</b> being written. Not trusted yet.</li>
+    <li><b>Submitted:</b> waiting for review.</li>
+    <li><b>Confirmed:</b> reviewed and approved. Safe to reuse and export.</li>
+    <li><b>Deprecated:</b> old confirmed version that has been replaced.</li>
+  </ul>
+
+  <h2>Roles</h2>
+  <ul>
+    <li><b>Viewer:</b> can browse content (read-only).</li>
+    <li><b>Author:</b> creates drafts and submits them for review (within entitled domains).</li>
+    <li><b>Reviewer:</b> reviews submissions and confirms only what is verifiably correct (within entitled domains).</li>
+    <li><b>Audit:</b> read-only access including the audit log.</li>
+    <li><b>Admin:</b> break-glass role. Can do admin operations and force submit/confirm (these actions are logged).</li>
+  </ul>
+
+  <h2>What this system is not</h2>
+  <ul>
+    <li>It is not a chat bot.</li>
+    <li>It is not a troubleshooting guide. (Troubleshooting is out of scope for canonical procedure.)</li>
+    <li>It is not a free-form wiki. Confirmed content is controlled and versioned.</li>
+  </ul>
+</div>
+
+{% endblock %}
