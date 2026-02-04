@@ -12,7 +12,7 @@ from typing import Any, Literal
 import httpx
 from pypdf import PdfReader
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1233,12 +1233,20 @@ def workflow_readiness(conn: sqlite3.Connection, refs: list[tuple[str, int]]) ->
 
 
 def enforce_workflow_ref_rules(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> None:
-    """Hard constraints for workflow composition."""
+    """Hard constraints for workflow composition.
+
+    Canonical rule (per docs): Workflows may reference ONLY confirmed Task versions.
+    """
     derived = workflow_readiness(conn, refs)
     if derived == "invalid":
         raise HTTPException(
             status_code=409,
             detail="Workflow contains invalid Task references (missing or deprecated task versions)",
+        )
+    if derived == "awaiting_task_confirmation":
+        raise HTTPException(
+            status_code=409,
+            detail="Workflow may reference confirmed Task versions only. Confirm referenced Tasks, then try again.",
         )
 
 
