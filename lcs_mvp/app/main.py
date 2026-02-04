@@ -1785,12 +1785,18 @@ def import_json_run(
 
 
 @app.get("/tasks", response_class=HTMLResponse)
-def tasks_list(request: Request, status: str | None = None, q: str | None = None):
+def tasks_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, tag: str | None = None):
     q_norm = (q or "").strip().lower()
+    domain_norm = (domain or "").strip().lower() or None
+    tag_norm = (tag or "").strip().lower() or None
 
     with db() as conn:
         sql = "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id ORDER BY record_id"
         rows = conn.execute(sql).fetchall()
+
+        # Option lists (for dropdown filters)
+        domains = _active_domains(conn)
+        all_tags: set[str] = set()
 
         items = []
         for r in rows:
@@ -1815,8 +1821,18 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
             if confirmed_v is not None and latest_v > int(confirmed_v) and latest["status"] in ("draft", "submitted"):
                 update_pending = True
 
-            tags = _json_load(latest["tags_json"]) if "tags_json" in latest.keys() else []
-            domain = (latest["domain"] if "domain" in latest.keys() else "")
+            tags = [str(x).strip().lower() for x in (_json_load(latest["tags_json"]) if "tags_json" in latest.keys() else [])]
+            domain_val = (latest["domain"] if "domain" in latest.keys() else "")
+
+            for t in tags:
+                if t:
+                    all_tags.add(t)
+
+            # Apply filters
+            if domain_norm and (domain_val or "").strip().lower() != domain_norm:
+                continue
+            if tag_norm and tag_norm not in set(tags):
+                continue
 
             items.append(
                 {
@@ -1827,14 +1843,22 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
                     "needs_review_flag": bool(latest["needs_review_flag"]),
                     "update_pending_confirmation": update_pending,
                     "tags": tags,
-                    "domain": domain,
+                    "domain": domain_val,
                 }
             )
 
     return templates.TemplateResponse(
         request,
         "tasks_list.html",
-        {"items": items, "status": status, "q": q},
+        {
+            "items": items,
+            "status": status,
+            "q": q,
+            "domain": domain_norm or "",
+            "tag": tag_norm or "",
+            "domains": domains,
+            "tags": sorted(all_tags),
+        },
     )
 
 
@@ -2268,12 +2292,17 @@ def task_force_confirm(request: Request, record_id: str, version: int):
 
 
 @app.get("/workflows", response_class=HTMLResponse)
-def workflows_list(request: Request, status: str | None = None, q: str | None = None):
+def workflows_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, tag: str | None = None):
     q_norm = (q or "").strip().lower()
+    domain_norm = (domain or "").strip().lower() or None
+    tag_norm = (tag or "").strip().lower() or None
 
     with db() as conn:
         sql = "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id ORDER BY record_id"
         rows = conn.execute(sql).fetchall()
+
+        domains = _active_domains(conn)
+        all_tags: set[str] = set()
 
         items = []
         for r in rows:
@@ -2298,6 +2327,17 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
             readiness = workflow_readiness(conn, pairs)
             doms = _workflow_domains(conn, pairs)
 
+            tags = [str(x).strip().lower() for x in (_json_load(latest["tags_json"]) if "tags_json" in latest.keys() else [])]
+            for t in tags:
+                if t:
+                    all_tags.add(t)
+
+            # Apply filters
+            if domain_norm and domain_norm not in set([d.lower() for d in doms]):
+                continue
+            if tag_norm and tag_norm not in set(tags):
+                continue
+
             # Store domains_json opportunistically (keeps DB queryable and consistent)
             if "domains_json" in latest.keys():
                 conn.execute(
@@ -2313,13 +2353,14 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
                     "status": latest["status"],
                     "readiness": readiness,
                     "domains": doms,
+                    "tags": tags,
                 }
             )
 
     return templates.TemplateResponse(
         request,
         "workflows_list.html",
-        {"items": items, "status": status, "q": q},
+        {"items": items, "status": status, "q": q, "domain": domain_norm or "", "tag": tag_norm or "", "domains": domains, "tags": sorted(all_tags)},
     )
 
 

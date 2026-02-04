@@ -19,8 +19,23 @@
 
   <form method="get" action="/tasks" class="search">
     {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
+
+    <select name="domain">
+      <option value="">All domains</option>
+      {% for d in domains or [] %}
+        <option value="{{ d }}" {% if domain == d %}selected{% endif %}>{{ d }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="tag">
+      <option value="">All tags</option>
+      {% for t in tags or [] %}
+        <option value="{{ t }}" {% if tag == t %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+
     <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
-    <button class="btn" type="submit">Search</button>
+    <button class="btn" type="submit">Apply</button>
   </form>
 </div>
 
