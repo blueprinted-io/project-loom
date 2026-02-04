@@ -17,6 +17,9 @@
         {% if can(request.state.role, 'import:pdf') %}
           <a href="/import/pdf">Import PDF</a>
         {% endif %}
+        {% if can(request.state.role, 'import:json') %}
+          <a href="/import/json">Import JSON</a>
+        {% endif %}
         <span class="muted" style="margin-left:14px">user: <b>{{ request.state.user }}</b> · role: <b>{{ request.state.role }}</b></span>
         <a href="/login" style="margin-left:14px">switch</a>
         <form method="post" action="/logout" style="display:inline">

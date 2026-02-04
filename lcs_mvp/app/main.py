@@ -42,16 +42,16 @@ async def _http_exception_handler(request: Request, exc: HTTPException):
     in a normal browser POST flow.
     """
     accept = (request.headers.get("accept") or "").lower()
-    if "text/html" in accept and str(request.url.path).startswith("/import/pdf"):
+    if "text/html" in accept and (str(request.url.path).startswith("/import/pdf") or str(request.url.path).startswith("/import/json")):
         # Render the import form again, but include the error detail.
+        template = "import_json.html" if str(request.url.path).startswith("/import/json") else "import_pdf.html"
+        ctx = {"error": str(exc.detail)}
+        if template == "import_pdf.html":
+            ctx.update({"lmstudio_base_url": LMSTUDIO_BASE_URL, "lmstudio_model": LMSTUDIO_MODEL})
         return templates.TemplateResponse(
             request,
-            "import_pdf.html",
-            {
-                "lmstudio_base_url": LMSTUDIO_BASE_URL,
-                "lmstudio_model": LMSTUDIO_MODEL,
-                "error": str(exc.detail),
-            },
+            template,
+            ctx,
             status_code=exc.status_code,
         )
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
@@ -66,15 +66,15 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
     traceback.print_exc()
 
     accept = (request.headers.get("accept") or "").lower()
-    if "text/html" in accept and str(request.url.path).startswith("/import/pdf"):
+    if "text/html" in accept and (str(request.url.path).startswith("/import/pdf") or str(request.url.path).startswith("/import/json")):
+        template = "import_json.html" if str(request.url.path).startswith("/import/json") else "import_pdf.html"
+        ctx = {"error": f"Unhandled error: {type(exc).__name__}: {exc}"}
+        if template == "import_pdf.html":
+            ctx.update({"lmstudio_base_url": LMSTUDIO_BASE_URL, "lmstudio_model": LMSTUDIO_MODEL})
         return templates.TemplateResponse(
             request,
-            "import_pdf.html",
-            {
-                "lmstudio_base_url": LMSTUDIO_BASE_URL,
-                "lmstudio_model": LMSTUDIO_MODEL,
-                "error": f"Unhandled error: {type(exc).__name__}: {exc}",
-            },
+            template,
+            ctx,
             status_code=500,
         )
 
@@ -1210,10 +1210,11 @@ def task_create(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1228,6 +1229,8 @@ def task_create(
                 _json_dump(deps_list),
                 1 if irreversible_flag else 0,
                 _json_dump([]),
+                _json_dump(tags_list),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
@@ -1305,6 +1308,8 @@ def task_save(
     title: str = Form(...),
     outcome: str = Form(...),
     procedure_name: str = Form(...),
+    tags: str = Form(""),
+    meta: str = Form(""),
     facts: str = Form(""),
     concepts: str = Form(""),
     dependencies: str = Form(""),
@@ -1323,6 +1328,8 @@ def task_save(
     facts_list = parse_lines(facts)
     concepts_list = parse_lines(concepts)
     deps_list = parse_lines(dependencies)
+    tags_list = parse_tags(tags)
+    meta_obj = parse_meta(meta)
     steps_list = _zip_steps(step_text, step_completion)
     _validate_steps_required(steps_list)
 
@@ -1348,10 +1355,11 @@ def task_save(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1366,6 +1374,8 @@ def task_save(
                 _json_dump(deps_list),
                 1 if irreversible_flag else 0,
                 src["task_assets_json"],
+                _json_dump(tags_list),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
@@ -1402,10 +1412,11 @@ def task_new_version(request: Request, record_id: str, version: int):
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1420,6 +1431,8 @@ def task_new_version(request: Request, record_id: str, version: int):
                 src["dependencies_json"],
                 src["irreversible_flag"],
                 src["task_assets_json"],
+                (src["tags_json"] if "tags_json" in src.keys() else "[]"),
+                (src["meta_json"] if "meta_json" in src.keys() else "{}"),
                 now,
                 now,
                 actor,
@@ -1624,6 +1637,8 @@ def workflow_create(
     request: Request,
     title: str = Form(...),
     objective: str = Form(...),
+    tags: str = Form(""),
+    meta: str = Form(""),
     task_refs: str = Form(""),
 ):
     require(request.state.role, "workflow:create")
@@ -1877,6 +1892,110 @@ def workflow_confirm(request: Request, record_id: str, version: int):
 
     audit("workflow", record_id, version, "confirm", actor)
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
+def _task_export_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    r = dict(row)
+    return {
+        "type": "task",
+        "record_id": r["record_id"],
+        "version": int(r["version"]),
+        "status": r["status"],
+        "title": r["title"],
+        "outcome": r["outcome"],
+        "facts": _json_load(r["facts_json"]) or [],
+        "concepts": _json_load(r["concepts_json"]) or [],
+        "procedure_name": r["procedure_name"],
+        "steps": _normalize_steps(_json_load(r["steps_json"]) or []),
+        "dependencies": _json_load(r["dependencies_json"]) or [],
+        "irreversible_flag": bool(r["irreversible_flag"]),
+        "task_assets": _json_load(r["task_assets_json"]) or [],
+        "needs_review_flag": bool(r["needs_review_flag"]),
+        "needs_review_note": r["needs_review_note"],
+        "meta": {
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+            "created_by": r["created_by"],
+            "updated_by": r["updated_by"],
+            "reviewed_at": r["reviewed_at"],
+            "reviewed_by": r["reviewed_by"],
+            "change_note": r["change_note"],
+        },
+    }
+
+
+def _workflow_export_dict(wf_row: sqlite3.Row, refs_rows: list[sqlite3.Row]) -> dict[str, Any]:
+    wf = dict(wf_row)
+    return {
+        "type": "workflow",
+        "record_id": wf["record_id"],
+        "version": int(wf["version"]),
+        "status": wf["status"],
+        "title": wf["title"],
+        "objective": wf["objective"],
+        "task_refs": [
+            {
+                "order_index": int(r["order_index"]),
+                "record_id": r["task_record_id"],
+                "version": int(r["task_version"]),
+            }
+            for r in refs_rows
+        ],
+        "needs_review_flag": bool(wf["needs_review_flag"]),
+        "needs_review_note": wf["needs_review_note"],
+        "meta": {
+            "created_at": wf["created_at"],
+            "updated_at": wf["updated_at"],
+            "created_by": wf["created_by"],
+            "updated_by": wf["updated_by"],
+            "reviewed_at": wf["reviewed_at"],
+            "reviewed_by": wf["reviewed_by"],
+            "change_note": wf["change_note"],
+        },
+    }
+
+
+@app.get("/export/task/{record_id}/{version}.json")
+def export_task_json(record_id: str, version: int):
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404)
+
+    payload = _task_export_dict(row)
+    filename = f"task__{record_id}__v{version}.json"
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/export/workflow/{record_id}/{version}.json")
+def export_workflow_json(record_id: str, version: int):
+    with db() as conn:
+        wf = conn.execute(
+            "SELECT * FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not wf:
+            raise HTTPException(404)
+        refs = conn.execute(
+            """
+            SELECT order_index, task_record_id, task_version
+            FROM workflow_task_refs
+            WHERE workflow_record_id=? AND workflow_version=?
+            ORDER BY order_index
+            """,
+            (record_id, version),
+        ).fetchall()
+
+    payload = _workflow_export_dict(wf, refs)
+    filename = f"workflow__{record_id}__v{version}.json"
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @app.get("/workflows/{record_id}/{version}/export.md")
