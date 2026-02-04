@@ -121,17 +121,23 @@ LLMs are not optional because flavour matters, but **restraint is mandatory**.
 
 1) **Grounding requirement**
    - Every generated section must cite the Task/Workflow IDs/versions that justify it.
-   - The model must not output procedural instructions unless sourced from canonical Steps.
+   - The model must not output procedural instructions unless sourced from canonical Step data.
+
+   Canonical Step data includes:
+   - `step.text` (intent)
+   - `step.completion` (proof)
+   - optional `step.actions` (tool-specific how-to)
 
 2) **Procedure immutability**
-   - Steps are copied from canonical records.
+   - Step fields are copied from canonical records.
    - Allowed transformations:
      - formatting
      - adding clarifying *non-procedural* explanation
    - Disallowed transformations:
-     - adding steps
+     - adding new procedural steps
      - merging steps into compound steps
      - replacing commands with new commands
+     - inventing actions that are not present in canonical `step.actions` or an approved environment profile
 
 3) **Unknowns must surface as gaps**
    - If a creator’s constraints require a missing prerequisite, the system must output:
