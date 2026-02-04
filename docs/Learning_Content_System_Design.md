@@ -65,8 +65,9 @@ A workflow record provides:
 
 2.  **Tasks** – ordered task references that produce the objective.
 
-Workflow composition is restricted to confirmed Task versions. Tasks
-that are draft or submitted are not eligible for inclusion.
+Workflow composition (for authoring) may reference Task versions in draft, submitted, or confirmed state.
+
+**Confirmation constraint:** a Workflow may transition to **confirmed** only if every referenced Task version is **confirmed**. Draft/submitted Workflows may include draft/submitted Tasks to support iterative authoring.
 
 If a task or workflow record is wrong, every derived learning format
 becomes wrong. Tasks and workflows are not internal documentation. They

@@ -419,8 +419,9 @@ in the system, not a topic, not a lesson, and not a collection of
 loosely related steps.
 Workflows contain tasks only; they do not contain other workflows.
 
-A workflow may reference only **confirmed** Task versions. Unconfirmed
-or draft Tasks are not eligible for workflow composition.
+**Authoring rule:** a Workflow in **draft** or **submitted** state may reference Task versions in **draft**, **submitted**, or **confirmed** state.
+
+**Authority rule:** a Workflow may transition to **confirmed** only if every referenced Task version is **confirmed**.
 
 ### Single-Task Workflows
 
@@ -505,7 +506,7 @@ To maintain consistency and prevent design drift:
 
 3.  A workflow must not include learning-sequence requirements.
 
-4.  A workflow may reference only **confirmed** Task versions.
+4.  Draft/submitted workflows may reference unconfirmed task versions; confirmed workflows may reference only confirmed task versions.
 
 5.  A workflow must have one clearly defined objective.
 
@@ -923,8 +924,8 @@ version is published and affected records are flagged for update.
 
 - **Task** – smallest reusable unit of work that produces one Outcome.
 
-- **Workflow** – ordered composition of **confirmed** Tasks that
-  achieves one Objective.
+- **Workflow** – ordered composition of Tasks that
+  achieves one Objective. (Only confirmed workflows are authoritative; they may reference confirmed task versions only.)
 
 - **Facts** – literal information required to execute a Task. Stored as
   an array in the Task.
