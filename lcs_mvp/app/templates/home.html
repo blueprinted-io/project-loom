@@ -14,10 +14,12 @@
     <p class="muted">Ordered compositions of Tasks that roll up to one objective.</p>
     <p><a class="btn" href="/workflows">Open Workflows</a></p>
   </div>
+  {% if can(request.state.role, 'audit:view') %}
   <div class="card">
     <h2>Audit</h2>
     <p class="muted">Change traceability across records and versions.</p>
     <p><a class="btn" href="/audit">Open Audit Log</a></p>
   </div>
+  {% endif %}
 </div>
 {% endblock %}
