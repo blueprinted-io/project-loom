@@ -50,8 +50,37 @@ def j(v) -> str:
     return json.dumps(v, ensure_ascii=False)
 
 
-def step(text: str, completion: str) -> dict[str, str]:
-    return {"text": text, "completion": completion}
+def _derive_actions(step_text: str) -> list[str]:
+    """Conservatively derive optional actions from step text."""
+    import re
+
+    s = (step_text or "").strip()
+    if not s:
+        return []
+
+    actions: list[str] = []
+
+    cmds = re.findall(r"`([^`]+)`", s)
+    for c in [x.strip() for x in cmds if x.strip()][:3]:
+        actions.append(c)
+
+    m = re.search(r"\b(edit|open)\s+(/[^\s]+)", s, flags=re.IGNORECASE)
+    if m:
+        path = m.group(2)
+        actions.append(f"sudo nano {path}  # or your editor of choice")
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for a in actions:
+        if a in seen:
+            continue
+        seen.add(a)
+        out.append(a)
+    return out
+
+
+def step(text: str, completion: str, actions: list[str] | None = None) -> dict[str, object]:
+    return {"text": text, "completion": completion, "actions": actions if actions is not None else _derive_actions(text)}
 
 
 def build_tasks() -> list[dict]:

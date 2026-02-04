@@ -42,6 +42,32 @@ def main() -> None:
     # Keep these as DRAFT + needs_review_flag=1: they are structure examples,
     # not clinically/security authoritative content.
 
+    def _derive_actions(step_text: str) -> list[str]:
+        import re
+
+        s = (step_text or "").strip()
+        if not s:
+            return []
+        actions: list[str] = []
+
+        cmds = re.findall(r"`([^`]+)`", s)
+        for c in [x.strip() for x in cmds if x.strip()][:3]:
+            actions.append(c)
+
+        m = re.search(r"\b(edit|open)\s+(/[^\s]+)", s, flags=re.IGNORECASE)
+        if m:
+            path = m.group(2)
+            actions.append(f"sudo nano {path}  # or your editor of choice")
+
+        out: list[str] = []
+        seen: set[str] = set()
+        for a in actions:
+            if a in seen:
+                continue
+            seen.add(a)
+            out.append(a)
+        return out
+
     tasks = [
         # IT / Security / Compliance
         {
@@ -178,6 +204,20 @@ def main() -> None:
     inserted: list[tuple[str, int, str]] = []  # (record_id, version, title)
 
     for t in tasks:
+        # Ensure steps include optional actions
+        steps_out = []
+        for st in t.get("steps", []):
+            if isinstance(st, dict):
+                text = str(st.get("text", ""))
+                completion = str(st.get("completion", ""))
+                actions = st.get("actions")
+                if actions is None:
+                    actions = _derive_actions(text)
+                steps_out.append({"text": text, "completion": completion, "actions": actions})
+            else:
+                steps_out.append({"text": str(st), "completion": "", "actions": _derive_actions(str(st))})
+        t["steps"] = steps_out
+
         rid = str(uuid.uuid4())
         ver = 1
         conn.execute(
