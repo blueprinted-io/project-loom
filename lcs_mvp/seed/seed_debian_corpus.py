@@ -7,8 +7,8 @@ Creates (default):
   - 12 Workflows
 
 Status mix (default):
-  - Tasks: 30 draft, 20 submitted
-  - Workflows: 7 draft, 5 submitted
+  - Tasks: 35 confirmed, 10 submitted, 5 draft
+  - Workflows: 8 confirmed, 3 submitted, 1 draft
 
 Run:
   cd lcs_mvp
@@ -612,79 +612,149 @@ def build_tasks() -> list[dict]:
 
 
 def build_workflows(task_ids: list[tuple[str, int, dict]]) -> list[dict]:
-    def pick_tag(tag: str, n: int) -> list[tuple[str, int]]:
+    """Create recognizable Debian workflows (no generic names).
+
+    task_ids entries include (record_id, version, task_dict).
+    """
+
+    def pick_where(pred, n: int) -> list[tuple[str, int]]:
         out: list[tuple[str, int]] = []
         for rid, ver, t in task_ids:
-            if tag in t.get("tags", []):
+            if pred(t):
                 out.append((rid, ver))
         return out[:n]
 
-    storage = pick_tag("storage", 6)
-    apt = pick_tag("apt", 6)
-    systemd = pick_tag("systemd", 5)
-    ssh = pick_tag("ssh", 4)
-    assurance = pick_tag("assurance", 6)
+    def pick_title_contains(substr: str, n: int = 1) -> list[tuple[str, int]]:
+        s = substr.lower()
+        return pick_where(lambda t: s in (t.get("title", "").lower()), n)
 
-    workflows = [
+    def pick_tag(tag: str, n: int) -> list[tuple[str, int]]:
+        return pick_where(lambda t: tag in (t.get("tags", []) or []), n)
+
+    # Primitive pools
+    storage = pick_tag("storage", 10)
+    apt = pick_tag("apt", 20)
+    systemd = pick_tag("systemd", 20)
+    ssh = pick_tag("ssh", 20)
+    network = pick_tag("network", 20)
+    assurance = pick_tag("assurance", 20)
+    security = pick_tag("security", 20)
+
+    # Helpful exact-ish picks
+    t_apt_update = pick_title_contains("Update APT package metadata")
+    t_apt_upgrade = pick_title_contains("Upgrade installed packages")
+    t_apt_autoremove = pick_title_contains("Remove unused packages")
+    t_apt_clean = pick_title_contains("Clean APT package cache")
+
+    t_fstab_backup = pick_title_contains("Back up /etc/fstab")
+    t_add_fstab = pick_title_contains("Add a persistent filesystem mount entry")
+    t_validate_fstab = pick_title_contains("Validate fstab configuration")
+    t_mount_now = pick_title_contains("Mount a filesystem immediately")
+
+    t_install_sshd = pick_title_contains("Install OpenSSH server")
+    t_authkeys = pick_title_contains("authorized_keys")
+    t_test_ssh = pick_title_contains("Test SSH login")
+    t_harden_ssh = pick_title_contains("disable password authentication")
+
+    t_ufw = pick_title_contains("Allow SSH through the firewall")
+    t_list_ports = pick_title_contains("List listening TCP ports")
+
+    # Build workflows with real-ish names
+    workflows: list[dict] = [
         {
-            "title": "Prepare Debian host for software deployment",
-            "objective": "Host package state is current and required software is installed and verified.",
-            "refs": [apt[0], apt[1], apt[2], apt[4]],
+            "title": "Keep Debian packages up to date (update/upgrade/cleanup)",
+            "objective": "Package metadata is refreshed, packages are upgraded, and unused packages/cache are removed.",
+            "refs": (t_apt_update + t_apt_upgrade + t_apt_autoremove + t_apt_clean)[:4],
             "tags": ["linux", "debian", "apt"],
             "meta": {"domain": "Linux", "owner_team": "IT Operations", "risk_level": "medium"},
         },
         {
-            "title": "Configure persistent storage for an application",
-            "objective": "Storage is formatted (if needed), mounted, and configured to persist across reboot.",
-            "refs": [storage[0], storage[1], storage[2], storage[3], storage[4], storage[5]],
+            "title": "Add a persistent data disk mount (/etc/fstab)",
+            "objective": "A data disk is mounted now and configured to mount automatically on boot.",
+            "refs": (t_fstab_backup + t_add_fstab + t_validate_fstab + t_mount_now)[:4],
             "tags": ["linux", "debian", "storage"],
             "meta": {"domain": "Linux", "owner_team": "IT Operations", "risk_level": "high"},
         },
         {
-            "title": "Deploy and enable a systemd-managed service",
-            "objective": "A service is defined, enabled at boot, and running with validated logs.",
-            "refs": [systemd[0], systemd[1], systemd[2]],
-            "tags": ["linux", "debian", "systemd"],
-            "meta": {"domain": "Linux", "owner_team": "Platform", "risk_level": "medium"},
-        },
-        {
-            "title": "Harden SSH access",
-            "objective": "SSH is installed and configured with key-based access and firewall allowance.",
-            "refs": [ssh[0], ssh[2], ssh[1]],
+            "title": "Set up SSH key access and lock down password auth",
+            "objective": "SSH is installed, key auth is configured and validated, and password authentication is disabled.",
+            "refs": (t_install_sshd + t_authkeys + t_test_ssh + t_harden_ssh)[:4],
             "tags": ["linux", "debian", "ssh", "security"],
             "meta": {"domain": "Linux", "owner_team": "Security Operations", "risk_level": "high"},
         },
         {
-            "title": "Linux evidence pack (service + system assurance)",
-            "objective": "A set of Debian system assurance checks is executed and evidence is recorded.",
+            "title": "Enable UFW and permit SSH",
+            "objective": "UFW firewall is enabled with SSH allowed.",
+            "refs": (t_list_ports + t_ufw)[:2],
+            "tags": ["linux", "debian", "network", "security"],
+            "meta": {"domain": "Linux", "owner_team": "Security Operations", "risk_level": "high"},
+        },
+        {
+            "title": "Install common Debian admin tools",
+            "objective": "Common admin tooling is installed and verified.",
+            "refs": apt[:6],
+            "tags": ["linux", "debian"],
+            "meta": {"domain": "Linux", "owner_team": "IT Operations", "risk_level": "low"},
+        },
+        {
+            "title": "Bring core services online (ssh/cron/rsyslog)",
+            "objective": "Core services are enabled at boot and running with logs checked.",
+            "refs": systemd[:5],
+            "tags": ["linux", "debian", "systemd"],
+            "meta": {"domain": "Linux", "owner_team": "Platform", "risk_level": "medium"},
+        },
+        {
+            "title": "Debian system assurance checks",
+            "objective": "Key system state and service health evidence is gathered and recorded.",
             "refs": assurance[:5],
             "tags": ["linux", "debian", "assurance"],
             "meta": {"domain": "Linux", "owner_team": "IT Operations", "risk_level": "medium"},
         },
     ]
 
-    # pad to 12 workflows with generic assurance bundles
-    all_refs = [(rid, ver) for rid, ver, _ in task_ids]
-    cursor = 0
-    idx = 1
-    while len(workflows) < 12:
-        refs = all_refs[cursor:cursor + 4]
-        if len(refs) < 2:
-            cursor = 0
-            continue
+    # Ensure all workflows have at least one ref; if any ended up short, top them up from pools
+    pools = [apt, systemd, ssh, storage, network, assurance, security]
+    all_ids = [x for p in pools for x in p]
+    for wf in workflows:
+        if not wf["refs"]:
+            wf["refs"] = all_ids[:2]
+
+    # Pad to 12 workflows with additional recognizable bundles (still concrete)
+    # Avoid generic numbering and keep Linux-y names.
+    extras = [
+        ("Configure system identity (hostname/time)", "Hostname, timezone, and time sync are configured and verified."),
+        ("Provision swap on Debian", "Swap is configured and active for the system."),
+        ("Review service logs with journalctl", "Service logs are queried and findings are recorded."),
+        ("Add a third-party APT repository and install software", "Repo is added with signed keyring and packages can be installed."),
+        ("Format and mount a new ext4 disk", "Disk is formatted as ext4 and mounted."),
+    ]
+
+    for title, obj in extras:
+        if len(workflows) >= 12:
+            break
+        refs: list[tuple[str, int]] = []
+        if "hostname" in title.lower() or "identity" in title.lower():
+            refs = pick_title_contains("hostname") + pick_title_contains("timezone") + pick_title_contains("time synchronization")
+        elif "swap" in title.lower():
+            refs = pick_title_contains("Create a swap file")
+        elif "journalctl" in title.lower() or "logs" in title.lower():
+            refs = pick_title_contains("Query system logs")
+        elif "third-party" in title.lower() or "repository" in title.lower():
+            refs = pick_title_contains("third-party APT repository") + t_apt_update
+        elif "ext4" in title.lower() or "format" in title.lower():
+            refs = pick_title_contains("Create an ext4") + pick_title_contains("Mount a filesystem")
+
         workflows.append(
             {
-                "title": f"Debian operations workflow #{idx}",
-                "objective": "A set of Debian operational tasks is executed in sequence.",
-                "refs": refs,
+                "title": title,
+                "objective": obj,
+                "refs": refs[:4] if refs else all_ids[:3],
                 "tags": ["linux", "debian"],
                 "meta": {"domain": "Linux", "owner_team": "IT Operations", "risk_level": "medium"},
             }
         )
-        idx += 1
-        cursor += 4
 
-    return workflows
+    return workflows[:12]
 
 
 def main() -> None:
@@ -728,15 +798,24 @@ def main() -> None:
     now = utc_now_iso()
 
     tasks = build_tasks()
-    # 50 tasks: 30 draft, 20 submitted
+    # 50 tasks: 35 confirmed, 10 submitted, 5 draft
     for idx, t in enumerate(tasks):
-        t["status"] = "draft" if idx < 30 else "submitted"
+        if idx < 35:
+            t["status"] = "confirmed"
+        elif idx < 45:
+            t["status"] = "submitted"
+        else:
+            t["status"] = "draft"
 
     inserted: list[tuple[str, int, dict]] = []
 
     for t in tasks:
         rid = str(uuid.uuid4())
         ver = 1
+        reviewed_at = now if t["status"] == "confirmed" else None
+        reviewed_by = ACTOR if t["status"] == "confirmed" else None
+        needs_review_flag = 0 if t["status"] == "confirmed" else 1
+
         conn.execute(
             """
             INSERT INTO tasks(
@@ -768,22 +847,54 @@ def main() -> None:
                 now,
                 ACTOR,
                 ACTOR,
-                None,
-                None,
+                reviewed_at,
+                reviewed_by,
                 SEED_NOTE,
-                1,
-                "Seeded Debian corpus (structure demo); requires SME review",
+                needs_review_flag,
+                "Seeded Debian corpus (demo). Confirmed items represent reviewed examples; unconfirmed require SME review.",
             ),
         )
         inserted.append((rid, ver, t))
 
     workflows = build_workflows(inserted)
+
+    # Workflows: mostly confirmed to demonstrate strength.
+    # Confirmed workflows must reference confirmed tasks only.
     for idx, wf in enumerate(workflows):
-        wf["status"] = "draft" if idx < 7 else "submitted"
+        if idx < 8:
+            wf["status"] = "confirmed"
+        elif idx < 11:
+            wf["status"] = "submitted"
+        else:
+            wf["status"] = "draft"
 
     for wf in workflows:
         wid = str(uuid.uuid4())
         wv = 1
+        reviewed_at = now if wf["status"] == "confirmed" else None
+        reviewed_by = ACTOR if wf["status"] == "confirmed" else None
+        needs_review_flag = 0 if wf["status"] == "confirmed" else 1
+
+        # If confirming, ensure refs all point at confirmed tasks.
+        if wf["status"] == "confirmed":
+            confirmed_refs = []
+            for trid, tver in wf["refs"]:
+                trow = conn.execute(
+                    "SELECT status FROM tasks WHERE record_id=? AND version=?",
+                    (trid, int(tver)),
+                ).fetchone()
+                if not trow or trow["status"] != "confirmed":
+                    continue
+                confirmed_refs.append((trid, int(tver)))
+            # Fall back to first confirmed tasks if needed
+            if not confirmed_refs:
+                confirmed_refs = [tuple(r) for r in conn.execute(
+                    "SELECT record_id, version FROM tasks WHERE status='confirmed' ORDER BY created_at LIMIT 3"
+                ).fetchall()]
+            wf_refs = confirmed_refs
+        else:
+            wf_refs = wf["refs"]
+
         conn.execute(
             """
             INSERT INTO workflows(
@@ -807,14 +918,14 @@ def main() -> None:
                 now,
                 ACTOR,
                 ACTOR,
-                None,
-                None,
+                reviewed_at,
+                reviewed_by,
                 SEED_NOTE,
-                1,
-                "Seeded Debian corpus (structure demo); requires SME review",
+                needs_review_flag,
+                "Seeded Debian corpus (demo). Confirmed workflows are reviewed examples; unconfirmed require SME review.",
             ),
         )
-        for order_index, (trid, tver) in enumerate(wf["refs"], start=1):
+        for order_index, (trid, tver) in enumerate(wf_refs, start=1):
             conn.execute(
                 """
                 INSERT INTO workflow_task_refs(workflow_record_id, workflow_version, order_index, task_record_id, task_version)
