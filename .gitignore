@@ -1,0 +1,6 @@
+
+# LCS MVP runtime artifacts
+lcs_mvp/.venv/
+lcs_mvp/data/
+lcs_mvp/__pycache__/
+lcs_mvp/*.pyc

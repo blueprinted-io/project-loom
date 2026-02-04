@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+  <h1>Tasks</h1>
+  <div>
+    {% if can(request.state.role, 'task:create') %}
+      <a class="btn" href="/tasks/new">New Task</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="filters">
+  <span>Filter:</span>
+  <a href="/tasks" class="pill {{ '' if status else 'active' }}">All</a>
+  <a href="/tasks?status=draft" class="pill {{ 'active' if status=='draft' else '' }}">Draft</a>
+  <a href="/tasks?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
+  <a href="/tasks?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
+  <a href="/tasks?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
+</div>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Record</th>
+      <th>Latest</th>
+      <th>Status</th>
+      <th>Signals</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for it in items %}
+    <tr>
+      <td><code>{{ it.record_id }}</code></td>
+      <td><a href="/tasks/{{ it.record_id }}/{{ it.latest_version }}">v{{ it.latest_version }} — {{ it.title }}</a></td>
+      <td><span class="badge badge-{{ it.status }}">{{ it.status }}</span></td>
+      <td>
+        {% if it.needs_review_flag %}<span class="badge badge-warn">needs_review</span>{% endif %}
+        {% if it.update_pending_confirmation %}<span class="badge badge-warn">update_pending_confirmation</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

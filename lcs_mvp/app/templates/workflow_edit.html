@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>
+  {% if mode=='new' %}
+    New Workflow
+  {% else %}
+    Revise from Workflow v{{ workflow.version }} (creates new version)
+  {% endif %}
+</h1>
+
+<p class="muted">Workflows may reference <b>confirmed Task versions only</b>. Add task refs as <code>record_id@version</code>, one per line.</p>
+
+<form method="post" action="{% if mode=='new' %}/workflows/new{% else %}/workflows/{{ workflow.record_id }}/{{ workflow.version }}/revise{% endif %}">
+
+  <label>Title</label>
+  <input name="title" required value="{{ workflow.title if workflow else '' }}" />
+
+  <label>Objective</label>
+  <textarea name="objective" rows="2" required>{{ workflow.objective if workflow else '' }}</textarea>
+
+  <label>Task references (one per line, format: record_id@version)</label>
+  <textarea name="task_refs" rows="6" required placeholder="e.g.
+123e4567-e89b-12d3-a456-426614174000@1">{{ refs_text or '' }}</textarea>
+
+  {% if mode!='new' %}
+    <label>Change note (required)</label>
+    <input name="change_note" required placeholder="Required: why are you changing this?" />
+  {% endif %}
+
+  <div class="card">
+    <h3>Confirmed tasks (copy/paste IDs)</h3>
+    {% if confirmed_tasks %}
+      <ul>
+      {% for t in confirmed_tasks %}
+        <li><code>{{ t.record_id }}@{{ t.version }}</code> — {{ t.title }}</li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">None yet. Confirm at least one Task first.</p>
+    {% endif %}
+  </div>
+
+  <button class="btn" type="submit">{% if mode=='new' %}Create workflow{% else %}Create new version{% endif %}</button>
+  <a class="btn secondary" href="/workflows">Cancel</a>
+</form>
+{% endblock %}

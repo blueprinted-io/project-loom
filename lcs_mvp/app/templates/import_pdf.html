@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Import Tasks from PDF (AI-assisted)</h1>
+
+{% if error %}
+<div class="callout danger">
+  <b>Import failed:</b> {{ error }}
+</div>
+{% endif %}
+
+<div class="callout warn">
+  <b>Trust boundary:</b> Imported Tasks are always created as <b>draft</b> and flagged for review. Nothing is auto-confirmed.
+</div>
+
+<div class="card">
+  <p class="muted">LM Studio base URL: <code>{{ lmstudio_base_url }}</code></p>
+  <p class="muted">Model: <code>{{ lmstudio_model }}</code></p>
+  <p class="muted">Override via env vars: <code>LCS_LMSTUDIO_BASE_URL</code>, <code>LCS_LMSTUDIO_MODEL</code></p>
+</div>
+
+<form method="post" action="/import/pdf" enctype="multipart/form-data" class="card">
+  <label>PDF file</label>
+  <input type="file" name="pdf" accept="application/pdf" required />
+
+  <label>Max tasks to propose (total)</label>
+  <input type="number" name="max_tasks" value="20" min="1" max="200" />
+
+  <label>Max chunks to process</label>
+  <input type="number" name="max_chunks" value="8" min="1" max="200" />
+
+  <label>Import note</label>
+  <input name="actor_note" value="Imported from PDF" />
+
+  <button class="btn" type="submit">Import</button>
+</form>
+
+<p class="muted">MVP notes: multi-chunk is enabled. Dedupe and citations-per-step are next.</p>
+{% endblock %}

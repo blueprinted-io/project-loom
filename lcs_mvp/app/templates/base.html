@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title or "LCS MVP" }}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <div class="brand"><a href="/">LCS MVP</a></div>
+      <nav>
+        <a href="/tasks">Tasks</a>
+        <a href="/workflows">Workflows</a>
+        {% if can(request.state.role, 'import:pdf') %}
+          <a href="/import/pdf">Import PDF</a>
+        {% endif %}
+        <span class="muted" style="margin-left:14px">user: <b>{{ request.state.user }}</b> · role: <b>{{ request.state.role }}</b></span>
+        <a href="/login" style="margin-left:14px">switch</a>
+        <form method="post" action="/logout" style="display:inline">
+          <button class="btn secondary" type="submit" style="margin-left:8px;padding:4px 10px">logout</button>
+        </form>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

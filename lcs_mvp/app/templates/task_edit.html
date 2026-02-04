@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{% if mode=='new' %}New Task{% else %}Revise from Task v{{ task.version }} (creates new version){% endif %}</h1>
+
+{% if warnings %}
+  <div class="callout warn">
+    <b>Lint warnings (warnings-only):</b>
+    <ul>
+      {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form method="post" action="{% if mode=='new' %}/tasks/new{% else %}/tasks/{{ task.record_id }}/{{ task.version }}/save{% endif %}">
+
+  <label>Title</label>
+  <input name="title" value="{{ task.title if task else '' }}" required />
+
+  <label>Outcome</label>
+  <textarea name="outcome" rows="2" required>{{ task.outcome if task else '' }}</textarea>
+
+  <label>Procedure name</label>
+  <input name="procedure_name" value="{{ task.procedure_name if task else '' }}" required />
+
+  <div class="row">
+    <label class="check">
+      <input type="checkbox" name="irreversible_flag" {% if task and task.irreversible_flag %}checked{% endif %} />
+      Irreversible
+    </label>
+  </div>
+
+  <label>Facts (one per line)</label>
+  <textarea name="facts" rows="4">{{ task.facts if task else '' }}</textarea>
+
+  <label>Concepts (one per line)</label>
+  <textarea name="concepts" rows="4">{{ task.concepts if task else '' }}</textarea>
+
+  <label>Dependencies (one per line)</label>
+  <textarea name="dependencies" rows="4">{{ task.dependencies if task else '' }}</textarea>
+
+  <label>Procedure Steps</label>
+  <div class="card" style="margin-top:8px">
+    <div class="muted" style="margin-bottom:10px">Each step has two fields: <b>Step</b> and <b>Completion</b>. Use the completion field to state the observable check that proves the step is done.</div>
+
+    <table class="table" id="steps-table">
+      <thead>
+        <tr>
+          <th style="width:55%">Step</th>
+          <th style="width:40%">Completion</th>
+          <th style="width:5%"></th>
+        </tr>
+      </thead>
+      <tbody id="steps-body">
+        {% if task and task.steps %}
+          {% for st in task.steps %}
+            <tr>
+              <td><textarea name="step_text" rows="2" placeholder="Imperative step text">{{ st.text }}</textarea></td>
+              <td><textarea name="step_completion" rows="2" required placeholder="Observable completion check">{{ st.completion }}</textarea></td>
+              <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td><textarea name="step_text" rows="2" placeholder="Imperative step text"></textarea></td>
+            <td><textarea name="step_completion" rows="2" required placeholder="Observable completion check"></textarea></td>
+            <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <button class="btn" type="button" onclick="addStep()">Add step</button>
+  </div>
+
+  <label>Change note {% if mode!='new' %}(required){% else %}(optional){% endif %}</label>
+  <input name="change_note" value="" {% if mode!='new' %}required{% endif %} placeholder="{% if mode!='new' %}Required: why are you changing this?{% else %}Optional{% endif %}" />
+
+  <button class="btn" type="submit">Save</button>
+  {% if mode!='new' %}
+    <a class="btn secondary" href="/tasks/{{ task.record_id }}/{{ task.version }}">Cancel</a>
+  {% else %}
+    <a class="btn secondary" href="/tasks">Cancel</a>
+  {% endif %}
+</form>
+
+<script>
+function addStep() {
+  const body = document.getElementById('steps-body');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><textarea name="step_text" rows="2" placeholder="Imperative step text"></textarea></td>
+    <td><textarea name="step_completion" rows="2" required placeholder="Observable completion check"></textarea></td>
+    <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
+  `;
+  body.appendChild(tr);
+}
+
+function removeRow(btn) {
+  const tr = btn.closest('tr');
+  if (!tr) return;
+  const body = document.getElementById('steps-body');
+  if (body.children.length <= 1) {
+    // keep at least one row
+    tr.querySelectorAll('textarea').forEach(t => t.value='');
+    return;
+  }
+  tr.remove();
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Switch user / role</h1>
+<p class="muted">This is a prototype role switcher (cookie-based), not real authentication.</p>
+
+<form method="post" action="/login" class="card">
+  <label>User</label>
+  <input name="user" value="{{ request.state.user }}" required />
+
+  <label>Role</label>
+  <select name="role" required>
+    {% for r in ['viewer','author','reviewer','admin'] %}
+      <option value="{{ r }}" {% if request.state.role == r %}selected{% endif %}>{{ r }}</option>
+    {% endfor %}
+  </select>
+
+  <button class="btn" type="submit">Apply</button>
+  <a class="btn secondary" href="/">Cancel</a>
+</form>
+{% endblock %}

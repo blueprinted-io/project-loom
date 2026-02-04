@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+  <div>
+    <h1>Workflow v{{ workflow.version }}</h1>
+    <div class="muted"><code>{{ workflow.record_id }}</code></div>
+  </div>
+  <div class="row-right">
+    <span class="badge badge-{{ workflow.status }}">{{ workflow.status }}</span>
+
+    {% if readiness == 'ready' %}
+      <span class="badge badge-confirmed">ready</span>
+    {% elif readiness == 'awaiting_task_confirmation' %}
+      <span class="badge badge-warn">awaiting_task_confirmation</span>
+    {% else %}
+      <span class="badge badge-deprecated">invalid</span>
+    {% endif %}
+
+    <a class="btn" href="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/export.md">Export Markdown</a>
+    {% if can(request.state.role, 'workflow:revise') %}
+      <a class="btn" href="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/revise">Revise</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>{{ workflow.title }}</h2>
+  <p><b>Objective:</b> {{ workflow.objective }}</p>
+
+  <p class="muted">created_by={{ workflow.created_by }} · created_at={{ workflow.created_at }} · updated_by={{ workflow.updated_by }} · updated_at={{ workflow.updated_at }}</p>
+  {% if workflow.reviewed_by %}
+    <p class="muted">reviewed_by={{ workflow.reviewed_by }} · reviewed_at={{ workflow.reviewed_at }}</p>
+  {% endif %}
+  {% if workflow.change_note %}
+    <p class="muted">change_note={{ workflow.change_note }}</p>
+  {% endif %}
+
+  <h3>Tasks</h3>
+  <ol>
+    {% for r in refs %}
+      <li>
+        <a href="/tasks/{{ r.record_id }}/{{ r.version }}">{{ r.title }}</a>
+        <span class="muted">({{ r.record_id }}@{{ r.version }})</span>
+        {% if r.task_status != 'confirmed' %}
+          <span class="badge badge-warn">{{ r.task_status }}</span>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+</div>
+
+<div class="row">
+  {% if workflow.status == 'draft' and can(request.state.role, 'workflow:submit') %}
+  <form method="post" action="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/submit">
+    <button class="btn" type="submit">Submit for review</button>
+  </form>
+  {% endif %}
+
+  {% if workflow.status == 'submitted' and can(request.state.role, 'workflow:confirm') %}
+  <form method="post" action="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/confirm">
+    <button class="btn" type="submit">Confirm (reviewer)</button>
+  </form>
+  {% endif %}
+</div>
+
+{% endblock %}

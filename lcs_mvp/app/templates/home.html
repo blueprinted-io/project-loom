@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Learning Content System MVP</h1>
+<p>This is a small prototype implementing Tasks + Workflows with governance states.</p>
+
+<div class="grid">
+  <div class="card">
+    <h2>Tasks</h2>
+    <p>Create and govern atomic Tasks.</p>
+    <p><a class="btn" href="/tasks">Open Tasks</a></p>
+  </div>
+  <div class="card">
+    <h2>Workflows</h2>
+    <p>Compose confirmed Task versions into Workflows and export.</p>
+    <p><a class="btn" href="/workflows">Open Workflows</a></p>
+  </div>
+</div>
+{% endblock %}
