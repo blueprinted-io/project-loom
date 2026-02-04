@@ -20,6 +20,7 @@
           <div class="userchip-label">User</div>
           <div><b>{{ request.state.user }}</b> <span class="muted">·</span> <span class="role">{{ request.state.role }}</span></div>
         </div>
+        <button class="btn secondary" type="button" id="theme-toggle" title="Theme">Theme</button>
         <form method="post" action="/logout" style="display:inline">
           <button class="btn secondary" type="submit">Logout</button>
         </form>
@@ -43,6 +44,38 @@
 
   <script>
     (function(){
+      function setTheme(mode){
+        const root = document.documentElement;
+        if(mode === 'light' || mode === 'dark'){
+          root.setAttribute('data-theme', mode);
+          try{ localStorage.setItem('theme', mode); }catch(e){}
+        } else {
+          root.removeAttribute('data-theme');
+          try{ localStorage.removeItem('theme'); }catch(e){}
+        }
+        const btn = document.getElementById('theme-toggle');
+        if(btn){
+          const cur = root.getAttribute('data-theme') || 'auto';
+          btn.textContent = `Theme: ${cur}`;
+        }
+      }
+
+      function initTheme(){
+        let saved = null;
+        try{ saved = localStorage.getItem('theme'); }catch(e){}
+        if(saved === 'light' || saved === 'dark') setTheme(saved);
+        else setTheme('auto');
+
+        const btn = document.getElementById('theme-toggle');
+        if(btn){
+          btn.addEventListener('click', function(){
+            const cur = document.documentElement.getAttribute('data-theme') || 'auto';
+            const next = (cur === 'auto') ? 'light' : (cur === 'light' ? 'dark' : 'auto');
+            setTheme(next);
+          });
+        }
+      }
+
       async function loadPulse(){
         try{
           const r = await fetch('/_pulse', {headers: {'Accept':'application/json'}});
@@ -78,6 +111,8 @@
           // no-op
         }
       }
+
+      initTheme();
       loadPulse();
     })();
   </script>
