@@ -1592,29 +1592,57 @@ def _parse_task_refs(task_refs: str) -> list[tuple[str, int]]:
 def workflow_readiness(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> Literal[
     "ready", "awaiting_task_confirmation", "invalid"
 ]:
-    """Derived status based on referenced Task version statuses.
+    # Backward-compatible: keep readiness as a simple derived label.
+    info = workflow_readiness_detail(conn, refs)
+    return info["readiness"]
+
+
+def workflow_readiness_detail(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> dict[str, Any]:
+    """Derived readiness + human-readable reasons.
 
     Rules:
       - If any reference is missing => invalid
       - If any reference is deprecated => invalid
       - Else if any reference is not confirmed (draft/submitted) => awaiting_task_confirmation
       - Else => ready
+
+    Returns:
+      { readiness: str, reasons: [str], blocking_task_refs: [(rid,ver,status)] }
     """
+    reasons: list[str] = []
+    blocking: list[tuple[str, int, str]] = []
+
+    if not refs:
+        return {
+            "readiness": "invalid",
+            "reasons": ["Workflow has no Task references."],
+            "blocking_task_refs": [],
+        }
+
     awaiting = False
 
     for rid, ver in refs:
         row = conn.execute(
-            "SELECT status FROM tasks WHERE record_id=? AND version=?", (rid, ver)
+            "SELECT status, title FROM tasks WHERE record_id=? AND version=?", (rid, ver)
         ).fetchone()
         if not row:
-            return "invalid"
+            reasons.append(f"Missing Task reference: {rid}@{ver} does not exist")
+            return {"readiness": "invalid", "reasons": reasons, "blocking_task_refs": blocking}
+
         st = row["status"]
         if st == "deprecated":
-            return "invalid"
+            reasons.append(f"Deprecated Task reference: {rid}@{ver} is deprecated")
+            return {"readiness": "invalid", "reasons": reasons, "blocking_task_refs": blocking}
+
         if st != "confirmed":
             awaiting = True
+            blocking.append((rid, int(ver), str(st)))
 
-    return "awaiting_task_confirmation" if awaiting else "ready"
+    if awaiting:
+        reasons.append("One or more referenced Task versions are not confirmed.")
+        return {"readiness": "awaiting_task_confirmation", "reasons": reasons, "blocking_task_refs": blocking}
+
+    return {"readiness": "ready", "reasons": [], "blocking_task_refs": []}
 
 
 def enforce_workflow_ref_rules(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> None:
@@ -1723,7 +1751,7 @@ def workflow_view(request: Request, record_id: str, version: int):
             (record_id, version),
         ).fetchall()
 
-        readiness = workflow_readiness(
+        readiness_info = workflow_readiness_detail(
             conn,
             [(r["record_id"], int(r["version"])) for r in refs],
         )
@@ -1731,7 +1759,13 @@ def workflow_view(request: Request, record_id: str, version: int):
     return templates.TemplateResponse(
         request,
         "workflow_view.html",
-        {"workflow": dict(wf), "refs": refs, "readiness": readiness},
+        {
+            "workflow": dict(wf),
+            "refs": refs,
+            "readiness": readiness_info["readiness"],
+            "readiness_reasons": readiness_info["reasons"],
+            "blocking_task_refs": readiness_info["blocking_task_refs"],
+        },
     )
 
 

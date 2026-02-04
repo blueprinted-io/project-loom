@@ -27,6 +27,27 @@
   <h2>{{ workflow.title }}</h2>
   <p><b>Objective:</b> {{ workflow.objective }}</p>
 
+  {% if readiness != 'ready' %}
+    <div class="callout warn">
+      <b>Not ready to confirm</b>
+      {% if readiness_reasons %}
+        <ul>
+          {% for r in readiness_reasons %}<li>{{ r }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+      {% if blocking_task_refs %}
+        <div class="muted">Blocking task versions:</div>
+        <ul>
+          {% for rid, ver, st in blocking_task_refs %}
+            <li><a href="/tasks/{{ rid }}/{{ ver }}">{{ rid }}@{{ ver }}</a> — <span class="badge badge-warn">{{ st }}</span></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="muted">No blocking Task versions detected.</div>
+      {% endif %}
+    </div>
+  {% endif %}
+
   <p class="muted">created_by={{ workflow.created_by }} · created_at={{ workflow.created_at }} · updated_by={{ workflow.updated_by }} · updated_at={{ workflow.updated_at }}</p>
   {% if workflow.reviewed_by %}
     <p class="muted">reviewed_by={{ workflow.reviewed_by }} · reviewed_at={{ workflow.reviewed_at }}</p>
