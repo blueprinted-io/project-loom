@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import uuid
+import contextvars
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -22,8 +23,16 @@ Role = Literal["viewer", "author", "reviewer", "admin"]
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(DATA_DIR, "lcs.db")
+DB_DEMO_PATH = os.path.join(DATA_DIR, "lcs_demo.db")
+DB_BLANK_PATH = os.path.join(DATA_DIR, "lcs_blank.db")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+
+# Per-request DB selection (MVP): use a cookie. Default to demo.
+DB_KEY_COOKIE = "lcs_db"
+DB_KEY_DEMO = "demo"
+DB_KEY_BLANK = "blank"
+DB_PATH_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_path", default=DB_DEMO_PATH)
+DB_KEY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_key", default=DB_KEY_DEMO)
 
 LMSTUDIO_BASE_URL = os.environ.get("LCS_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234").rstrip("/")
 LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-instruct-v0.3")
@@ -126,6 +135,7 @@ def can(role: Role, action: str) -> bool:
       - workflow:create, workflow:revise, workflow:submit, workflow:confirm
       - import:pdf
       - import:json
+      - db:switch
     """
     if role == "admin":
         return True
@@ -142,6 +152,9 @@ def can(role: Role, action: str) -> bool:
     if action in ("import:pdf", "import:json"):
         return role in ("author",)
 
+    if action == "db:switch":
+        return role in ("admin",)
+
     return False
 
 
@@ -154,6 +167,14 @@ class RBACMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request.state.user = _get_user(request)
         request.state.role = _get_role(request)
+
+        # DB selection (cookie). Default to demo DB.
+        key = _selected_db_key(request)
+        request.state.db_key = key
+        request.state.db_path = _db_path_for_key(key)
+        DB_KEY_CTX.set(key)
+        DB_PATH_CTX.set(request.state.db_path)
+
         return await call_next(request)
 
 
@@ -167,9 +188,24 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _selected_db_key(request: Request | None = None) -> str:
+    if request is None:
+        return DB_KEY_CTX.get()
+    k = (request.cookies.get(DB_KEY_COOKIE) or DB_KEY_DEMO).strip().lower()
+    if k not in (DB_KEY_DEMO, DB_KEY_BLANK):
+        return DB_KEY_DEMO
+    return k
+
+
+def _db_path_for_key(key: str) -> str:
+    return DB_DEMO_PATH if key == DB_KEY_DEMO else DB_BLANK_PATH
+
+
 def db() -> sqlite3.Connection:
+    """Open a connection to the currently selected DB (via context var)."""
     os.makedirs(DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    path = DB_PATH_CTX.get()
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -180,9 +216,13 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(r["name"] == column for r in rows)
 
 
-def init_db() -> None:
+def init_db_path(db_path: str) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+    # Temporarily point context to this path for schema/migrations.
+    DB_PATH_CTX.set(db_path)
+
     with db() as conn:
         conn.executescript(
             """
@@ -284,6 +324,12 @@ def init_db() -> None:
             conn.execute("ALTER TABLE workflows ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
         if not _column_exists(conn, "workflows", "meta_json"):
             conn.execute("ALTER TABLE workflows ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
+
+
+def init_db() -> None:
+    # Ensure both demo and blank DBs exist and are migrated.
+    init_db_path(DB_DEMO_PATH)
+    init_db_path(DB_BLANK_PATH)
 
 
 @app.on_event("startup")
@@ -616,6 +662,26 @@ def home(request: Request):
         "home.html",
         {},
     )
+
+
+# --- DB switching (MVP) ---
+
+@app.get("/db", response_class=HTMLResponse)
+def db_switch_form(request: Request):
+    require(request.state.role, "db:switch")
+    return templates.TemplateResponse(request, "db_switch.html", {})
+
+
+@app.post("/db/switch")
+def db_switch(request: Request, db_key: str = Form(DB_KEY_DEMO)):
+    require(request.state.role, "db:switch")
+    key = (db_key or DB_KEY_DEMO).strip().lower()
+    if key not in (DB_KEY_DEMO, DB_KEY_BLANK):
+        raise HTTPException(status_code=400, detail="Invalid db_key")
+
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
+    return resp
 
 
 @app.get("/audit", response_class=HTMLResponse)
