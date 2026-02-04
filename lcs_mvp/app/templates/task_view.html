@@ -88,6 +88,15 @@
     <button class="btn" type="submit">Confirm (reviewer)</button>
   </form>
   {% endif %}
+
+  {% if request.state.role == 'admin' %}
+    <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-submit">
+      <button class="btn secondary" type="submit">Force submit</button>
+    </form>
+    <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-confirm">
+      <button class="btn secondary" type="submit">Force confirm</button>
+    </form>
+  {% endif %}
 </div>
 
 {% endblock %}

@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 Status = Literal["draft", "submitted", "confirmed", "deprecated"]
-Role = Literal["viewer", "author", "reviewer", "admin"]
+Role = Literal["viewer", "author", "reviewer", "audit", "admin"]
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -111,7 +111,8 @@ ROLE_ORDER: dict[Role, int] = {
     "viewer": 0,
     "author": 1,
     "reviewer": 2,
-    "admin": 3,
+    "audit": 3,
+    "admin": 4,
 }
 
 
@@ -136,9 +137,18 @@ def can(role: Role, action: str) -> bool:
       - import:pdf
       - import:json
       - db:switch
+      - audit:view
+      - task:force_submit, task:force_confirm
+      - workflow:force_submit, workflow:force_confirm
     """
     if role == "admin":
         return True
+
+    if action == "audit:view":
+        return role in ("audit",)
+
+    if action.endswith(":force_confirm") or action.endswith(":force_submit"):
+        return role in ("admin",)
 
     if action.endswith(":confirm"):
         return role in ("reviewer",)
@@ -691,6 +701,8 @@ def audit_list(
     record_id: str | None = None,
     limit: int = 200,
 ):
+    require(request.state.role, "audit:view")
+
     entity_type = (entity_type or "").strip() or None
     record_id = (record_id or "").strip() or None
     limit = max(1, min(int(limit or 200), 1000))
@@ -1538,6 +1550,26 @@ def task_submit(request: Request, record_id: str, version: int):
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
 
+@app.post("/tasks/{record_id}/{version}/force-submit")
+def task_force_submit(request: Request, record_id: str, version: int):
+    require(request.state.role, "task:force_submit")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] in ("deprecated", "confirmed"):
+            raise HTTPException(409, detail=f"Cannot force-submit a {row['status']} task")
+        conn.execute(
+            "UPDATE tasks SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+    audit("task", record_id, version, "force_submit", actor, note="admin forced submission")
+    return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
 @app.post("/tasks/{record_id}/{version}/confirm")
 def task_confirm(request: Request, record_id: str, version: int):
     require(request.state.role, "task:confirm")
@@ -1567,6 +1599,41 @@ def task_confirm(request: Request, record_id: str, version: int):
         )
 
     audit("task", record_id, version, "confirm", actor)
+    return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
+@app.post("/tasks/{record_id}/{version}/force-confirm")
+def task_force_confirm(request: Request, record_id: str, version: int):
+    require(request.state.role, "task:force_confirm")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] == "deprecated":
+            raise HTTPException(409, detail="Cannot force-confirm a deprecated task")
+
+        # Still enforce: you can't confirm an empty/bad record (structure checks are enforced earlier).
+        # Admin override is for lifecycle, not semantics.
+
+        # Deprecate any previously confirmed version
+        conn.execute(
+            "UPDATE tasks SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
+            (utc_now_iso(), actor, record_id),
+        )
+
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
+            WHERE record_id=? AND version=?
+            """,
+            (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
+        )
+
+    audit("task", record_id, version, "force_confirm", actor, note="admin forced confirmation")
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
 
@@ -1970,6 +2037,26 @@ def workflow_submit(request: Request, record_id: str, version: int):
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
 
 
+@app.post("/workflows/{record_id}/{version}/force-submit")
+def workflow_force_submit(request: Request, record_id: str, version: int):
+    require(request.state.role, "workflow:force_submit")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] in ("deprecated", "confirmed"):
+            raise HTTPException(409, detail=f"Cannot force-submit a {row['status']} workflow")
+        conn.execute(
+            "UPDATE workflows SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+    audit("workflow", record_id, version, "force_submit", actor, note="admin forced submission")
+    return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
 @app.post("/workflows/{record_id}/{version}/confirm")
 def workflow_confirm(request: Request, record_id: str, version: int):
     require(request.state.role, "workflow:confirm")
@@ -2010,6 +2097,49 @@ def workflow_confirm(request: Request, record_id: str, version: int):
         )
 
     audit("workflow", record_id, version, "confirm", actor)
+    return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
+@app.post("/workflows/{record_id}/{version}/force-confirm")
+def workflow_force_confirm(request: Request, record_id: str, version: int):
+    require(request.state.role, "workflow:force_confirm")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] == "deprecated":
+            raise HTTPException(409, detail="Cannot force-confirm a deprecated workflow")
+
+        refs = conn.execute(
+            "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+            (record_id, version),
+        ).fetchall()
+        readiness = workflow_readiness(conn, [(r["task_record_id"], int(r["task_version"])) for r in refs])
+        if readiness != "ready":
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot force-confirm workflow: referenced Task versions must still be confirmed.",
+            )
+
+        # Deprecate any previously confirmed version
+        conn.execute(
+            "UPDATE workflows SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
+            (utc_now_iso(), actor, record_id),
+        )
+
+        conn.execute(
+            """
+            UPDATE workflows
+            SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
+            WHERE record_id=? AND version=?
+            """,
+            (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
+        )
+
+    audit("workflow", record_id, version, "force_confirm", actor, note="admin forced confirmation")
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
 
 
