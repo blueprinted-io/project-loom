@@ -13,6 +13,7 @@
       <nav>
         <a href="/tasks">Tasks</a>
         <a href="/workflows">Workflows</a>
+        <a href="/audit">Audit</a>
         {% if can(request.state.role, 'import:pdf') %}
           <a href="/import/pdf">Import PDF</a>
         {% endif %}

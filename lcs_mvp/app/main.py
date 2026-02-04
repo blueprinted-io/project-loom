@@ -93,6 +93,11 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 DEFAULT_USER = "anon"
 DEFAULT_ROLE: Role = "author"
 
+# --- Lightweight enterprise fields (MVP+) ---
+# Stored as JSON blobs to avoid migrations churn in the prototype.
+DEFAULT_TAGS: list[str] = []
+DEFAULT_META: dict[str, str] = {}
+
 ROLE_ORDER: dict[Role, int] = {
     "viewer": 0,
     "author": 1,
@@ -120,6 +125,7 @@ def can(role: Role, action: str) -> bool:
       - task:create, task:revise, task:submit, task:confirm
       - workflow:create, workflow:revise, workflow:submit, workflow:confirm
       - import:pdf
+      - import:json
     """
     if role == "admin":
         return True
@@ -133,7 +139,7 @@ def can(role: Role, action: str) -> bool:
     if action.endswith(":create") or action.endswith(":revise"):
         return role in ("author",)
 
-    if action == "import:pdf":
+    if action in ("import:pdf", "import:json"):
         return role in ("author",)
 
     return False
@@ -169,6 +175,11 @@ def db() -> sqlite3.Connection:
     return conn
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r["name"] == column for r in rows)
+
+
 def init_db() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -189,6 +200,9 @@ def init_db() -> None:
               dependencies_json TEXT NOT NULL,
               irreversible_flag INTEGER NOT NULL,
               task_assets_json TEXT NOT NULL,
+
+              tags_json TEXT NOT NULL DEFAULT '[]',
+              meta_json TEXT NOT NULL DEFAULT '{}',
 
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
@@ -211,6 +225,9 @@ def init_db() -> None:
 
               title TEXT NOT NULL,
               objective TEXT NOT NULL,
+
+              tags_json TEXT NOT NULL DEFAULT '[]',
+              meta_json TEXT NOT NULL DEFAULT '{}',
 
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
@@ -257,6 +274,16 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
             """
         )
+
+        # lightweight migrations (prototype-friendly)
+        if not _column_exists(conn, "tasks", "tags_json"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
+        if not _column_exists(conn, "tasks", "meta_json"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
+        if not _column_exists(conn, "workflows", "tags_json"):
+            conn.execute("ALTER TABLE workflows ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
+        if not _column_exists(conn, "workflows", "meta_json"):
+            conn.execute("ALTER TABLE workflows ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
 
 
 @app.on_event("startup")
@@ -524,9 +551,32 @@ def require_can_edit(status: str) -> None:
 
 
 def parse_lines(text: str) -> list[str]:
-    # Accept either newline-separated steps or JSON-ish list pasted.
-    lines = [ln.strip() for ln in text.splitlines()]
+    # Accept newline-separated list
+    lines = [ln.strip() for ln in (text or "").splitlines()]
     return [ln for ln in lines if ln]
+
+
+def parse_tags(text: str) -> list[str]:
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.split(",")]
+    return [p for p in parts if p]
+
+
+def parse_meta(text: str) -> dict[str, str]:
+    meta: dict[str, str] = {}
+    for ln in parse_lines(text or ""):
+        if "=" not in ln:
+            # ignore malformed lines in MVP
+            continue
+        k, v = ln.split("=", 1)
+        k = k.strip()
+        v = v.strip()
+        if not k:
+            continue
+        meta[k] = v
+    return meta
 
 
 # --- Routes ---
@@ -565,6 +615,44 @@ def home(request: Request):
         request,
         "home.html",
         {},
+    )
+
+
+@app.get("/audit", response_class=HTMLResponse)
+def audit_list(
+    request: Request,
+    entity_type: str | None = None,
+    record_id: str | None = None,
+    limit: int = 200,
+):
+    entity_type = (entity_type or "").strip() or None
+    record_id = (record_id or "").strip() or None
+    limit = max(1, min(int(limit or 200), 1000))
+
+    where: list[str] = []
+    params: list[Any] = []
+    if entity_type:
+        where.append("entity_type=?")
+        params.append(entity_type)
+    if record_id:
+        where.append("record_id=?")
+        params.append(record_id)
+
+    sql = "SELECT id, entity_type, record_id, version, action, actor, at, note FROM audit_log"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY at DESC, id DESC LIMIT ?"
+    params.append(limit)
+
+    with db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+
+    items = [dict(r) for r in rows]
+
+    return templates.TemplateResponse(
+        request,
+        "audit_list.html",
+        {"items": items, "entity_type": entity_type, "record_id": record_id, "limit": limit},
     )
 
 
@@ -758,6 +846,274 @@ def import_pdf_run(
     return RedirectResponse(url="/tasks?status=draft", status_code=303)
 
 
+@app.get("/import/json", response_class=HTMLResponse)
+def import_json_form(request: Request):
+    require(request.state.role, "import:json")
+    return templates.TemplateResponse(request, "import_json.html", {})
+
+
+def _parse_task_json(obj: dict[str, Any]) -> dict[str, Any]:
+    title = str(obj.get("title", "")).strip()
+    outcome = str(obj.get("outcome", "")).strip()
+    procedure_name = str(obj.get("procedure_name", "")).strip() or title
+    if not title:
+        raise HTTPException(status_code=400, detail="Task import: title is required")
+    if not outcome:
+        raise HTTPException(status_code=400, detail=f"Task import '{title}': outcome is required")
+
+    facts = obj.get("facts") or []
+    concepts = obj.get("concepts") or []
+    deps = obj.get("dependencies") or []
+    steps = obj.get("steps") or []
+
+    if not isinstance(facts, list) or not isinstance(concepts, list) or not isinstance(deps, list):
+        raise HTTPException(status_code=400, detail=f"Task import '{title}': facts/concepts/dependencies must be lists")
+
+    steps_norm = _normalize_steps(steps)
+    _validate_steps_required(steps_norm)
+
+    irreversible_flag = 1 if bool(obj.get("irreversible_flag")) else 0
+    assets = obj.get("task_assets") or obj.get("assets") or []
+    if not isinstance(assets, list):
+        raise HTTPException(status_code=400, detail=f"Task import '{title}': task_assets must be a list")
+
+    return {
+        "record_id": str(obj.get("record_id") or "").strip() or str(uuid.uuid4()),
+        "version": int(obj.get("version") or 1),
+        "status": str(obj.get("status") or "draft"),
+        "title": title,
+        "outcome": outcome,
+        "procedure_name": procedure_name,
+        "facts": [str(x) for x in facts],
+        "concepts": [str(x) for x in concepts],
+        "dependencies": [str(x) for x in deps],
+        "steps": steps_norm,
+        "irreversible_flag": irreversible_flag,
+        "task_assets": assets,
+        "needs_review_flag": 1 if bool(obj.get("needs_review_flag")) else 0,
+        "needs_review_note": (str(obj.get("needs_review_note")) if obj.get("needs_review_note") is not None else None),
+    }
+
+
+def _parse_workflow_json(obj: dict[str, Any]) -> dict[str, Any]:
+    title = str(obj.get("title", "")).strip()
+    objective = str(obj.get("objective", "")).strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Workflow import: title is required")
+    if not objective:
+        raise HTTPException(status_code=400, detail=f"Workflow import '{title}': objective is required")
+
+    raw_refs = obj.get("task_refs") or obj.get("tasks") or []
+    refs: list[tuple[str, int]] = []
+
+    if isinstance(raw_refs, list):
+        for item in raw_refs:
+            if isinstance(item, str):
+                if "@" not in item:
+                    raise HTTPException(status_code=400, detail=f"Workflow import '{title}': invalid task ref '{item}'")
+                rid, ver = item.split("@", 1)
+                refs.append((rid.strip(), int(ver.strip())))
+            elif isinstance(item, dict):
+                rid = str(item.get("record_id") or item.get("task_record_id") or "").strip()
+                ver = item.get("version") or item.get("task_version")
+                if not rid or ver is None:
+                    raise HTTPException(status_code=400, detail=f"Workflow import '{title}': task_refs items require record_id + version")
+                refs.append((rid, int(ver)))
+            else:
+                raise HTTPException(status_code=400, detail=f"Workflow import '{title}': task_refs must contain strings or objects")
+    else:
+        raise HTTPException(status_code=400, detail=f"Workflow import '{title}': task_refs must be a list")
+
+    if not refs:
+        raise HTTPException(status_code=400, detail=f"Workflow import '{title}': at least one task_ref is required")
+
+    return {
+        "record_id": str(obj.get("record_id") or "").strip() or str(uuid.uuid4()),
+        "version": int(obj.get("version") or 1),
+        "status": str(obj.get("status") or "draft"),
+        "title": title,
+        "objective": objective,
+        "refs": refs,
+        "needs_review_flag": 1 if bool(obj.get("needs_review_flag")) else 0,
+        "needs_review_note": (str(obj.get("needs_review_note")) if obj.get("needs_review_note") is not None else None),
+    }
+
+
+@app.post("/import/json")
+def import_json_run(
+    request: Request,
+    upload: UploadFile = File(...),
+    actor_note: str = Form("Imported from JSON"),
+):
+    require(request.state.role, "import:json")
+    actor = request.state.user
+
+    raw = upload.file.read()
+    try:
+        payload = json.loads(raw)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    tasks_in: list[dict[str, Any]] = []
+    workflows_in: list[dict[str, Any]] = []
+
+    if isinstance(payload, dict):
+        if isinstance(payload.get("tasks"), list):
+            tasks_in = [x for x in payload.get("tasks") if isinstance(x, dict)]
+        if isinstance(payload.get("workflows"), list):
+            workflows_in = [x for x in payload.get("workflows") if isinstance(x, dict)]
+        # Allow single objects
+        if payload.get("type") == "task":
+            tasks_in = [payload]
+        if payload.get("type") == "workflow":
+            workflows_in = [payload]
+    elif isinstance(payload, list):
+        # list of heterogeneous objects
+        for x in payload:
+            if not isinstance(x, dict):
+                continue
+            if x.get("type") == "workflow":
+                workflows_in.append(x)
+            else:
+                # default to task
+                tasks_in.append(x)
+    else:
+        raise HTTPException(status_code=400, detail="Import JSON must be an object or a list")
+
+    if not tasks_in and not workflows_in:
+        raise HTTPException(status_code=400, detail="No tasks/workflows found in uploaded JSON")
+
+    created_task_ids: list[str] = []
+    created_workflow_ids: list[str] = []
+    now = utc_now_iso()
+
+    with db() as conn:
+        # tasks first
+        for t in tasks_in:
+            item = _parse_task_json(t)
+            if item["status"] not in ("draft", "submitted", "confirmed", "deprecated"):
+                raise HTTPException(status_code=400, detail=f"Task import '{item['title']}': invalid status '{item['status']}'")
+
+            # Prevent overwrite
+            exists = conn.execute(
+                "SELECT 1 FROM tasks WHERE record_id=? AND version=?",
+                (item["record_id"], item["version"]),
+            ).fetchone()
+            if exists:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Task import conflict: {item['record_id']}@{item['version']} already exists",
+                )
+
+            conn.execute(
+                """
+                INSERT INTO tasks(
+                  record_id, version, status,
+                  title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
+                  irreversible_flag, task_assets_json,
+                  created_at, updated_at, created_by, updated_by,
+                  reviewed_at, reviewed_by, change_note,
+                  needs_review_flag, needs_review_note
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    item["record_id"],
+                    item["version"],
+                    item["status"],
+                    item["title"],
+                    item["outcome"],
+                    _json_dump(item["facts"]),
+                    _json_dump(item["concepts"]),
+                    item["procedure_name"],
+                    _json_dump(item["steps"]),
+                    _json_dump(item["dependencies"]),
+                    item["irreversible_flag"],
+                    _json_dump(item["task_assets"]),
+                    now,
+                    now,
+                    actor,
+                    actor,
+                    None,
+                    None,
+                    actor_note.strip() or "Imported from JSON",
+                    item["needs_review_flag"],
+                    item["needs_review_note"],
+                ),
+            )
+            audit("task", item["record_id"], item["version"], "create", actor, note="import:json")
+            created_task_ids.append(item["record_id"])
+
+        # workflows
+        for w in workflows_in:
+            item = _parse_workflow_json(w)
+            if item["status"] not in ("draft", "submitted", "confirmed", "deprecated"):
+                raise HTTPException(status_code=400, detail=f"Workflow import '{item['title']}': invalid status '{item['status']}'")
+
+            exists = conn.execute(
+                "SELECT 1 FROM workflows WHERE record_id=? AND version=?",
+                (item["record_id"], item["version"]),
+            ).fetchone()
+            if exists:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Workflow import conflict: {item['record_id']}@{item['version']} already exists",
+                )
+
+            enforce_workflow_ref_rules(conn, item["refs"])
+            if item["status"] == "confirmed":
+                # confirmed workflows must reference confirmed tasks only
+                readiness = workflow_readiness(conn, item["refs"])
+                if readiness != "ready":
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Workflow import '{item['title']}': cannot import as confirmed; referenced tasks not all confirmed",
+                    )
+
+            conn.execute(
+                """
+                INSERT INTO workflows(
+                  record_id, version, status,
+                  title, objective,
+                  created_at, updated_at, created_by, updated_by,
+                  reviewed_at, reviewed_by, change_note,
+                  needs_review_flag, needs_review_note
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    item["record_id"],
+                    item["version"],
+                    item["status"],
+                    item["title"],
+                    item["objective"],
+                    now,
+                    now,
+                    actor,
+                    actor,
+                    None,
+                    None,
+                    actor_note.strip() or "Imported from JSON",
+                    item["needs_review_flag"],
+                    item["needs_review_note"],
+                ),
+            )
+            for idx, (rid, ver) in enumerate(item["refs"], start=1):
+                conn.execute(
+                    """
+                    INSERT INTO workflow_task_refs(workflow_record_id, workflow_version, order_index, task_record_id, task_version)
+                    VALUES (?,?,?,?,?)
+                    """,
+                    (item["record_id"], item["version"], idx, rid, ver),
+                )
+
+            audit("workflow", item["record_id"], item["version"], "create", actor, note="import:json")
+            created_workflow_ids.append(item["record_id"])
+
+    # Redirect to something sensible
+    if created_workflow_ids and not created_task_ids:
+        return RedirectResponse(url="/workflows", status_code=303)
+    return RedirectResponse(url="/tasks?status=draft", status_code=303)
+
+
 # ---- Tasks ----
 
 
@@ -822,6 +1178,8 @@ def task_create(
     title: str = Form(...),
     outcome: str = Form(...),
     procedure_name: str = Form(...),
+    tags: str = Form(""),
+    meta: str = Form(""),
     facts: str = Form(""),
     concepts: str = Form(""),
     dependencies: str = Form(""),
@@ -837,6 +1195,8 @@ def task_create(
     facts_list = parse_lines(facts)
     concepts_list = parse_lines(concepts)
     deps_list = parse_lines(dependencies)
+    tags_list = parse_tags(tags)
+    meta_obj = parse_meta(meta)
     steps_list = _zip_steps(step_text, step_completion)
     _validate_steps_required(steps_list)
 
