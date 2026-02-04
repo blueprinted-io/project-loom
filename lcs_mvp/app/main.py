@@ -195,6 +195,26 @@ def _user_has_domain(conn: sqlite3.Connection, username: str, domain: str) -> bo
     return bool(row)
 
 
+def _user_domains(conn: sqlite3.Connection, username: str) -> list[str]:
+    """Return active domain entitlements for the user (sorted).
+
+    Admin is treated as implicitly authorized for all domains.
+    """
+    # Admin break-glass
+    r = conn.execute("SELECT role FROM users WHERE username=? AND disabled_at IS NULL", (username,)).fetchone()
+    if r and str(r["role"]) == "admin":
+        return _active_domains(conn)
+
+    uid = _user_id(conn, username)
+    if uid is None:
+        return []
+    rows = conn.execute(
+        "SELECT domain FROM user_domains WHERE user_id=? ORDER BY domain ASC",
+        (uid,),
+    ).fetchall()
+    return [str(x["domain"]) for x in rows if x and x["domain"]]
+
+
 def _active_domains(conn: sqlite3.Connection) -> list[str]:
     rows = conn.execute("SELECT name FROM domains WHERE disabled_at IS NULL ORDER BY name ASC").fetchall()
     return [str(r["name"]) for r in rows]
