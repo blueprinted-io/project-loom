@@ -122,6 +122,11 @@ a:hover{text-decoration:underline}
   box-shadow:0 1px 0 rgba(0,0,0,.25) inset;
 }
 .pulse-item.muted{color:rgba(255,255,255,.92)}
+
+/* force white text inside pulse strip, regardless of global .muted rules */
+.pulse, .pulse *{color:#fff}
+.pulse .muted{color:rgba(255,255,255,.92)}
+.pulse a{color:#fff}
 .topbar .wrap{display:flex;align-items:center;justify-content:space-between;gap:18px}
 .brand{display:flex;flex-direction:column;gap:4px}
 .brand-link{display:flex;align-items:center;gap:12px}

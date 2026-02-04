@@ -61,17 +61,23 @@
       }
 
       function initTheme(){
+        const btn = document.getElementById('theme-toggle');
         let saved = null;
         try{ saved = localStorage.getItem('theme'); }catch(e){}
+
+        // Apply saved selection (or auto)
         if(saved === 'light' || saved === 'dark') setTheme(saved);
         else setTheme('auto');
 
-        const btn = document.getElementById('theme-toggle');
         if(btn){
           btn.addEventListener('click', function(){
             const cur = document.documentElement.getAttribute('data-theme') || 'auto';
             const next = (cur === 'auto') ? 'light' : (cur === 'light' ? 'dark' : 'auto');
             setTheme(next);
+
+            // Ensure label updates even if CSS changes are subtle.
+            const cur2 = document.documentElement.getAttribute('data-theme') || 'auto';
+            btn.textContent = `Theme: ${cur2}`;
           });
         }
       }
