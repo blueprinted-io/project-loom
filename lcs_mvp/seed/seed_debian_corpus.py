@@ -471,6 +471,33 @@ def build_tasks() -> list[dict]:
     # misc operational tasks
     tasks += [
         task(
+            "Create an SSH authorized_keys file for a user",
+            "User can authenticate using a configured SSH public key.",
+            "Configure authorized_keys",
+            [
+                step("Create the ~/.ssh directory with correct permissions.", "~/.ssh exists with mode 700."),
+                step("Add the public key to ~/.ssh/authorized_keys.", "authorized_keys contains the public key line."),
+                step("Set permissions on authorized_keys.", "authorized_keys has mode 600 and is owned by the user."),
+            ],
+            deps=["User account exists.", "SSH public key available."],
+            facts=["SSH key auth relies on strict file permissions."],
+            concepts=["Key-based auth is stronger than passwords when managed properly."],
+            tags=["linux", "debian", "ssh", "security"],
+        ),
+        task(
+            "Test SSH login using key authentication",
+            "SSH key authentication is validated for the target user.",
+            "Validate SSH key auth",
+            [
+                step("Initiate an SSH connection using the configured key.", "SSH session is established without password prompt."),
+                step("Record the successful authentication evidence.", "A record exists noting user, host, and timestamp."),
+            ],
+            deps=["SSH server installed.", "Key-based auth configured for the user.", "Network reachability to SSH port."],
+            facts=["Password auth may be disabled in hardened configurations."],
+            concepts=["Validate access paths before locking down authentication methods."],
+            tags=["linux", "debian", "ssh", "assurance"],
+        ),
+        task(
             "Set the system hostname",
             "System hostname is set and persists across reboot.",
             "Set hostname",
@@ -580,7 +607,8 @@ def build_tasks() -> list[dict]:
         ),
     ]
 
-    return tasks[:60]
+    # Keep corpus size stable for demos
+    return tasks[:50]
 
 
 def build_workflows(task_ids: list[tuple[str, int, dict]]) -> list[dict]:
@@ -668,6 +696,11 @@ def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", action="store_true", help="Allow reseeding even if seed marker exists")
+    parser.add_argument(
+        "--reset-db",
+        action="store_true",
+        help="Delete ALL existing records (tasks/workflows/refs/audit) before seeding the Debian corpus",
+    )
     args = parser.parse_args()
 
     init_db()
@@ -676,12 +709,21 @@ def main() -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
 
+    if args.reset_db:
+        # Wipe ALL records so the DB contains only this corpus.
+        # Order matters due to FK constraints.
+        conn.execute("DELETE FROM workflow_task_refs")
+        conn.execute("DELETE FROM workflows")
+        conn.execute("DELETE FROM tasks")
+        conn.execute("DELETE FROM audit_log")
+        conn.commit()
+
     existing = conn.execute(
         "SELECT 1 FROM tasks WHERE change_note=? LIMIT 1",
         (SEED_NOTE,),
     ).fetchone()
-    if existing and not args.force:
-        raise SystemExit(f"Refusing to seed: marker '{SEED_NOTE}' already present. Run with --force.")
+    if existing and not args.force and not args.reset_db:
+        raise SystemExit(f"Refusing to seed: marker '{SEED_NOTE}' already present. Run with --force or --reset-db.")
 
     now = utc_now_iso()
 
