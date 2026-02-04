@@ -1624,9 +1624,13 @@ def enforce_workflow_ref_rules(conn: sqlite3.Connection, refs: list[tuple[str, i
     Confirmed workflows must reference confirmed Task versions only (enforced at confirm-time).
 
     Hard constraints here:
-      - references must exist
+      - at least one task reference must exist
+      - referenced task versions must exist
       - referenced task versions must not be deprecated
     """
+    if not refs:
+        raise HTTPException(status_code=400, detail="Workflow must include at least one Task reference")
+
     derived = workflow_readiness(conn, refs)
     if derived == "invalid":
         raise HTTPException(

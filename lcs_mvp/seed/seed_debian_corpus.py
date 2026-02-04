@@ -623,7 +623,7 @@ def build_workflows(task_ids: list[tuple[str, int, dict]]) -> list[dict]:
     apt = pick_tag("apt", 6)
     systemd = pick_tag("systemd", 5)
     ssh = pick_tag("ssh", 4)
-    compliance = pick_tag("compliance", 6)
+    assurance = pick_tag("assurance", 6)
 
     workflows = [
         {
@@ -655,11 +655,11 @@ def build_workflows(task_ids: list[tuple[str, int, dict]]) -> list[dict]:
             "meta": {"domain": "Linux", "owner_team": "Security Operations", "risk_level": "high"},
         },
         {
-            "title": "Linux compliance evidence pack",
-            "objective": "A set of control checks is executed and evidence is recorded.",
-            "refs": compliance[:5],
-            "tags": ["linux", "debian", "compliance"],
-            "meta": {"domain": "Linux", "owner_team": "GRC", "risk_level": "medium"},
+            "title": "Linux evidence pack (service + system assurance)",
+            "objective": "A set of Debian system assurance checks is executed and evidence is recorded.",
+            "refs": assurance[:5],
+            "tags": ["linux", "debian", "assurance"],
+            "meta": {"domain": "Linux", "owner_team": "IT Operations", "risk_level": "medium"},
         },
     ]
 
