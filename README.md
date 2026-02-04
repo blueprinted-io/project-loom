@@ -2,6 +2,10 @@
 
 ## Executive Summary
 
+This repository contains the **blueprinted.io** Learning Content System: a database-defined approach to procedural learning content.
+
+If you want to run the prototype locally right now, jump to **Quickstart (Run Locally)** below.
+
 This system exists to stop procedural learning content from drifting, contradicting itself, and becoming unreliable.
 
 It does this by defining work as structured data, not documents.
@@ -171,13 +175,51 @@ If you have ever said “the guide says one thing and reality says another”, t
 
 ---
 
+## Quickstart (Run Locally)
+
+The runnable MVP lives in `lcs_mvp/`.
+
+```bash
+cd lcs_mvp
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Open: http://127.0.0.1:8000
+
+### Seed the Debian demo dataset
+
+```bash
+cd lcs_mvp
+source .venv/bin/activate
+python3 seed/seed_debian_corpus.py --reset-db
+```
+
+### Switch between demo and blank database (admin)
+
+Switch your role to `admin` in the UI, then open:
+
+- http://127.0.0.1:8000/db
+
+### Roles (prototype)
+
+Cookie-based role switching (not real auth):
+
+- `viewer` / `author` / `reviewer`: normal app roles (no audit log)
+- `audit`: read-only access, includes audit log
+- `admin`: can see everything; can force submit/confirm (recorded in audit)
+
+---
+
 ## In Short
 
-- Work is defined once, correctly.  
-- Tasks are the atomic unit.  
-- Workflows compose tasks into outcomes.  
-- Everything else is derived.  
-- Human review is non-optional.  
-- Drift is treated as a structural failure, not a training issue.  
+- Work is defined once, correctly.
+- Tasks are the atomic unit.
+- Workflows compose tasks into outcomes.
+- Everything else is derived.
+- Human review is non-optional.
+- Drift is treated as a structural failure, not a training issue.
 
 That is the entire point.

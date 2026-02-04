@@ -1,26 +1,67 @@
-# Learning Content System MVP (Prototype)
+# blueprinted.io — Learning Content System MVP
 
-Quick prototype implementing the core primitives from the provided docs:
+FastAPI prototype implementing the core primitives from the docs:
 
 - **Task** and **Workflow** as canonical, versioned records
 - Status lifecycle: `draft → submitted → confirmed → deprecated`
 - Confirmed records are immutable (edits create a new version)
-- Workflows can reference **confirmed Task versions only**
-- Simple warning-only step linting
-- Export workflows to Markdown (HTML/PDF can be added next)
+- Workflow authoring may reference draft/submitted tasks; **workflow confirmation requires all referenced task versions confirmed**
+- Warning-only step linting
+- Exports: Markdown + JSON
+- Imports: PDF (via LM Studio) + JSON
 
-## Run
+## Run locally
 
-```powershell
-cd C:\Users\ewan\.openclaw\workspace\lcs_mvp
-python -m venv .venv
-.\.venv\Scripts\activate
+### Linux / macOS
+
+```bash
+cd lcs_mvp
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Open: http://127.0.0.1:8000
 
+### Windows (PowerShell)
+
+```powershell
+cd lcs_mvp
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+## Seed demo data (Debian corpus)
+
+The demo dataset is designed to look like a real compliance system built around Debian/Linux operational procedures.
+
+```bash
+cd lcs_mvp
+source .venv/bin/activate
+python3 seed/seed_debian_corpus.py --reset-db
+```
+
+## Databases (MVP tenant switch)
+
+This MVP uses **two local SQLite files**:
+
+- Demo DB: `lcs_mvp/data/lcs_demo.db`
+- Blank DB: `lcs_mvp/data/lcs_blank.db`
+
+If you switch to the `admin` role in the UI, you can toggle between them via `/db`.
+
+## Roles (prototype)
+
+This is cookie-based role switching (not real authentication):
+
+- `viewer` / `author` / `reviewer`: normal app roles (no audit log access)
+- `audit`: read-only access, including audit log
+- `admin`: can see everything; can also **force submit/confirm** (logged distinctly)
+
 ## Notes
-- SQLite database is stored at `./data/lcs.db`.
-- This is a prototype: auth/roles are simplified.
+
+- PDF import expects a local LM Studio server if used (see `LCS_LMSTUDIO_BASE_URL`).
+- This is an MVP prototype, not a hardened application.
