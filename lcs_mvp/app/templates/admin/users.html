@@ -43,9 +43,10 @@
       <tr>
         <th>username</th>
         <th>role</th>
+        <th>domains</th>
         <th>password</th>
         <th>status</th>
-        <th style="width: 320px">actions</th>
+        <th style="width: 360px">actions</th>
       </tr>
     </thead>
     <tbody>
@@ -53,6 +54,13 @@
       <tr>
         <td><code>{{ u.username }}</code></td>
         <td><span class="badge">{{ u.role }}</span></td>
+        <td>
+          {% if u.domains %}
+            {% for d in u.domains %}<span class="badge">{{ d }}</span> {% endfor %}
+          {% else %}
+            <span class="muted">(none)</span>
+          {% endif %}
+        </td>
         <td><code>{{ u.demo_password }}</code></td>
         <td>
           {% if u.disabled_at %}
@@ -62,6 +70,11 @@
           {% endif %}
         </td>
         <td>
+          <form method="post" action="/admin/users/domains" style="display:inline">
+            <input type="hidden" name="username" value="{{ u.username }}" />
+            <button class="btn secondary" type="submit">Edit domains</button>
+          </form>
+
           <form method="post" action="/admin/users/reset" style="display:inline">
             <input type="hidden" name="username" value="{{ u.username }}" />
             <input type="hidden" name="password" value="{{ u.demo_password }}" />

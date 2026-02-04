@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Edit user domains</h1>
+<p class="muted">Assign which domains this user is authorized for. Authors cannot submit, and reviewers cannot confirm, outside these domains.</p>
+
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">User</h2>
+  <p><b>{{ user.username }}</b> <span class="muted">·</span> <span class="badge">{{ user.role }}</span></p>
+</div>
+
+<form method="post" action="/admin/users/domains/save" class="card">
+  <input type="hidden" name="username" value="{{ user.username }}" />
+
+  <label>Domains</label>
+  <div class="muted" style="margin-bottom:10px">Select one or more.</div>
+
+  <div class="grid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+    {% for d in domains %}
+      <label class="check" style="display:flex; gap:10px; align-items:center">
+        <input type="checkbox" name="domain" value="{{ d }}" {% if d in selected %}checked{% endif %} />
+        <span>{{ d }}</span>
+      </label>
+    {% endfor %}
+  </div>
+
+  <div style="margin-top:14px">
+    <button class="btn" type="submit">Save</button>
+    <a class="btn secondary" href="/admin/users">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}

@@ -22,6 +22,15 @@
   <label>Procedure name</label>
   <input name="procedure_name" value="{{ task.procedure_name if task else '' }}" required />
 
+  <label>Domain</label>
+  <select name="domain">
+    <option value="" {% if not task or not task.domain %}selected{% endif %}>(unassigned)</option>
+    {% for d in domains %}
+      <option value="{{ d }}" {% if task and task.domain == d %}selected{% endif %}>{{ d }}</option>
+    {% endfor %}
+  </select>
+  <div class="muted" style="margin-top:6px">Domain is required to submit/confirm. Authors can only submit records for domains they hold.</div>
+
   <div class="row">
     <label class="check">
       <input type="checkbox" name="irreversible_flag" {% if task and task.irreversible_flag %}checked{% endif %} />

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Domains</h1>
+<p class="muted">Admin-managed domain registry. Domains gate author submission and reviewer confirmation.</p>
+
+{% if error %}
+  <div class="card" style="border-left:4px solid #b91c1c">
+    <b>Error</b>
+    <div class="muted">{{ error }}</div>
+  </div>
+{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Create domain</h2>
+  <form method="post" action="/admin/domains/create" class="row" style="gap:12px; align-items:end">
+    <div style="flex:1">
+      <label>Name</label>
+      <input name="name" placeholder="linux" required />
+      <div class="muted" style="margin-top:6px">Lowercase, product-led (e.g. linux, kubernetes, postgres).</div>
+    </div>
+    <div>
+      <button class="btn" type="submit">Create</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Current domains</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>domain</th>
+        <th>status</th>
+        <th style="width: 260px">actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in domains %}
+      <tr>
+        <td><code>{{ d.name }}</code></td>
+        <td>
+          {% if d.disabled_at %}
+            <span class="badge" style="background:#3f3f46">disabled</span>
+          {% else %}
+            <span class="badge" style="background:#14532d">active</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if not d.disabled_at %}
+          <form method="post" action="/admin/domains/disable" style="display:inline">
+            <input type="hidden" name="name" value="{{ d.name }}" />
+            <button class="btn secondary" type="submit">Disable</button>
+          </form>
+          {% else %}
+          <form method="post" action="/admin/domains/enable" style="display:inline">
+            <input type="hidden" name="name" value="{{ d.name }}" />
+            <button class="btn secondary" type="submit">Enable</button>
+          </form>
+          {% endif %}
+
+          <form method="post" action="/admin/domains/delete" style="display:inline" onsubmit="return confirm('Delete domain {{ d.name }}?')">
+            <input type="hidden" name="name" value="{{ d.name }}" />
+            <button class="btn secondary" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:12px">Deleting a domain will fail if any user entitlements reference it (and should). Disable instead to deprecate safely.</p>
+</div>
+
+{% endblock %}

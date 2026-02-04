@@ -174,6 +174,38 @@ def require_admin(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Forbidden: admin only")
 
 
+def _user_id(conn: sqlite3.Connection, username: str) -> int | None:
+    row = conn.execute("SELECT id FROM users WHERE username=? AND disabled_at IS NULL", (username,)).fetchone()
+    return int(row["id"]) if row else None
+
+
+def _user_has_domain(conn: sqlite3.Connection, username: str, domain: str) -> bool:
+    if not domain:
+        return False
+    uid = _user_id(conn, username)
+    if uid is None:
+        return False
+    row = conn.execute("SELECT 1 FROM user_domains WHERE user_id=? AND domain=?", (uid, domain)).fetchone()
+    return bool(row)
+
+
+def _active_domains(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute("SELECT name FROM domains WHERE disabled_at IS NULL ORDER BY name ASC").fetchall()
+    return [str(r["name"]) for r in rows]
+
+
+def _workflow_domains(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> list[str]:
+    if not refs:
+        return []
+    domains: set[str] = set()
+    for rid, ver in refs:
+        r = conn.execute("SELECT domain FROM tasks WHERE record_id=? AND version=?", (rid, ver)).fetchone()
+        d = (str(r["domain"]) if r else "").strip()
+        if d:
+            domains.add(d)
+    return sorted(domains)
+
+
 def _hash_password(password: str, salt_hex: str) -> str:
     import hashlib
 
@@ -302,6 +334,8 @@ def init_db_path(db_path: str) -> None:
               irreversible_flag INTEGER NOT NULL,
               task_assets_json TEXT NOT NULL,
 
+              domain TEXT NOT NULL DEFAULT '',
+
               tags_json TEXT NOT NULL DEFAULT '[]',
               meta_json TEXT NOT NULL DEFAULT '{}',
 
@@ -392,6 +426,24 @@ def init_db_path(db_path: str) -> None:
               FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
+            -- Domains (admin-managed registry) + per-user domain entitlements
+            CREATE TABLE IF NOT EXISTS domains (
+              name TEXT PRIMARY KEY,
+              created_at TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              disabled_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS user_domains (
+              user_id INTEGER NOT NULL,
+              domain TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              PRIMARY KEY (user_id, domain),
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (domain) REFERENCES domains(name) ON DELETE RESTRICT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
             """
@@ -407,18 +459,12 @@ def init_db_path(db_path: str) -> None:
         if not _column_exists(conn, "workflows", "meta_json"):
             conn.execute("ALTER TABLE workflows ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
 
+        if not _column_exists(conn, "tasks", "domain"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN domain TEXT NOT NULL DEFAULT ''")
+
 
 def _seed_demo_users(conn: sqlite3.Connection) -> None:
     now = utc_now_iso()
-    # If users already exist, keep the DB stable, but rename known demo users
-    # to the current rockstar set (so demos stay consistent across upgrades).
-    exists = conn.execute("SELECT 1 FROM users LIMIT 1").fetchone()
-    if exists:
-        # Best-effort renames (ignore if already migrated)
-        conn.execute("UPDATE users SET username='fmercury', role='viewer', demo_password='password3' WHERE username='mcury'")
-        conn.execute("UPDATE users SET username='bspringsteen', role='audit', demo_password='password4' WHERE username='dspringsteen'")
-        conn.execute("UPDATE users SET username='kcobain', role='admin', demo_password='admin' WHERE username='admin'")
-        return
 
     # Demo credentials are intentionally obvious.
     # Passwords are stored hashed, but also displayed on the login page via demo_password.
@@ -430,9 +476,34 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
         ("kcobain", "admin", "admin"),
     ]
 
+    # Best-effort renames from older demo sets (idempotent).
+    # Only run when the source username exists and the target username does not.
+    def _rename(old: str, new: str):
+        src = conn.execute("SELECT 1 FROM users WHERE username=?", (old,)).fetchone()
+        dst = conn.execute("SELECT 1 FROM users WHERE username=?", (new,)).fetchone()
+        if src and not dst:
+            conn.execute("UPDATE users SET username=? WHERE username=?", (new, old))
+
+    _rename("mcury", "fmercury")
+    _rename("dspringsteen", "bspringsteen")
+    _rename("admin", "kcobain")
+
     import secrets
 
+    # Ensure each demo user exists (idempotent).
     for username, role, pw in demo:
+        row = conn.execute(
+            "SELECT id FROM users WHERE username=?",
+            (username,),
+        ).fetchone()
+        if row:
+            # Keep role + demo_password aligned for consistent demos.
+            conn.execute(
+                "UPDATE users SET role=?, demo_password=?, disabled_at=NULL WHERE username=?",
+                (role, pw, username),
+            )
+            continue
+
         salt = secrets.token_bytes(16).hex()
         conn.execute(
             """
@@ -441,6 +512,46 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
             """,
             (username, role, salt, _hash_password(pw, salt), pw, now, "seed"),
         )
+
+
+def _seed_demo_domains(conn: sqlite3.Connection) -> None:
+    now = utc_now_iso()
+    # Minimal initial registry (admin can manage later)
+    initial = [
+        "linux",
+        "kubernetes",
+        "postgres",
+        "aws",
+    ]
+    for d in initial:
+        conn.execute(
+            "INSERT OR IGNORE INTO domains(name, created_at, created_by) VALUES (?,?,?)",
+            (d, now, "seed"),
+        )
+
+
+def _seed_demo_entitlements(conn: sqlite3.Connection) -> None:
+    now = utc_now_iso()
+
+    def uid(name: str) -> int | None:
+        r = conn.execute("SELECT id FROM users WHERE username=? AND disabled_at IS NULL", (name,)).fetchone()
+        return int(r["id"]) if r else None
+
+    # Keep this conservative: authors/reviewers only get linux by default.
+    assignments: dict[str, list[str]] = {
+        "jhendrix": ["linux"],
+        "jjoplin": ["linux"],
+    }
+
+    for username, domains in assignments.items():
+        u = uid(username)
+        if not u:
+            continue
+        for d in domains:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_domains(user_id, domain, created_at, created_by) VALUES (?,?,?,?)",
+                (u, d, now, "seed"),
+            )
 
 
 def init_db() -> None:
@@ -453,6 +564,8 @@ def init_db() -> None:
         DB_PATH_CTX.set(p)
         with db() as conn:
             _seed_demo_users(conn)
+            _seed_demo_domains(conn)
+            _seed_demo_entitlements(conn)
 
 
 @app.on_event("startup")
@@ -840,9 +953,21 @@ def admin_users(request: Request, error: str | None = None):
     require_admin(request)
     with db() as conn:
         rows = conn.execute(
-            "SELECT username, role, COALESCE(demo_password, '') AS demo_password, disabled_at FROM users ORDER BY disabled_at IS NOT NULL, role DESC, username ASC"
+            "SELECT id, username, role, COALESCE(demo_password, '') AS demo_password, disabled_at FROM users ORDER BY disabled_at IS NOT NULL, role DESC, username ASC"
         ).fetchall()
-    return templates.TemplateResponse(request, "admin/users.html", {"users": [dict(r) for r in rows], "error": error})
+
+        # Attach per-user domains
+        users: list[dict[str, Any]] = []
+        for r in rows:
+            u = dict(r)
+            doms = conn.execute(
+                "SELECT domain FROM user_domains WHERE user_id=? ORDER BY domain ASC",
+                (int(r["id"]),),
+            ).fetchall()
+            u["domains"] = [str(x["domain"]) for x in doms]
+            users.append(u)
+
+    return templates.TemplateResponse(request, "admin/users.html", {"users": users, "error": error})
 
 
 @app.post("/admin/users/create")
@@ -957,6 +1082,134 @@ def admin_users_delete(request: Request, username: str = Form("")):
         audit("user", username, 1, "delete", request.state.user)
 
     return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.post("/admin/users/domains")
+def admin_user_domains_form(request: Request, username: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+
+    with db() as conn:
+        u = conn.execute("SELECT id, username, role FROM users WHERE username=?", (username,)).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+
+        domains = _active_domains(conn)
+        selected_rows = conn.execute("SELECT domain FROM user_domains WHERE user_id=?", (int(u["id"]),)).fetchall()
+        selected = {str(r["domain"]) for r in selected_rows}
+
+    return templates.TemplateResponse(
+        request,
+        "admin/user_domains.html",
+        {"user": dict(u), "domains": domains, "selected": selected},
+    )
+
+
+@app.post("/admin/users/domains/save")
+def admin_user_domains_save(request: Request, username: str = Form(""), domain: list[str] = Form([])):
+    require_admin(request)
+    username = (username or "").strip()
+    selected = sorted({(d or "").strip().lower() for d in (domain or []) if (d or "").strip()})
+
+    with db() as conn:
+        u = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+
+        allowed = set(_active_domains(conn))
+        for d in selected:
+            if d not in allowed:
+                raise HTTPException(status_code=400, detail=f"Invalid domain '{d}'")
+
+        uid = int(u["id"])
+        conn.execute("DELETE FROM user_domains WHERE user_id=?", (uid,))
+        now = utc_now_iso()
+        for d in selected:
+            conn.execute(
+                "INSERT INTO user_domains(user_id, domain, created_at, created_by) VALUES (?,?,?,?)",
+                (uid, d, now, request.state.user),
+            )
+
+        audit("user", username, 1, "set_domains", request.state.user, note=",".join(selected))
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.get("/admin/domains", response_class=HTMLResponse)
+def admin_domains(request: Request, error: str | None = None):
+    require_admin(request)
+    with db() as conn:
+        rows = conn.execute("SELECT name, created_at, created_by, disabled_at FROM domains ORDER BY name ASC").fetchall()
+    return templates.TemplateResponse(request, "admin/domains.html", {"domains": [dict(r) for r in rows], "error": error})
+
+
+@app.post("/admin/domains/create")
+def admin_domains_create(request: Request, name: str = Form("")):
+    require_admin(request)
+    name_norm = (name or "").strip().lower()
+    if not name_norm:
+        raise HTTPException(status_code=400, detail="name required")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name_norm):
+        raise HTTPException(status_code=400, detail="invalid domain name")
+
+    with db() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO domains(name, created_at, created_by) VALUES (?,?,?)",
+                (name_norm, utc_now_iso(), request.state.user),
+            )
+            audit("domain", name_norm, 1, "create", request.state.user)
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="domain already exists")
+
+    return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+@app.post("/admin/domains/disable")
+def admin_domains_disable(request: Request, name: str = Form("")):
+    require_admin(request)
+    name_norm = (name or "").strip().lower()
+    with db() as conn:
+        row = conn.execute("SELECT 1 FROM domains WHERE name=?", (name_norm,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="domain not found")
+        conn.execute("UPDATE domains SET disabled_at=? WHERE name=?", (utc_now_iso(), name_norm))
+        audit("domain", name_norm, 1, "disable", request.state.user)
+
+    return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+@app.post("/admin/domains/enable")
+def admin_domains_enable(request: Request, name: str = Form("")):
+    require_admin(request)
+    name_norm = (name or "").strip().lower()
+    with db() as conn:
+        row = conn.execute("SELECT 1 FROM domains WHERE name=?", (name_norm,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="domain not found")
+        conn.execute("UPDATE domains SET disabled_at=NULL WHERE name=?", (name_norm,))
+        audit("domain", name_norm, 1, "enable", request.state.user)
+
+    return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+@app.post("/admin/domains/delete")
+def admin_domains_delete(request: Request, name: str = Form("")):
+    require_admin(request)
+    name_norm = (name or "").strip().lower()
+    with db() as conn:
+        row = conn.execute("SELECT 1 FROM domains WHERE name=?", (name_norm,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="domain not found")
+        try:
+            conn.execute("DELETE FROM domains WHERE name=?", (name_norm,))
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="domain is referenced by user entitlements; disable it instead")
+        audit("domain", name_norm, 1, "delete", request.state.user)
+
+    return RedirectResponse(url="/admin/domains", status_code=303)
 
 
 @app.get("/audit", response_class=HTMLResponse)
@@ -1154,10 +1407,11 @@ def import_pdf_run(
                   record_id, version, status,
                   title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
                   irreversible_flag, task_assets_json,
+                  domain,
                   created_at, updated_at, created_by, updated_by,
                   reviewed_at, reviewed_by, change_note,
                   needs_review_flag, needs_review_note
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     record_id,
@@ -1172,6 +1426,7 @@ def import_pdf_run(
                     _json_dump([str(x) for x in deps]),
                     0,
                     _json_dump(assets),
+                    "",
                     now,
                     now,
                     actor,
@@ -1357,10 +1612,11 @@ def import_json_run(
                   record_id, version, status,
                   title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
                   irreversible_flag, task_assets_json,
+                  domain,
                   created_at, updated_at, created_by, updated_by,
                   reviewed_at, reviewed_by, change_note,
                   needs_review_flag, needs_review_note
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     item["record_id"],
@@ -1375,6 +1631,7 @@ def import_json_run(
                     _json_dump(item["dependencies"]),
                     item["irreversible_flag"],
                     _json_dump(item["task_assets"]),
+                    "",
                     now,
                     now,
                     actor,
@@ -1512,7 +1769,13 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
 @app.get("/tasks/new", response_class=HTMLResponse)
 def task_new_form(request: Request):
     require(request.state.role, "task:create")
-    return templates.TemplateResponse(request, "task_edit.html", {"mode": "new", "task": None, "warnings": []})
+    with db() as conn:
+        domains = _active_domains(conn)
+    return templates.TemplateResponse(
+        request,
+        "task_edit.html",
+        {"mode": "new", "task": None, "warnings": [], "domains": domains},
+    )
 
 
 @app.post("/tasks/new")
@@ -1521,6 +1784,7 @@ def task_create(
     title: str = Form(...),
     outcome: str = Form(...),
     procedure_name: str = Form(...),
+    domain: str = Form(""),
     tags: str = Form(""),
     meta: str = Form(""),
     facts: str = Form(""),
@@ -1547,17 +1811,23 @@ def task_create(
 
     now = utc_now_iso()
     with db() as conn:
+        domains = _active_domains(conn)
+        domain_norm = (domain or "").strip().lower()
+        if domain_norm and domain_norm not in domains:
+            raise HTTPException(status_code=400, detail=f"Invalid domain '{domain_norm}'")
+
         conn.execute(
             """
             INSERT INTO tasks(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              domain,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1572,6 +1842,7 @@ def task_create(
                 _json_dump(deps_list),
                 1 if irreversible_flag else 0,
                 _json_dump([]),
+                domain_norm,
                 _json_dump(tags_list),
                 _json_dump(meta_obj),
                 now,
@@ -1636,10 +1907,14 @@ def task_edit_form(request: Request, record_id: str, version: int):
     task["steps"] = _normalize_steps(raw_steps)
 
     warnings = lint_steps(task["steps"])
+
+    with db() as conn:
+        domains = _active_domains(conn)
+
     return templates.TemplateResponse(
         request,
         "task_edit.html",
-        {"mode": "edit", "task": task, "warnings": warnings},
+        {"mode": "edit", "task": task, "warnings": warnings, "domains": domains},
     )
 
 
@@ -1651,6 +1926,7 @@ def task_save(
     title: str = Form(...),
     outcome: str = Form(...),
     procedure_name: str = Form(...),
+    domain: str = Form(""),
     tags: str = Form(""),
     meta: str = Form(""),
     facts: str = Form(""),
@@ -1698,11 +1974,12 @@ def task_save(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              domain,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1717,6 +1994,7 @@ def task_save(
                 _json_dump(deps_list),
                 1 if irreversible_flag else 0,
                 src["task_assets_json"],
+                (domain or "").strip().lower(),
                 _json_dump(tags_list),
                 _json_dump(meta_obj),
                 now,
@@ -1755,11 +2033,12 @@ def task_new_version(request: Request, record_id: str, version: int):
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              domain,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1774,6 +2053,7 @@ def task_new_version(request: Request, record_id: str, version: int):
                 src["dependencies_json"],
                 src["irreversible_flag"],
                 src["task_assets_json"],
+                (src["domain"] if "domain" in src.keys() else ""),
                 (src["tags_json"] if "tags_json" in src.keys() else "[]"),
                 (src["meta_json"] if "meta_json" in src.keys() else "{}"),
                 now,
@@ -1798,12 +2078,19 @@ def task_submit(request: Request, record_id: str, version: int):
     actor = request.state.user
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(404)
         if row["status"] != "draft":
             raise HTTPException(409, detail="Only draft tasks can be submitted")
+
+        domain = (row["domain"] or "").strip()
+        if not domain:
+            raise HTTPException(status_code=409, detail="Cannot submit task: domain is required")
+        if not _user_has_domain(conn, actor, domain):
+            raise HTTPException(status_code=403, detail=f"Forbidden: you are not authorized for domain '{domain}'")
+
         conn.execute(
             "UPDATE tasks SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
             (utc_now_iso(), actor, record_id, version),
@@ -1838,12 +2125,18 @@ def task_confirm(request: Request, record_id: str, version: int):
     actor = request.state.user
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(404)
         if row["status"] != "submitted":
             raise HTTPException(409, detail="Only submitted tasks can be confirmed")
+
+        domain = (row["domain"] or "").strip()
+        if not domain:
+            raise HTTPException(status_code=409, detail="Cannot confirm task: domain is required")
+        if not _user_has_domain(conn, actor, domain):
+            raise HTTPException(status_code=403, detail=f"Forbidden: you are not authorized to confirm domain '{domain}'")
 
         # Deprecate any previously confirmed version
         conn.execute(
@@ -2146,10 +2439,9 @@ def workflow_view(request: Request, record_id: str, version: int):
             (record_id, version),
         ).fetchall()
 
-        readiness_info = workflow_readiness_detail(
-            conn,
-            [(r["record_id"], int(r["version"])) for r in refs],
-        )
+        refs_pairs = [(r["record_id"], int(r["version"])) for r in refs]
+        readiness_info = workflow_readiness_detail(conn, refs_pairs)
+        doms = _workflow_domains(conn, refs_pairs)
 
     return templates.TemplateResponse(
         request,
@@ -2160,6 +2452,7 @@ def workflow_view(request: Request, record_id: str, version: int):
             "readiness": readiness_info["readiness"],
             "readiness_reasons": readiness_info["reasons"],
             "blocking_task_refs": readiness_info["blocking_task_refs"],
+            "domains": doms,
         },
     )
 
@@ -2291,6 +2584,17 @@ def workflow_submit(request: Request, record_id: str, version: int):
             raise HTTPException(404)
         if row["status"] != "draft":
             raise HTTPException(409, detail="Only draft workflows can be submitted")
+
+        # Author domain gate: you can't submit workflows containing domains you don't hold.
+        refs = conn.execute(
+            "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+            (record_id, version),
+        ).fetchall()
+        doms = _workflow_domains(conn, [(r["task_record_id"], int(r["task_version"])) for r in refs])
+        missing = [d for d in doms if not _user_has_domain(conn, actor, d)]
+        if missing:
+            raise HTTPException(status_code=403, detail=f"Forbidden: you are not authorized for workflow domain(s): {', '.join(missing)}")
+
         conn.execute(
             "UPDATE workflows SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
             (utc_now_iso(), actor, record_id, version),
@@ -2342,6 +2646,11 @@ def workflow_confirm(request: Request, record_id: str, version: int):
                 status_code=409,
                 detail="Cannot confirm workflow: all referenced Task versions must be confirmed.",
             )
+
+        doms = _workflow_domains(conn, [(r["task_record_id"], int(r["task_version"])) for r in refs])
+        missing = [d for d in doms if not _user_has_domain(conn, actor, d)]
+        if missing:
+            raise HTTPException(status_code=403, detail=f"Forbidden: you are not authorized to confirm workflow domain(s): {', '.join(missing)}")
 
         # Deprecate any previously confirmed version
         conn.execute(

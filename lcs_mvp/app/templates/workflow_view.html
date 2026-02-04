@@ -27,6 +27,10 @@
   <h2>{{ workflow.title }}</h2>
   <p><b>Objective:</b> {{ workflow.objective }}</p>
 
+  {% if domains %}
+    <p class="muted">Domains (derived): {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
+  {% endif %}
+
   {% if readiness != 'ready' %}
     <div class="callout warn">
       <b>Not ready to confirm</b>
