@@ -1,39 +1,54 @@
-{% extends "base.html" %}
-{% block content %}
-<h1>Login</h1>
-<p class="muted">Demo-mode local auth. Pick a user below (rockstar theme) and log in.</p>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login · blueprinted.io</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="wrap" style="padding: 24px 0">
+    <div class="card" style="display:flex; align-items:center; gap:12px; margin-bottom:16px">
+      <img class="brand-logo" src="/static/blueprinted.png" alt="blueprinted.io" style="width:42px; height:42px" />
+      <div>
+        <div style="font-weight:700">blueprinted.io</div>
+        <div class="muted">Demo-mode local auth</div>
+      </div>
+    </div>
 
-<div class="card" style="margin-bottom:16px">
-  <h2 style="margin-top:0">Demo users</h2>
-  <p class="muted">Passwords are shown for convenience in this MVP demo. Admin can manage users.</p>
+    <div class="card" style="margin-bottom:16px">
+      <h1 style="margin-top:0">Login</h1>
+      <p class="muted">Pick a demo user below and log in. Passwords are shown for convenience in this MVP demo.</p>
 
-  <table class="table">
-    <thead>
-      <tr>
-        <th>username</th>
-        <th>role</th>
-        <th>password</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td><code>{{ u.username }}</code></td>
-        <td><span class="badge">{{ u.role }}</span></td>
-        <td><code>{{ u.demo_password }}</code></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>username</th>
+            <th>role</th>
+            <th>password</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td><code>{{ u.username }}</code></td>
+            <td><span class="badge">{{ u.role }}</span></td>
+            <td><code>{{ u.demo_password }}</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
 
-<form method="post" action="/login" class="card">
-  <label>Username</label>
-  <input name="username" placeholder="jhendrix" required />
+    <form method="post" action="/login" class="card">
+      <label>Username</label>
+      <input name="username" placeholder="jhendrix" required />
 
-  <label>Password</label>
-  <input name="password" type="password" placeholder="password1" required />
+      <label>Password</label>
+      <input name="password" type="password" placeholder="password1" required />
 
-  <button class="btn" type="submit">Login</button>
-</form>
-{% endblock %}
+      <button class="btn" type="submit">Login</button>
+    </form>
+  </div>
+</body>
+</html>

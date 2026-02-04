@@ -405,9 +405,14 @@ def init_db_path(db_path: str) -> None:
 
 def _seed_demo_users(conn: sqlite3.Connection) -> None:
     now = utc_now_iso()
-    # Only seed if no users exist.
+    # If users already exist, keep the DB stable, but rename known demo users
+    # to the current rockstar set (so demos stay consistent across upgrades).
     exists = conn.execute("SELECT 1 FROM users LIMIT 1").fetchone()
     if exists:
+        # Best-effort renames (ignore if already migrated)
+        conn.execute("UPDATE users SET username='fmercury', role='viewer', demo_password='password3' WHERE username='mcury'")
+        conn.execute("UPDATE users SET username='bspringsteen', role='audit', demo_password='password4' WHERE username='dspringsteen'")
+        conn.execute("UPDATE users SET username='kcobain', role='admin', demo_password='admin' WHERE username='admin'")
         return
 
     # Demo credentials are intentionally obvious.
@@ -415,9 +420,9 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     demo = [
         ("jhendrix", "reviewer", "password1"),
         ("jjoplin", "author", "password2"),
-        ("mcury", "viewer", "password3"),
-        ("dspringsteen", "audit", "password4"),
-        ("admin", "admin", "admin"),
+        ("fmercury", "viewer", "password3"),
+        ("bspringsteen", "audit", "password4"),
+        ("kcobain", "admin", "admin"),
     ]
 
     import secrets
