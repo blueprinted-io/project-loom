@@ -668,40 +668,11 @@ Workflows provide compositional flexibility.
 
 ### Heuristic Validation Rules for Steps (MVP)
 
-These checks SHOULD flag as warnings (not hard failures unless a
-document already defines hard failures):
+Canonical location: see **Heuristic Validation Rules for Steps (MVP)** in
+[Learning Content Governance](Learning_Content_Governance.md).
 
-1.  **Abstract verbs warning:** Validation SHOULD flag steps containing
-    abstract or bundling verbs such as edit, configure, set up, manage,
-    ensure, handle, prepare, troubleshoot.
-
-    These terms are acceptable only if the Step provides a concrete
-    method either:
-
-    - directly in `text` (command or tool-class), or
-
-    - in `actions` (tool-specific sub-steps), or
-
-    - by being immediately followed by decomposed Steps that specify
-      method and completion.
-
-2.  **Multi-action detector:** Validation SHOULD flag steps containing
-    conjunctions that imply multiple actions (and, then, also, as well
-    as). Validation SHOULD also flag steps that contain multiple
-    imperatives (heuristic: two verbs in one Step).
-
-3.  **Completion/verification expectation:** If a Step claims a state
-    change (install, mount, enable, add, update, remove), it MUST either
-    include an explicit confirmation check in the same Step or be
-    followed by a Step that confirms it. “Verify it works” is not
-    acceptable; the confirmation MUST name the check (command,
-    observable output, exit code, etc.).
-
-Human review MUST be the final semantic gate for Step correctness and
-intent.
-
-Why this exists: heuristic checks reduce ambiguity, but semantic
-correctness still requires human judgment.
+(This document intentionally does not duplicate the rule text to avoid
+cross-doc drift.)
 
 ## Data Hierarchy Diagram (Conceptual)
 
