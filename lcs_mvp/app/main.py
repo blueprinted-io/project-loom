@@ -958,7 +958,8 @@ def _parse_task_json(obj: dict[str, Any]) -> dict[str, Any]:
     return {
         "record_id": str(obj.get("record_id") or "").strip() or str(uuid.uuid4()),
         "version": int(obj.get("version") or 1),
-        "status": str(obj.get("status") or "draft"),
+        # Import is ingress: always draft. Trust boundary is human review.
+        "status": "draft",
         "title": title,
         "outcome": outcome,
         "procedure_name": procedure_name,
@@ -1008,7 +1009,8 @@ def _parse_workflow_json(obj: dict[str, Any]) -> dict[str, Any]:
     return {
         "record_id": str(obj.get("record_id") or "").strip() or str(uuid.uuid4()),
         "version": int(obj.get("version") or 1),
-        "status": str(obj.get("status") or "draft"),
+        # Import is ingress: always draft. Trust boundary is human review.
+        "status": "draft",
         "title": title,
         "objective": objective,
         "refs": refs,
@@ -1069,8 +1071,9 @@ def import_json_run(
         # tasks first
         for t in tasks_in:
             item = _parse_task_json(t)
-            if item["status"] not in ("draft", "submitted", "confirmed", "deprecated"):
-                raise HTTPException(status_code=400, detail=f"Task import '{item['title']}': invalid status '{item['status']}'")
+            # Import is ingress: always draft.
+            # (Seeding/demo data should write directly to the DB via seed scripts, not via import.)
+            item["status"] = "draft"
 
             # Prevent overwrite
             exists = conn.execute(
@@ -1124,8 +1127,9 @@ def import_json_run(
         # workflows
         for w in workflows_in:
             item = _parse_workflow_json(w)
-            if item["status"] not in ("draft", "submitted", "confirmed", "deprecated"):
-                raise HTTPException(status_code=400, detail=f"Workflow import '{item['title']}': invalid status '{item['status']}'")
+            # Import is ingress: always draft.
+            # (Seeding/demo data should write directly to the DB via seed scripts, not via import.)
+            item["status"] = "draft"
 
             exists = conn.execute(
                 "SELECT 1 FROM workflows WHERE record_id=? AND version=?",
@@ -1138,14 +1142,7 @@ def import_json_run(
                 )
 
             enforce_workflow_ref_rules(conn, item["refs"])
-            if item["status"] == "confirmed":
-                # confirmed workflows must reference confirmed tasks only
-                readiness = workflow_readiness(conn, item["refs"])
-                if readiness != "ready":
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"Workflow import '{item['title']}': cannot import as confirmed; referenced tasks not all confirmed",
-                    )
+            # Imported workflows always arrive as draft; confirmation remains a human-only trust boundary.
 
             conn.execute(
                 """
