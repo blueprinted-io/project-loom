@@ -3,11 +3,11 @@
 This aligns with the example in tests/Linux(deb)WorkingExample.md, but scales it.
 
 Creates (default):
-  - 60 Tasks (so you end up comfortably above 50 even if you already seeded a few)
+  - 50 Tasks
   - 12 Workflows
 
 Status mix (default):
-  - Tasks: 35 draft, 25 submitted
+  - Tasks: 30 draft, 20 submitted
   - Workflows: 7 draft, 5 submitted
 
 Run:
@@ -409,27 +409,178 @@ def build_tasks() -> list[dict]:
         ),
     ]
 
-    # Pad to 60 tasks with additional Linux operations patterns
-    while len(tasks) < 60:
-        i = len(tasks) + 1
+    # --- More Debian tasks (templated, but still concrete and command-driven) ---
+
+    # Common Debian utilities (install + verify)
+    pkg_pairs = [
+        ("curl", "curl"),
+        ("git", "git"),
+        ("jq", "jq"),
+        ("unzip", "unzip"),
+        ("htop", "htop"),
+        ("ca-certificates", "update-ca-certificates"),
+        ("gnupg", "gpg"),
+        ("dnsutils", "dig"),
+        ("lsof", "lsof"),
+        ("net-tools", "ifconfig"),
+        ("rsyslog", "rsyslogd"),
+        ("logrotate", "logrotate"),
+        ("cron", "cron"),
+        ("ufw", "ufw"),
+        ("fail2ban", "fail2ban-client"),
+    ]
+
+    for pkg, binname in pkg_pairs:
         tasks.append(
             task(
-                f"Perform a Linux control check #{i}",
-                "A Linux control check is performed and the result is recorded.",
-                "Perform control check",
+                f"Install and verify package: {pkg}",
+                f"Package '{pkg}' is installed and the '{binname}' command is available.",
+                f"Install {pkg}",
                 [
-                    step("Run the approved command to retrieve the target system state.", "Command outputs the target state value."),
-                    step("Compare the output against the defined requirement.", "Comparison result is recorded as pass/fail."),
-                    step("Record the evidence (command + output summary) in the system of record.", "Evidence record exists with timestamp."),
+                    step(f"Install {pkg} using apt install {pkg}.", "APT reports installation completed successfully."),
+                    step(f"Confirm {pkg} is installed using dpkg -l {pkg}.", "dpkg -l shows the package in installed state."),
+                    step(f"Confirm the binary is callable: run {binname} --version.", "Command returns version output or exits with status 0."),
                 ],
-                deps=["Defined requirement exists.", "Access to the target system."],
-                facts=["Control checks must be repeatable."],
-                concepts=["Compliance evidence is a first-class output."],
-                tags=["linux", "debian", "compliance"],
+                deps=["APT metadata is current.", "Sudo access."],
+                facts=["APT installs dependencies automatically."],
+                concepts=["Installing via APT creates traceable, reproducible state."],
+                tags=["linux", "debian", "apt"],
             )
         )
 
-    return tasks
+    # systemd actions for common services
+    svc_units = ["ssh", "cron", "rsyslog", "ufw", "fail2ban"]
+    for unit in svc_units:
+        tasks.append(
+            task(
+                f"Enable and start systemd unit: {unit}",
+                f"The {unit} unit is enabled and running.",
+                f"Enable+start {unit}",
+                [
+                    step(f"Enable {unit} using systemctl enable {unit}.", "systemctl is-enabled reports enabled."),
+                    step(f"Start {unit} using systemctl start {unit}.", "systemctl status shows Active: active (running)."),
+                    step(f"Check recent logs for {unit}.", "journalctl output contains no error-level messages since start."),
+                ],
+                deps=["Unit is installed.", "Sudo access."],
+                facts=["Enablement and runtime state are separate concerns."],
+                concepts=["Service management must be auditable and repeatable."],
+                tags=["linux", "debian", "systemd"],
+            )
+        )
+
+    # misc operational tasks
+    tasks += [
+        task(
+            "Set the system hostname",
+            "System hostname is set and persists across reboot.",
+            "Set hostname",
+            [
+                step("Set the hostname using hostnamectl.", "hostnamectl status shows the expected Static hostname."),
+                step("Confirm /etc/hostname matches the configured hostname.", "/etc/hostname contains the expected hostname."),
+            ],
+            deps=["Sudo access."],
+            facts=["Hostname affects prompts, logs, and some service discovery."],
+            concepts=["Persistent hostname is managed by system tools and config files."],
+            tags=["linux", "debian", "network"],
+        ),
+        task(
+            "Configure system timezone",
+            "System timezone is configured and reported correctly.",
+            "Set timezone",
+            [
+                step("Set the timezone using timedatectl set-timezone.", "timedatectl shows the expected Time zone."),
+                step("Confirm local time displays in the configured timezone.", "date output matches expected timezone offset."),
+            ],
+            deps=["Sudo access."],
+            facts=["Timezone impacts log timestamps and scheduled jobs."],
+            concepts=["Correct time settings support auditing and incident response."],
+            tags=["linux", "debian", "assurance"],
+        ),
+        task(
+            "Enable system time synchronization",
+            "Time synchronization is enabled and clock reports synchronized.",
+            "Enable time sync",
+            [
+                step("Enable NTP synchronization using timedatectl set-ntp true.", "timedatectl shows NTP service active."),
+                step("Confirm system clock is synchronized.", "timedatectl shows System clock synchronized: yes."),
+            ],
+            deps=["Network access.", "Sudo access."],
+            facts=["Accurate time is required for reliable auditing."],
+            concepts=["Time sync reduces drift that breaks security assumptions."],
+            tags=["linux", "debian", "assurance"],
+        ),
+        task(
+            "Enable unattended security updates",
+            "Unattended upgrades are enabled and configured to apply security updates.",
+            "Configure unattended-upgrades",
+            [
+                step("Install unattended-upgrades using apt.", "dpkg -l shows unattended-upgrades installed."),
+                step("Enable unattended upgrades via configuration.", "unattended-upgrades is enabled in configuration."),
+                step("Verify unattended-upgrades timer exists.", "systemctl list-timers shows unattended-upgrades timer."),
+            ],
+            deps=["APT metadata is current.", "Sudo access."],
+            facts=["Automatic updates change system state."],
+            concepts=["Security patch latency is a measurable risk."],
+            tags=["linux", "debian", "apt", "security"],
+        ),
+        task(
+            "Clean APT package cache",
+            "APT cache is cleaned to reclaim disk space.",
+            "apt clean",
+            [
+                step("Run apt clean.", "Command exits with status 0."),
+                step("Confirm cache directory is cleared.", "/var/cache/apt/archives contains no .deb files or is reduced."),
+            ],
+            deps=["Sudo access."],
+            facts=["APT caches downloaded package files."],
+            concepts=["Disk pressure can cause upgrades and installs to fail."],
+            tags=["linux", "debian", "apt"],
+        ),
+        task(
+            "Remove unused packages",
+            "Unused packages are removed.",
+            "apt autoremove",
+            [
+                step("Run apt autoremove and review the proposed removals.", "Command completes successfully."),
+                step("Confirm apt reports no broken packages.", "apt reports no broken packages."),
+            ],
+            deps=["Sudo access."],
+            facts=["Autoremove removes packages installed as dependencies that are no longer needed."],
+            concepts=["Removing unused packages reduces attack surface and disk usage."],
+            tags=["linux", "debian", "apt"],
+        ),
+        task(
+            "Create a sudoers drop-in for an admin group",
+            "A sudoers drop-in grants admin group sudo access and passes validation.",
+            "Configure sudoers drop-in",
+            [
+                step("Create a file in /etc/sudoers.d with the required rule.", "File exists in /etc/sudoers.d with expected contents."),
+                step("Validate sudoers syntax using visudo -cf.", "visudo validation exits with status 0."),
+            ],
+            deps=["Sudo access.", "Admin group name defined."],
+            facts=["Invalid sudoers syntax can break sudo."],
+            concepts=["Use drop-ins to avoid editing the main sudoers file."],
+            tags=["linux", "debian", "security", "identity"],
+        ),
+        task(
+            "Create a swap file",
+            "A swap file exists and is activated.",
+            "Create swapfile",
+            [
+                step("Allocate a swap file of the required size.", "Swap file exists at the expected path and size."),
+                step("Set swap file permissions to 600.", "ls -l shows mode 600 on the swap file."),
+                step("Initialize the swap area using mkswap.", "mkswap completes successfully."),
+                step("Enable swap using swapon.", "swapon --show lists the new swap file."),
+            ],
+            deps=["Sudo access.", "Sufficient disk space."],
+            facts=["Swap files extend virtual memory."],
+            concepts=["Swap reduces OOM risk but may impact performance."],
+            tags=["linux", "debian", "storage"],
+            irreversible=0,
+        ),
+    ]
+
+    return tasks[:60]
 
 
 def build_workflows(task_ids: list[tuple[str, int, dict]]) -> list[dict]:
@@ -535,9 +686,9 @@ def main() -> None:
     now = utc_now_iso()
 
     tasks = build_tasks()
-    # 60 tasks: 35 draft, 25 submitted
+    # 50 tasks: 30 draft, 20 submitted
     for idx, t in enumerate(tasks):
-        t["status"] = "draft" if idx < 35 else "submitted"
+        t["status"] = "draft" if idx < 30 else "submitted"
 
     inserted: list[tuple[str, int, dict]] = []
 
