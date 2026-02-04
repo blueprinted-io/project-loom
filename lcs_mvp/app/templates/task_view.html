@@ -52,6 +52,12 @@
     {% for st in task.steps %}
       <li>
         <div>{{ st.text }}</div>
+        {% if st.actions %}
+          <div class="muted" style="margin-top:6px">Actions (optional):</div>
+          <ul>
+            {% for a in st.actions %}<li class="muted">{{ a }}</li>{% endfor %}
+          </ul>
+        {% endif %}
         {% if st.completion %}
           <div class="muted">Completion: {{ st.completion }}</div>
         {% endif %}

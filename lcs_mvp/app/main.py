@@ -637,22 +637,43 @@ STATE_CHANGE_VERBS = {
 }
 
 
-def _normalize_steps(raw: Any) -> list[dict[str, str]]:
-    """Return steps as list of {text, completion}.
+def _normalize_steps(raw: Any) -> list[dict[str, Any]]:
+    """Return steps as list of {text, completion, actions?}.
 
-    Backward compatible with legacy storage of steps as list[str].
+    Canonical meaning:
+      - text: what you are doing (intent)
+      - completion: how you prove the Step is complete (required)
+      - actions: optional sub-instructions for how to perform the Step in a specific tool/environment
+
+    Backward compatible with legacy storage:
+      - steps as list[str]
+      - steps as list[{text, completion}]
     """
     if raw is None:
         return []
     if isinstance(raw, list):
-        out: list[dict[str, str]] = []
+        out: list[dict[str, Any]] = []
         for item in raw:
             if isinstance(item, str):
-                out.append({"text": item, "completion": ""})
+                out.append({"text": item, "completion": "", "actions": []})
             elif isinstance(item, dict):
-                out.append({"text": str(item.get("text", "")), "completion": str(item.get("completion", ""))})
+                actions_raw = item.get("actions")
+                actions: list[str] = []
+                if isinstance(actions_raw, list):
+                    actions = [str(x) for x in actions_raw if str(x).strip()]
+                elif isinstance(actions_raw, str):
+                    # allow a single multi-line string
+                    actions = [ln.strip() for ln in actions_raw.splitlines() if ln.strip()]
+
+                out.append(
+                    {
+                        "text": str(item.get("text", "")),
+                        "completion": str(item.get("completion", "")),
+                        "actions": actions,
+                    }
+                )
         # Drop empty rows
-        return [s for s in out if s.get("text") or s.get("completion")]
+        return [s for s in out if (s.get("text") or "").strip() or (s.get("completion") or "").strip()]
     return []
 
 
@@ -676,11 +697,42 @@ def lint_steps(steps: Any) -> list[str]:
                     )
                 break
 
-        # Multi-action detector
+        # Multi-action detector (refined): only warn when conjunctions likely hide multiple procedural operations.
         if re.search(r"\b(and|then|also|as well as)\b", low):
-            warnings.append(
-                f"Step {i}: may include multiple actions (contains conjunction like 'and/then/also'). Consider splitting."
+            verb_markers = (
+                list(ABSTRACT_VERBS)
+                + list(STATE_CHANGE_VERBS)
+                + [
+                    "run",
+                    "open",
+                    "copy",
+                    "move",
+                    "create",
+                    "delete",
+                    "set",
+                    "insert",
+                    "save",
+                    "restart",
+                    "reload",
+                    "verify",
+                    "confirm",
+                    "record",
+                    "list",
+                    "check",
+                    "edit",
+                ]
             )
+            # Count verb-like tokens appearing as word starts.
+            hits = 0
+            for v in set(verb_markers):
+                if re.search(rf"\b{re.escape(v)}\b", low):
+                    hits += 1
+                if hits >= 2:
+                    break
+            if hits >= 2:
+                warnings.append(
+                    f"Step {i}: may include multiple procedural operations (conjunction + multiple verbs). Consider splitting."
+                )
 
         # Verification expectation
         if any(low.startswith(v + " ") or low == v for v in STATE_CHANGE_VERBS):
@@ -692,24 +744,28 @@ def lint_steps(steps: Any) -> list[str]:
     return warnings
 
 
-def _zip_steps(step_text: list[str], step_completion: list[str]) -> list[dict[str, str]]:
+def _zip_steps(step_text: list[str], step_completion: list[str], step_actions: list[str]) -> list[dict[str, Any]]:
     # Keep ordering.
-    out: list[dict[str, str]] = []
-    for t, c in zip(step_text, step_completion, strict=False):
-        out.append({"text": (t or "").strip(), "completion": (c or "").strip()})
+    out: list[dict[str, Any]] = []
+    for t, c, a in zip(step_text, step_completion, step_actions, strict=False):
+        actions = [ln.strip() for ln in (a or "").splitlines() if ln.strip()]
+        out.append({"text": (t or "").strip(), "completion": (c or "").strip(), "actions": actions})
+
     # If lists are mismatched, extend with remaining text.
-    if len(step_text) > len(step_completion):
-        for t in step_text[len(step_completion):]:
-            out.append({"text": (t or "").strip(), "completion": ""})
-    elif len(step_completion) > len(step_text):
-        for c in step_completion[len(step_text):]:
-            out.append({"text": "", "completion": (c or "").strip()})
+    longest = max(len(step_text), len(step_completion), len(step_actions))
+    for i in range(len(out), longest):
+        t = step_text[i] if i < len(step_text) else ""
+        c = step_completion[i] if i < len(step_completion) else ""
+        a = step_actions[i] if i < len(step_actions) else ""
+        actions = [ln.strip() for ln in (a or "").splitlines() if ln.strip()]
+        out.append({"text": (t or "").strip(), "completion": (c or "").strip(), "actions": actions})
+
     # Drop empty rows
-    return [s for s in out if s["text"] or s["completion"]]
+    return [s for s in out if (s.get("text") or "").strip() or (s.get("completion") or "").strip()]
 
 
-def _validate_steps_required(steps: list[dict[str, str]]) -> None:
-    """Enforce step atomicity contract: both step text and completion are required."""
+def _validate_steps_required(steps: list[dict[str, Any]]) -> None:
+    """Enforce step contract: step text + completion are required; actions are optional."""
     if not steps:
         raise HTTPException(status_code=400, detail="At least one step is required")
     for idx, st in enumerate(steps, start=1):
@@ -1888,6 +1944,7 @@ def task_create(
     dependencies: str = Form(""),
     step_text: list[str] = Form([]),
     step_completion: list[str] = Form([]),
+    step_actions: list[str] = Form([]),
     irreversible_flag: bool = Form(False),
 ):
     require(request.state.role, "task:create")
@@ -1900,7 +1957,7 @@ def task_create(
     deps_list = parse_lines(dependencies)
     tags_list = parse_tags(tags)
     meta_obj = parse_meta(meta)
-    steps_list = _zip_steps(step_text, step_completion)
+    steps_list = _zip_steps(step_text, step_completion, step_actions)
     _validate_steps_required(steps_list)
 
     warnings = lint_steps(steps_list)
@@ -1974,6 +2031,9 @@ def task_view(request: Request, record_id: str, version: int):
 
     raw_steps = _json_load(task["steps_json"])
     task["steps"] = _normalize_steps(raw_steps)
+    for st in task["steps"]:
+        if "actions" not in st or st["actions"] is None:
+            st["actions"] = []
 
     warnings = lint_steps(task["steps"])
 
@@ -2001,6 +2061,9 @@ def task_edit_form(request: Request, record_id: str, version: int):
 
     raw_steps = _json_load(task["steps_json"])
     task["steps"] = _normalize_steps(raw_steps)
+    for st in task["steps"]:
+        if "actions" not in st or st["actions"] is None:
+            st["actions"] = []
 
     warnings = lint_steps(task["steps"])
 
@@ -2030,6 +2093,7 @@ def task_save(
     dependencies: str = Form(""),
     step_text: list[str] = Form([]),
     step_completion: list[str] = Form([]),
+    step_actions: list[str] = Form([]),
     irreversible_flag: bool = Form(False),
     change_note: str = Form(""),
 ):
@@ -2045,7 +2109,7 @@ def task_save(
     deps_list = parse_lines(dependencies)
     tags_list = parse_tags(tags)
     meta_obj = parse_meta(meta)
-    steps_list = _zip_steps(step_text, step_completion)
+    steps_list = _zip_steps(step_text, step_completion, step_actions)
     _validate_steps_required(steps_list)
 
     note = change_note.strip()

@@ -54,8 +54,9 @@
     <table class="table" id="steps-table">
       <thead>
         <tr>
-          <th style="width:55%">Step</th>
-          <th style="width:40%">Completion</th>
+          <th style="width:40%">Step</th>
+          <th style="width:30%">Actions (optional)</th>
+          <th style="width:25%">Completion</th>
           <th style="width:5%"></th>
         </tr>
       </thead>
@@ -63,15 +64,17 @@
         {% if task and task.steps %}
           {% for st in task.steps %}
             <tr>
-              <td><textarea name="step_text" rows="2" placeholder="Imperative step text">{{ st.text }}</textarea></td>
-              <td><textarea name="step_completion" rows="2" required placeholder="Observable completion check">{{ st.completion }}</textarea></td>
+              <td><textarea name="step_text" rows="2" placeholder="What you are doing (intent)">{{ st.text }}</textarea></td>
+              <td><textarea name="step_actions" rows="2" placeholder="How to do it (optional, tool-specific)">{% if st.actions %}{{ st.actions|join('\n') }}{% endif %}</textarea></td>
+              <td><textarea name="step_completion" rows="2" required placeholder="How you prove it's done (required)">{{ st.completion }}</textarea></td>
               <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
             </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td><textarea name="step_text" rows="2" placeholder="Imperative step text"></textarea></td>
-            <td><textarea name="step_completion" rows="2" required placeholder="Observable completion check"></textarea></td>
+            <td><textarea name="step_text" rows="2" placeholder="What you are doing (intent)"></textarea></td>
+            <td><textarea name="step_actions" rows="2" placeholder="How to do it (optional, tool-specific)"></textarea></td>
+            <td><textarea name="step_completion" rows="2" required placeholder="How you prove it's done (required)"></textarea></td>
             <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
           </tr>
         {% endif %}
@@ -97,8 +100,9 @@ function addStep() {
   const body = document.getElementById('steps-body');
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><textarea name="step_text" rows="2" placeholder="Imperative step text"></textarea></td>
-    <td><textarea name="step_completion" rows="2" required placeholder="Observable completion check"></textarea></td>
+    <td><textarea name="step_text" rows="2" placeholder="What you are doing (intent)"></textarea></td>
+    <td><textarea name="step_actions" rows="2" placeholder="How to do it (optional, tool-specific)"></textarea></td>
+    <td><textarea name="step_completion" rows="2" required placeholder="How you prove it's done (required)"></textarea></td>
     <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
   `;
   body.appendChild(tr);
