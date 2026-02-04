@@ -212,6 +212,32 @@ def _workflow_domains(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> 
     return sorted(domains)
 
 
+def _backfill_workflow_domains(conn: sqlite3.Connection) -> None:
+    """Best-effort migration: populate workflows.domains_json for existing rows."""
+    if not _column_exists(conn, "workflows", "domains_json"):
+        return
+
+    rows = conn.execute("SELECT record_id, version, domains_json FROM workflows").fetchall()
+    for r in rows:
+        try:
+            existing = (r["domains_json"] or "").strip()
+        except Exception:
+            existing = ""
+        if existing and existing != "[]":
+            continue
+
+        refs = conn.execute(
+            "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+            (r["record_id"], int(r["version"])),
+        ).fetchall()
+        pairs = [(x["task_record_id"], int(x["task_version"])) for x in refs]
+        doms = _workflow_domains(conn, pairs)
+        conn.execute(
+            "UPDATE workflows SET domains_json=? WHERE record_id=? AND version=?",
+            (_json_dump(doms), r["record_id"], int(r["version"])),
+        )
+
+
 def _hash_password(password: str, salt_hex: str) -> str:
     import hashlib
 
@@ -367,6 +393,7 @@ def init_db_path(db_path: str) -> None:
               title TEXT NOT NULL,
               objective TEXT NOT NULL,
 
+              domains_json TEXT NOT NULL DEFAULT '[]',
               tags_json TEXT NOT NULL DEFAULT '[]',
               meta_json TEXT NOT NULL DEFAULT '{}',
 
@@ -460,6 +487,8 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
         if not _column_exists(conn, "tasks", "meta_json"):
             conn.execute("ALTER TABLE tasks ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
+        if not _column_exists(conn, "workflows", "domains_json"):
+            conn.execute("ALTER TABLE workflows ADD COLUMN domains_json TEXT NOT NULL DEFAULT '[]'")
         if not _column_exists(conn, "workflows", "tags_json"):
             conn.execute("ALTER TABLE workflows ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
         if not _column_exists(conn, "workflows", "meta_json"):
@@ -467,6 +496,9 @@ def init_db_path(db_path: str) -> None:
 
         if not _column_exists(conn, "tasks", "domain"):
             conn.execute("ALTER TABLE tasks ADD COLUMN domain TEXT NOT NULL DEFAULT ''")
+
+        # Backfill derived workflow domains when the column is introduced.
+        _backfill_workflow_domains(conn)
 
 
 def _seed_demo_users(conn: sqlite3.Connection) -> None:
@@ -927,11 +959,11 @@ def logout(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse(
-        request,
-        "home.html",
-        {},
-    )
+    # Reviewer default: show their work queue.
+    if request.state.role == "reviewer":
+        return RedirectResponse(url="/review", status_code=303)
+
+    return templates.TemplateResponse(request, "home.html", {})
 
 
 # --- DB switching (MVP) ---
@@ -1216,6 +1248,33 @@ def admin_domains_delete(request: Request, name: str = Form("")):
         audit("domain", name_norm, 1, "delete", request.state.user)
 
     return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+@app.get("/review", response_class=HTMLResponse)
+def review_queue(request: Request):
+    # Reviewers and admins only. (Admin implicitly has all domains.)
+    if request.state.role not in ("reviewer", "admin"):
+        raise HTTPException(status_code=403, detail="Forbidden: reviewer/admin only")
+
+    with db() as conn:
+        # Determine authorized domains
+        if request.state.role == "admin":
+            doms = _active_domains(conn)
+        else:
+            uid = _user_id(conn, request.state.user)
+            dom_rows = conn.execute("SELECT domain FROM user_domains WHERE user_id=?", (uid,)).fetchall() if uid else []
+            doms = [str(r["domain"]) for r in dom_rows]
+
+        items: list[dict[str, Any]] = []
+        if doms:
+            qmarks = ",".join(["?"] * len(doms))
+            rows = conn.execute(
+                f"SELECT record_id, version, title, status, domain FROM tasks WHERE status='submitted' AND domain IN ({qmarks}) ORDER BY domain ASC, title ASC",
+                doms,
+            ).fetchall()
+            items = [dict(r) for r in rows]
+
+    return templates.TemplateResponse(request, "review_queue.html", {"items": items, "domains": doms})
 
 
 @app.get("/audit", response_class=HTMLResponse)
@@ -1677,10 +1736,12 @@ def import_json_run(
                 INSERT INTO workflows(
                   record_id, version, status,
                   title, objective,
+                  domains_json,
+                  tags_json, meta_json,
                   created_at, updated_at, created_by, updated_by,
                   reviewed_at, reviewed_by, change_note,
                   needs_review_flag, needs_review_note
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     item["record_id"],
@@ -1688,6 +1749,9 @@ def import_json_run(
                     item["status"],
                     item["title"],
                     item["objective"],
+                    _json_dump(_workflow_domains(conn, item["refs"])),
+                    "[]",
+                    "{}",
                     now,
                     now,
                     actor,
@@ -1752,6 +1816,7 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
                 update_pending = True
 
             tags = _json_load(latest["tags_json"]) if "tags_json" in latest.keys() else []
+            domain = (latest["domain"] if "domain" in latest.keys() else "")
 
             items.append(
                 {
@@ -1762,6 +1827,7 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
                     "needs_review_flag": bool(latest["needs_review_flag"]),
                     "update_pending_confirmation": update_pending,
                     "tags": tags,
+                    "domain": domain,
                 }
             )
 
@@ -2223,12 +2289,21 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
             if q_norm and q_norm not in (latest["title"] or "").lower():
                 continue
 
-            # Derived readiness
+            # Derived readiness + domains
             refs = conn.execute(
                 "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
                 (rid, latest_v),
             ).fetchall()
-            readiness = workflow_readiness(conn, [(x["task_record_id"], int(x["task_version"])) for x in refs])
+            pairs = [(x["task_record_id"], int(x["task_version"])) for x in refs]
+            readiness = workflow_readiness(conn, pairs)
+            doms = _workflow_domains(conn, pairs)
+
+            # Store domains_json opportunistically (keeps DB queryable and consistent)
+            if "domains_json" in latest.keys():
+                conn.execute(
+                    "UPDATE workflows SET domains_json=? WHERE record_id=? AND version=?",
+                    (_json_dump(doms), rid, latest_v),
+                )
 
             items.append(
                 {
@@ -2237,6 +2312,7 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
                     "title": latest["title"],
                     "status": latest["status"],
                     "readiness": readiness,
+                    "domains": doms,
                 }
             )
 
@@ -2388,11 +2464,12 @@ def workflow_create(
             INSERT INTO workflows(
               record_id, version, status,
               title, objective,
+              domains_json,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -2400,6 +2477,7 @@ def workflow_create(
                 "draft",
                 title.strip(),
                 objective.strip(),
+                _json_dump(_workflow_domains(conn, refs)),
                 _json_dump(tags_list),
                 _json_dump(meta_obj),
                 now,
@@ -2539,11 +2617,12 @@ def workflow_revise(
             INSERT INTO workflows(
               record_id, version, status,
               title, objective,
+              domains_json,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -2551,6 +2630,7 @@ def workflow_revise(
                 "draft",
                 title.strip(),
                 objective.strip(),
+                _json_dump(_workflow_domains(conn, refs)),
                 _json_dump(tags_list),
                 _json_dump(meta_obj),
                 now,

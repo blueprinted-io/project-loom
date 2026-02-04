@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+  <div>
+    <h1>Review queue</h1>
+    <div class="muted">Submitted Tasks in domains you are authorized for.</div>
+  </div>
+</div>
+
+{% if domains %}
+  <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
+{% endif %}
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Ver</th>
+      <th>Domain</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for it in items %}
+    <tr>
+      <td><a href="/tasks/{{ it.record_id }}/{{ it.version }}">{{ it.title }}</a></td>
+      <td><code>{{ it.version }}</code></td>
+      <td><code>{{ it.domain }}</code></td>
+      <td><span class="badge badge-{{ it.status }}">{{ it.status }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if not items %}
+  <div class="card">
+    <b>Nothing to review</b>
+    <div class="muted" style="margin-top:6px">No submitted tasks exist in your authorized domains.</div>
+  </div>
+{% endif %}
+{% endblock %}

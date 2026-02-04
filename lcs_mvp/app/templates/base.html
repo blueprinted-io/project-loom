@@ -34,6 +34,9 @@
         <div class="sidebar-title">Records</div>
         <a class="navlink" href="/tasks">Tasks</a>
         <a class="navlink" href="/workflows">Workflows</a>
+        {% if request.state.role in ['reviewer','admin'] %}
+          <a class="navlink" href="/review">Review queue</a>
+        {% endif %}
       </div>
 
       {% if can(request.state.role, 'audit:view') %}

@@ -31,6 +31,7 @@
       <th>Ver</th>
       <th>Status</th>
       <th>Tags</th>
+      <th>Domain</th>
       <th>Signals</th>
     </tr>
   </thead>
@@ -50,6 +51,7 @@
           {% for t in it.tags %}<span class="pill">{{ t }}</span>{% endfor %}
         {% endif %}
       </td>
+      <td><code>{{ it.domain or '' }}</code></td>
       <td>
         {% if it.needs_review_flag %}<span class="badge badge-warn">needs_review</span>{% endif %}
         {% if it.update_pending_confirmation %}<span class="badge badge-warn">update_pending_confirmation</span>{% endif %}

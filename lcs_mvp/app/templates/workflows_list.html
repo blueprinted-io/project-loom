@@ -31,6 +31,7 @@
       <th>Ver</th>
       <th>Status</th>
       <th>Readiness</th>
+      <th>Domains</th>
     </tr>
   </thead>
   <tbody>
@@ -51,6 +52,11 @@
           <span class="badge badge-warn">awaiting_task_confirmation</span>
         {% else %}
           <span class="badge badge-deprecated">invalid</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if it.domains %}
+          {% for d in it.domains %}<span class="badge">{{ d }}</span> {% endfor %}
         {% endif %}
       </td>
     </tr>
