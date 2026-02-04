@@ -17,6 +17,14 @@
   </div>
 </div>
 
+{% if return_note %}
+  <div class="callout warn">
+    <b>Returned for changes</b>
+    <div class="muted" style="margin-top:6px">By {{ return_note.actor }} at {{ return_note.at }}</div>
+    <div style="margin-top:10px">{{ return_note.note }}</div>
+  </div>
+{% endif %}
+
 {% if warnings %}
   <div class="callout warn">
     <b>Lint warnings (warnings-only):</b>
@@ -92,6 +100,14 @@
   {% if task.status == 'submitted' and can(request.state.role, 'task:confirm') %}
   <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/confirm">
     <button class="btn" type="submit">Confirm (reviewer)</button>
+  </form>
+
+  <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/return" class="card" style="padding:10px;margin-top:0">
+    <div class="muted" style="margin-bottom:6px"><b>Return for changes</b> (requires a note)</div>
+    <textarea name="note" rows="2" placeholder="What must change before this can be confirmed?" required></textarea>
+    <div style="margin-top:8px">
+      <button class="btn" type="submit">Return</button>
+    </div>
   </form>
   {% endif %}
 

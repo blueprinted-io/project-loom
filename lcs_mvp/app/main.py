@@ -2130,10 +2130,21 @@ def task_view(request: Request, record_id: str, version: int):
 
     warnings = lint_steps(task["steps"])
 
+    # If returned, surface the most recent return note (if any)
+    return_note = None
+    if task.get("status") == "returned":
+        with db() as conn:
+            rn = conn.execute(
+                "SELECT note, at, actor FROM audit_log WHERE entity_type='task' AND record_id=? AND version=? AND action='return_for_changes' ORDER BY at DESC LIMIT 1",
+                (record_id, version),
+            ).fetchone()
+            if rn and rn["note"]:
+                return_note = {"note": rn["note"], "at": rn["at"], "actor": rn["actor"]}
+
     return templates.TemplateResponse(
         request,
         "task_view.html",
-        {"task": task, "warnings": warnings},
+        {"task": task, "warnings": warnings, "return_note": return_note},
     )
 
 
@@ -2369,6 +2380,38 @@ def task_force_submit(request: Request, record_id: str, version: int):
             (utc_now_iso(), actor, record_id, version),
         )
     audit("task", record_id, version, "force_submit", actor, note="admin forced submission")
+    return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
+@app.post("/tasks/{record_id}/{version}/return")
+def task_return_for_changes(request: Request, record_id: str, version: int, note: str = Form("")):
+    require(request.state.role, "task:confirm")
+    actor = request.state.user
+    msg = (note or "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="Return note is required")
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?",
+            (record_id, version),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] != "submitted":
+            raise HTTPException(status_code=409, detail="Only submitted tasks can be returned")
+
+        # Domain gate (admin implicitly authorized via _user_has_domain)
+        domain = (row["domain"] or "").strip()
+        if domain and not _user_has_domain(conn, actor, domain):
+            raise HTTPException(status_code=403, detail=f"Forbidden: you are not authorized for domain '{domain}'")
+
+        conn.execute(
+            "UPDATE tasks SET status='returned', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+
+    audit("task", record_id, version, "return_for_changes", actor, note=msg)
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
 
