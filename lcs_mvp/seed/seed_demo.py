@@ -48,6 +48,8 @@ def main() -> None:
         s = (step_text or "").strip()
         if not s:
             return []
+
+        low = s.lower()
         actions: list[str] = []
 
         cmds = re.findall(r"`([^`]+)`", s)
@@ -58,6 +60,24 @@ def main() -> None:
         if m:
             path = m.group(2)
             actions.append(f"sudo nano {path}  # or your editor of choice")
+
+        if re.search(r"\b(restart|reload)\b", low) and not any("systemctl" in a for a in actions):
+            actions.append("sudo systemctl restart <service>  # replace <service> with the unit name")
+
+        if re.search(r"\b(enable)\b", low) and not any("systemctl" in a for a in actions):
+            actions.append("sudo systemctl enable --now <service>  # replace <service> with the unit name")
+
+        if re.search(r"\b(install)\b", low) and not any("apt-get" in a for a in actions):
+            actions.append("sudo apt-get update")
+            actions.append("sudo apt-get install -y <package>  # replace <package> with the package name")
+
+        if re.search(r"\b(record|document)\b", low):
+            actions.append("Update the ticket/runbook entry with the required fields")
+            actions.append("Attach evidence (log excerpt/screenshot/output) as applicable")
+
+        if not actions:
+            actions.append("Complete this step using the approved method/tooling for your environment")
+            actions.append("If you used CLI commands, record the exact commands and outputs in the change record")
 
         out: list[str] = []
         seen: set[str] = set()

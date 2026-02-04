@@ -48,7 +48,8 @@ _FILE_PATH_RE = re.compile(r"(/etc/[^\s]+|/var/[^\s]+|/usr/[^\s]+|/opt/[^\s]+|/h
 def derive_actions(step_text: str) -> list[str]:
     """Derive a small set of optional actions.
 
-    Conservative: return [] unless we have something concrete (a command or a file path edit).
+    Aggressive (MVP-friendly): always return at least 1-2 helpful action lines for non-empty steps.
+    Prefer concrete CLI/file actions when possible; fall back to generic-but-executable guidance.
     """
     s = (step_text or "").strip()
     if not s:
@@ -56,23 +57,46 @@ def derive_actions(step_text: str) -> list[str]:
 
     actions: list[str] = []
 
-    # If the step contains explicit commands in backticks, surface them as actions.
+    low = s.lower()
+
+    # 1) Explicit commands in backticks
     cmds = [c.strip() for c in _CMD_RE.findall(s) if c.strip()]
     for c in cmds[:3]:
         actions.append(c)
 
-    # If the step is about editing a specific path, suggest an editor open command.
+    # 2) File path editing/opening
     m = _EDIT_PATH_RE.search(s)
     if m:
         path = m.group(2)
         actions.append(f"sudo nano {path}  # or your editor of choice")
-
-    # If no edit verb but we see a strong path hint, suggest opening it.
-    if not m and not cmds:
+    else:
         pm = _FILE_PATH_RE.search(s)
         if pm:
             path = pm.group(1)
             actions.append(f"sudo nano {path}  # or your editor of choice")
+
+    # 3) Lightweight verb-driven defaults
+    if re.search(r"\b(restart|reload)\b", low) and not any("systemctl" in a for a in actions):
+        actions.append("sudo systemctl restart <service>  # replace <service> with the unit name")
+
+    if re.search(r"\b(enable)\b", low) and not any("systemctl" in a for a in actions):
+        actions.append("sudo systemctl enable --now <service>  # replace <service> with the unit name")
+
+    if re.search(r"\b(install)\b", low) and not any("apt" in a for a in actions):
+        actions.append("sudo apt-get update")
+        actions.append("sudo apt-get install -y <package>  # replace <package> with the package name")
+
+    if re.search(r"\b(create|add)\b", low) and re.search(r"\b(user|account)\b", low) and not any("useradd" in a for a in actions):
+        actions.append("sudo adduser <username>  # replace <username> with the approved name")
+
+    if re.search(r"\b(record|document)\b", low):
+        actions.append("Update the ticket/runbook entry with the required fields")
+        actions.append("Attach evidence (log excerpt/screenshot/output) as applicable")
+
+    # 4) If still empty, provide generic-but-operational actions
+    if not actions:
+        actions.append("Complete this step using the approved method/tooling for your environment")
+        actions.append("If you used CLI commands, record the exact commands and outputs in the change record")
 
     # De-dupe preserving order
     out: list[str] = []
@@ -135,12 +159,17 @@ def backfill(db_path: str) -> tuple[int, int]:
         needs = False
         if isinstance(raw, list):
             for idx, it in enumerate(raw):
-                if isinstance(it, dict) and "actions" not in it:
-                    needs = True
-                    break
-                if isinstance(it, dict) and (it.get("actions") is None):
-                    needs = True
-                    break
+                if isinstance(it, dict):
+                    if "actions" not in it:
+                        needs = True
+                        break
+                    if it.get("actions") is None:
+                        needs = True
+                        break
+                    if isinstance(it.get("actions"), list) and len(it.get("actions")) == 0:
+                        # aggressively populate empty actions too
+                        needs = True
+                        break
         else:
             # non-list values will be normalized; keep conservative and do nothing
             continue
