@@ -182,6 +182,12 @@ def _user_id(conn: sqlite3.Connection, username: str) -> int | None:
 def _user_has_domain(conn: sqlite3.Connection, username: str, domain: str) -> bool:
     if not domain:
         return False
+
+    # Admin is a break-glass role: treat as authorized for all domains.
+    r = conn.execute("SELECT role FROM users WHERE username=? AND disabled_at IS NULL", (username,)).fetchone()
+    if r and str(r["role"]) == "admin":
+        return True
+
     uid = _user_id(conn, username)
     if uid is None:
         return False
