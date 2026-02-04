@@ -91,13 +91,10 @@ def _derive_actions(step_text: str) -> list[str]:
         actions.append("sudo apt-get update")
         actions.append("sudo apt-get upgrade -y")
 
-    if re.search(r"\b(record|document)\b", low):
-        actions.append("Record the exact commands run and outputs captured")
-        actions.append("Attach relevant evidence (log excerpt / command output)")
+    # Don't add generic evidence-capture boilerplate; completion handles confirmation.
 
     if not actions:
-        actions.append("Use Debian CLI defaults to perform the change")
-        actions.append("Capture the exact commands and outputs as evidence")
+        return []
 
     out: list[str] = []
     seen: set[str] = set()

@@ -114,14 +114,12 @@ def derive_actions(step_text: str) -> list[str]:
         actions.append("sudo mount -a")
         actions.append("findmnt --verify || true")
 
-    if re.search(r"\b(record|document)\b", low):
-        actions.append("Record the exact commands run and outputs captured")
-        actions.append("Attach relevant evidence (log excerpt / command output)")
+    # NOTE: do not add generic "evidence capture" boilerplate here.
+    # Confirmation belongs in step.completion (human observation), not in actions.
 
-    # 4) If still empty, provide Debian-operational actions
+    # 4) If still empty, leave actions empty. Some steps are self-explanatory.
     if not actions:
-        actions.append("Use Debian CLI defaults to perform the change")
-        actions.append("Capture the exact commands and outputs as evidence")
+        return []
 
     # De-dupe preserving order
     out: list[str] = []
