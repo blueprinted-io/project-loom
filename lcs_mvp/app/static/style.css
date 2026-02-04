@@ -30,6 +30,8 @@ input,textarea,select{width:100%;box-sizing:border-box;background:#0b0f14;color:
 .callout.warn{background:#2a1f14;border:1px solid #6b4d2a}
 .callout.danger{background:#2a1414;border:1px solid #6b2a2a}
 .filters{margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.filters .search{margin-left:auto;display:flex;gap:8px;align-items:center}
+.filters .search input[type=text]{min-width:240px}
 .pill{padding:4px 10px;border:1px solid #1f2a3a;border-radius:999px}
 .pill.active{background:#1f2a3a}
 code{background:#111a27;padding:2px 6px;border-radius:6px}

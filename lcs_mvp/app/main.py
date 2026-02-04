@@ -762,10 +762,12 @@ def import_pdf_run(
 
 
 @app.get("/tasks", response_class=HTMLResponse)
-def tasks_list(request: Request, status: str | None = None):
+def tasks_list(request: Request, status: str | None = None, q: str | None = None):
+    q_norm = (q or "").strip().lower()
+
     with db() as conn:
-        q = "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id ORDER BY record_id"
-        rows = conn.execute(q).fetchall()
+        sql = "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id ORDER BY record_id"
+        rows = conn.execute(sql).fetchall()
 
         items = []
         for r in rows:
@@ -778,6 +780,9 @@ def tasks_list(request: Request, status: str | None = None):
                 continue
             if status and latest["status"] != status:
                 continue
+            if q_norm and q_norm not in (latest["title"] or "").lower():
+                continue
+
             # derived: update_pending_confirmation
             confirmed_v = conn.execute(
                 "SELECT MAX(version) AS v FROM tasks WHERE record_id=? AND status='confirmed'",
@@ -801,7 +806,7 @@ def tasks_list(request: Request, status: str | None = None):
     return templates.TemplateResponse(
         request,
         "tasks_list.html",
-        {"items": items, "status": status},
+        {"items": items, "status": status, "q": q},
     )
 
 
@@ -1127,10 +1132,12 @@ def task_confirm(request: Request, record_id: str, version: int):
 
 
 @app.get("/workflows", response_class=HTMLResponse)
-def workflows_list(request: Request, status: str | None = None):
+def workflows_list(request: Request, status: str | None = None, q: str | None = None):
+    q_norm = (q or "").strip().lower()
+
     with db() as conn:
-        q = "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id ORDER BY record_id"
-        rows = conn.execute(q).fetchall()
+        sql = "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id ORDER BY record_id"
+        rows = conn.execute(sql).fetchall()
 
         items = []
         for r in rows:
@@ -1142,6 +1149,8 @@ def workflows_list(request: Request, status: str | None = None):
             if not latest:
                 continue
             if status and latest["status"] != status:
+                continue
+            if q_norm and q_norm not in (latest["title"] or "").lower():
                 continue
 
             # Derived readiness
@@ -1164,7 +1173,7 @@ def workflows_list(request: Request, status: str | None = None):
     return templates.TemplateResponse(
         request,
         "workflows_list.html",
-        {"items": items, "status": status},
+        {"items": items, "status": status, "q": q},
     )
 
 

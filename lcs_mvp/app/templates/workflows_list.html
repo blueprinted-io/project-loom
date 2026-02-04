@@ -16,6 +16,12 @@
   <a href="/workflows?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
   <a href="/workflows?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
   <a href="/workflows?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
+
+  <form method="get" action="/workflows" class="search">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
+    <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
+    <button class="btn" type="submit">Search</button>
+  </form>
 </div>
 
 <table class="table">
