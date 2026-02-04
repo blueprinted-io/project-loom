@@ -1,19 +1,61 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Records</h1>
-<p class="muted">Draft, submit, confirm. Everything is versioned and auditable.</p>
+<div class="row">
+  <div>
+    <h1>Records</h1>
+    <p class="muted">Objective: move drafts to submitted, and submitted to confirmed, without losing traceability.</p>
+  </div>
+</div>
 
 <div class="grid">
+  <div class="card">
+    <h2>Start here</h2>
+    {% if request.state.role == 'author' %}
+      <p class="muted"><b>Your objective:</b> produce draft Tasks with strong completion checks, then submit within your entitled domains.</p>
+      <div class="muted" style="margin-top:10px">Suggested first actions:</div>
+      <ul>
+        <li><a href="/tasks?status=draft">Review your draft Tasks</a></li>
+        <li><a href="/tasks/new">Create a new Task</a></li>
+        <li><a href="/import/pdf">Import source material (PDF → draft)</a></li>
+      </ul>
+    {% elif request.state.role in ['reviewer','admin'] %}
+      <p class="muted"><b>Your objective:</b> reduce submitted backlog and confirm only what is verifiably complete.</p>
+      <div class="muted" style="margin-top:10px">Suggested first actions:</div>
+      <ul>
+        <li><a href="/review">Open review queue</a></li>
+        <li><a href="/tasks?status=submitted">Browse all submitted Tasks</a></li>
+        <li><a href="/workflows?status=submitted">Browse submitted Workflows</a></li>
+      </ul>
+    {% elif request.state.role == 'audit' %}
+      <p class="muted"><b>Your objective:</b> validate traceability and detect unauthorized changes or bypass behavior.</p>
+      <div class="muted" style="margin-top:10px">Suggested first actions:</div>
+      <ul>
+        <li><a href="/audit">Open audit log</a></li>
+        <li><a href="/tasks?status=confirmed">Sample confirmed Tasks</a></li>
+        <li><a href="/workflows?status=confirmed">Sample confirmed Workflows</a></li>
+      </ul>
+    {% else %}
+      <p class="muted"><b>Your objective:</b> read confirmed content and understand how governance shapes what gets published.</p>
+      <div class="muted" style="margin-top:10px">Suggested first actions:</div>
+      <ul>
+        <li><a href="/tasks?status=confirmed">Browse confirmed Tasks</a></li>
+        <li><a href="/workflows?status=confirmed">Browse confirmed Workflows</a></li>
+      </ul>
+    {% endif %}
+  </div>
+
   <div class="card">
     <h2>Tasks</h2>
     <p class="muted">Atomic, verifiable outcomes with governed procedure steps.</p>
     <p><a class="btn" href="/tasks">Open Tasks</a></p>
   </div>
+
   <div class="card">
     <h2>Workflows</h2>
     <p class="muted">Ordered compositions of Tasks that roll up to one objective.</p>
     <p><a class="btn" href="/workflows">Open Workflows</a></p>
   </div>
+
   {% if can(request.state.role, 'audit:view') %}
   <div class="card">
     <h2>Audit</h2>

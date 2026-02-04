@@ -1024,6 +1024,70 @@ def home(request: Request):
 
 # --- DB switching (MVP) ---
 
+@app.get("/_pulse")
+def pulse(request: Request):
+    """Return small operational counters for the UI pulse strip.
+
+    Auth is required via middleware.
+    """
+    role = request.state.role
+    user = request.state.user
+
+    with db() as conn:
+        # Task counts
+        task_counts = {
+            r["status"]: int(r["c"])
+            for r in conn.execute("SELECT status, COUNT(*) AS c FROM tasks GROUP BY status").fetchall()
+        }
+
+        # Reviewer-scoped counts (domain entitlements)
+        reviewer_pending = None
+        reviewer_domains: list[str] = []
+        if role in ("reviewer", "admin"):
+            reviewer_domains = _user_domains(conn, user)
+            if role == "admin":
+                # admin sees everything
+                reviewer_pending = int(
+                    conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE status='submitted'").fetchone()["c"]
+                )
+            else:
+                if reviewer_domains:
+                    q = "SELECT COUNT(*) AS c FROM tasks WHERE status='submitted' AND domain IN (%s)" % (
+                        ",".join(["?"] * len(reviewer_domains))
+                    )
+                    reviewer_pending = int(conn.execute(q, reviewer_domains).fetchone()["c"])
+                else:
+                    reviewer_pending = 0
+
+        # Workflow counts
+        wf_counts = {
+            r["status"]: int(r["c"])
+            for r in conn.execute("SELECT status, COUNT(*) AS c FROM workflows GROUP BY status").fetchall()
+        }
+
+        last_audit = conn.execute("SELECT at, actor, action FROM audit_log ORDER BY at DESC LIMIT 1").fetchone()
+
+    return {
+        "tasks": {
+            "draft": task_counts.get("draft", 0),
+            "submitted": task_counts.get("submitted", 0),
+            "confirmed": task_counts.get("confirmed", 0),
+        },
+        "workflows": {
+            "draft": wf_counts.get("draft", 0),
+            "submitted": wf_counts.get("submitted", 0),
+            "confirmed": wf_counts.get("confirmed", 0),
+        },
+        "review": {
+            "pending": reviewer_pending,
+            "domains": reviewer_domains,
+        },
+        "audit": {
+            "last": dict(last_audit) if last_audit else None,
+        },
+    }
+
+
 @app.get("/db", response_class=HTMLResponse)
 def db_switch_form(request: Request):
     require(request.state.role, "db:switch")

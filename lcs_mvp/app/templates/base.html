@@ -14,7 +14,6 @@
           <img class="brand-logo" src="/static/blueprinted.png" alt="blueprinted.io" />
           <span class="brand-name">blueprinted.io</span>
         </a>
-        <!-- subtitle removed -->
       </div>
       <div class="topbar-right">
         <div class="userchip">
@@ -26,7 +25,62 @@
         </form>
       </div>
     </div>
+
+    <div class="pulse" id="pulse" aria-live="polite">
+      <div class="wrap pulse-inner">
+        <div class="pulse-left">
+          <span class="pulse-title">Governance pulse</span>
+          <span class="pulse-item" id="pulse-tasks">Tasks: …</span>
+          <span class="pulse-item" id="pulse-workflows">Workflows: …</span>
+          <span class="pulse-item" id="pulse-review" style="display:none">Review: …</span>
+        </div>
+        <div class="pulse-right">
+          <span class="pulse-item muted" id="pulse-audit">Last audit: …</span>
+        </div>
+      </div>
+    </div>
   </header>
+
+  <script>
+    (function(){
+      async function loadPulse(){
+        try{
+          const r = await fetch('/_pulse', {headers: {'Accept':'application/json'}});
+          if(!r.ok) return;
+          const data = await r.json();
+
+          const t = data.tasks || {};
+          const w = data.workflows || {};
+
+          const tasksEl = document.getElementById('pulse-tasks');
+          if(tasksEl) tasksEl.textContent = `Tasks: ${t.draft||0} draft · ${t.submitted||0} submitted · ${t.confirmed||0} confirmed`;
+
+          const wfEl = document.getElementById('pulse-workflows');
+          if(wfEl) wfEl.textContent = `Workflows: ${w.draft||0} draft · ${w.submitted||0} submitted · ${w.confirmed||0} confirmed`;
+
+          const rev = (data.review||{});
+          const revEl = document.getElementById('pulse-review');
+          if(revEl && rev.pending !== null && rev.pending !== undefined){
+            revEl.style.display = 'inline-flex';
+            revEl.textContent = `Review: ${rev.pending} pending`;
+          }
+
+          const a = (data.audit||{}).last;
+          const auditEl = document.getElementById('pulse-audit');
+          if(auditEl){
+            if(a && a.at){
+              auditEl.textContent = `Last audit: ${a.action} by ${a.actor} at ${a.at}`;
+            } else {
+              auditEl.textContent = 'Last audit: none';
+            }
+          }
+        } catch(e) {
+          // no-op
+        }
+      }
+      loadPulse();
+    })();
+  </script>
 
   <div class="layout wrap">
     <aside class="sidebar">
