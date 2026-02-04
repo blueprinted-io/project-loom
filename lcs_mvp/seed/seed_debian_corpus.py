@@ -61,6 +61,7 @@ def task(
     tags: list[str] | None = None,
     meta: dict[str, str] | None = None,
     irreversible: int = 0,
+    domain: str = "linux",
 ) -> dict:
     return {
         "title": title,
@@ -70,10 +71,40 @@ def task(
         "procedure_name": procedure_name,
         "steps": steps,
         "deps": deps,
-        "tags": tags or ["linux", "debian"],
-        "meta": meta or {"domain": "Linux", "owner_team": "IT Operations", "risk_level": "medium"},
+        # Tags are conceptual labels (discovery/filtering). Domain is stored separately.
+        "tags": tags or ["operations"],
+        "meta": meta or {"owner_team": "IT Operations", "risk_level": "medium"},
         "irreversible": irreversible,
+        "domain": domain,
     }
+
+
+def _normalize_tags(tags: list[str]) -> list[str]:
+    """Map legacy tags to conceptual labels and strip domain-ish labels."""
+    out: list[str] = []
+    for t in tags or []:
+        x = (t or "").strip().lower()
+        if not x:
+            continue
+        if x in ("linux", "debian"):
+            continue
+        # Map some legacy-ish labels
+        if x == "apt":
+            x = "packaging"
+        if x == "systemd":
+            x = "operations"
+        out.append(x)
+
+    # De-dupe while preserving order
+    seen: set[str] = set()
+    norm: list[str] = []
+    for x in out:
+        if x in seen:
+            continue
+        seen.add(x)
+        norm.append(x)
+
+    return norm
 
 
 def build_tasks() -> list[dict]:
@@ -607,8 +638,74 @@ def build_tasks() -> list[dict]:
         ),
     ]
 
-    # Keep corpus size stable for demos
-    return tasks[:50]
+    # --- Kubernetes (to demonstrate multi-domain governance) ---
+    k8s: list[dict] = [
+        task(
+            "Install kubectl",
+            "kubectl is installed and reports a version.",
+            "Install kubectl",
+            [
+                step("Download or install kubectl using the approved method for Debian.", "kubectl binary exists and is executable."),
+                step("Run kubectl version --client.", "Client version output is recorded."),
+            ],
+            deps=["Sudo access.", "Network access."],
+            facts=["kubectl is the Kubernetes CLI used to manage clusters."],
+            concepts=["Client tooling must be versioned and verified before use."],
+            tags=["operations", "kubernetes"],
+            domain="kubernetes",
+        ),
+        task(
+            "Configure kubeconfig for cluster access",
+            "kubeconfig is present and kubectl can authenticate to the target cluster.",
+            "Configure kubeconfig",
+            [
+                step("Place the kubeconfig file at the approved path (e.g. ~/.kube/config).", "File exists at ~/.kube/config with restricted permissions."),
+                step("Run kubectl cluster-info.", "kubectl returns cluster info without auth errors."),
+            ],
+            deps=["kubectl installed.", "Cluster credentials provided."],
+            tags=["operations", "kubernetes", "security"],
+            domain="kubernetes",
+        ),
+        task(
+            "List Kubernetes nodes",
+            "Cluster node list is retrieved and recorded.",
+            "kubectl get nodes",
+            [
+                step("Run kubectl get nodes.", "Command outputs a node list."),
+                step("Record node readiness status.", "A record exists listing nodes and READY status."),
+            ],
+            deps=["kubeconfig configured."],
+            tags=["operations", "kubernetes", "assurance"],
+            domain="kubernetes",
+        ),
+        task(
+            "Deploy a sample workload to Kubernetes",
+            "A sample deployment exists and is available.",
+            "kubectl apply deployment",
+            [
+                step("Apply the deployment manifest using kubectl apply -f.", "kubectl reports the resource was created or configured."),
+                step("Wait for rollout using kubectl rollout status.", "Rollout reports successfully completed."),
+            ],
+            deps=["kubeconfig configured.", "Namespace selected."],
+            tags=["operations", "kubernetes", "deployment"],
+            domain="kubernetes",
+        ),
+        task(
+            "Inspect pod logs for a deployment",
+            "Relevant pod logs are retrieved and recorded.",
+            "kubectl logs",
+            [
+                step("List pods for the deployment using kubectl get pods.", "Pods are listed with names."),
+                step("Fetch logs using kubectl logs for a selected pod.", "Log output is produced and recorded."),
+            ],
+            deps=["Deployment exists."],
+            tags=["operations", "kubernetes", "assurance"],
+            domain="kubernetes",
+        ),
+    ]
+
+    # Keep corpus size stable for demos (45 Debian + 5 Kubernetes)
+    return (tasks[:45] + k8s)[:50]
 
 
 def build_workflows(task_ids: list[tuple[str, int, dict]]) -> list[dict]:
@@ -754,6 +851,19 @@ def build_workflows(task_ids: list[tuple[str, int, dict]]) -> list[dict]:
             }
         )
 
+    # Add a Kubernetes workflow if Kubernetes tasks exist
+    k8s_refs = pick_tag("kubernetes", 5)
+    if k8s_refs:
+        workflows.append(
+            {
+                "title": "Validate Kubernetes access and deploy a sample workload",
+                "objective": "kubectl is installed, cluster access is validated, and a sample workload is deployed and inspected.",
+                "refs": k8s_refs[:5],
+                "tags": ["kubernetes", "operations"],
+                "meta": {"owner_team": "Platform", "risk_level": "medium"},
+            }
+        )
+
     return workflows[:12]
 
 
@@ -816,17 +926,21 @@ def main() -> None:
         reviewed_by = ACTOR if t["status"] == "confirmed" else None
         needs_review_flag = 0 if t["status"] == "confirmed" else 1
 
+        # Normalize tags to conceptual labels
+        t["tags"] = _normalize_tags(t.get("tags", []) or [])
+
         conn.execute(
             """
             INSERT INTO tasks(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              domain,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 rid,
@@ -841,6 +955,7 @@ def main() -> None:
                 j(t.get("deps", [])),
                 int(t.get("irreversible", 0)),
                 j([]),
+                (t.get("domain") or "linux"),
                 j(t.get("tags", [])),
                 j(t.get("meta", {})),
                 now,
@@ -895,16 +1010,25 @@ def main() -> None:
         else:
             wf_refs = wf["refs"]
 
+        # Derive workflow domains from referenced task domains.
+        doms = sorted({
+            str(r["domain"]).strip() for r in conn.execute(
+                "SELECT domain FROM tasks WHERE (record_id, version) IN (%s)" % ",".join(["(?,?)"] * len(wf_refs)),
+                [x for pair in wf_refs for x in pair],
+            ).fetchall() if str(r["domain"]).strip()
+        }) if wf_refs else []
+
         conn.execute(
             """
             INSERT INTO workflows(
               record_id, version, status,
               title, objective,
+              domains_json,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 wid,
@@ -912,7 +1036,8 @@ def main() -> None:
                 wf["status"],
                 wf["title"],
                 wf["objective"],
-                j(wf.get("tags", [])),
+                j(doms),
+                j(_normalize_tags(wf.get("tags", []) or [])),
                 j(wf.get("meta", {})),
                 now,
                 now,
