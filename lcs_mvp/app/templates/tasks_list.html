@@ -39,7 +39,9 @@
     <tr>
       <td>
         <a href="/tasks/{{ it.record_id }}/{{ it.latest_version }}">{{ it.title }}</a>
-        <div class="muted" style="margin-top:4px">Record: <code>{{ it.record_id[:8] }}…</code></div>
+        {% if request.state.role == 'admin' %}
+          <div class="muted" style="margin-top:4px">Record: <code>{{ it.record_id[:8] }}…</code></div>
+        {% endif %}
       </td>
       <td><code>{{ it.latest_version }}</code></td>
       <td><span class="badge badge-{{ it.status }}">{{ it.status }}</span></td>
