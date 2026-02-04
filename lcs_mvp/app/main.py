@@ -1235,18 +1235,18 @@ def workflow_readiness(conn: sqlite3.Connection, refs: list[tuple[str, int]]) ->
 def enforce_workflow_ref_rules(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> None:
     """Hard constraints for workflow composition.
 
-    Canonical rule (per docs): Workflows may reference ONLY confirmed Task versions.
+    Draft/submitted workflows may reference draft/submitted/confirmed Task versions.
+    Confirmed workflows must reference confirmed Task versions only (enforced at confirm-time).
+
+    Hard constraints here:
+      - references must exist
+      - referenced task versions must not be deprecated
     """
     derived = workflow_readiness(conn, refs)
     if derived == "invalid":
         raise HTTPException(
             status_code=409,
             detail="Workflow contains invalid Task references (missing or deprecated task versions)",
-        )
-    if derived == "awaiting_task_confirmation":
-        raise HTTPException(
-            status_code=409,
-            detail="Workflow may reference confirmed Task versions only. Confirm referenced Tasks, then try again.",
         )
 
 
@@ -1479,6 +1479,17 @@ def workflow_confirm(request: Request, record_id: str, version: int):
             raise HTTPException(404)
         if row["status"] != "submitted":
             raise HTTPException(409, detail="Only submitted workflows can be confirmed")
+
+        refs = conn.execute(
+            "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+            (record_id, version),
+        ).fetchall()
+        readiness = workflow_readiness(conn, [(r["task_record_id"], int(r["task_version"])) for r in refs])
+        if readiness != "ready":
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot confirm workflow: all referenced Task versions must be confirmed.",
+            )
 
         # Deprecate any previously confirmed version
         conn.execute(
