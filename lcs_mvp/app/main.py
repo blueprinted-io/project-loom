@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import uuid
+import contextvars
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -18,12 +19,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 Status = Literal["draft", "submitted", "confirmed", "deprecated"]
-Role = Literal["viewer", "author", "reviewer", "admin"]
+Role = Literal["viewer", "author", "reviewer", "audit", "admin"]
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(DATA_DIR, "lcs.db")
+DB_DEMO_PATH = os.path.join(DATA_DIR, "lcs_demo.db")
+DB_BLANK_PATH = os.path.join(DATA_DIR, "lcs_blank.db")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+
+# Per-request DB selection (MVP): use a cookie. Default to demo.
+DB_KEY_COOKIE = "lcs_db"
+DB_KEY_DEMO = "demo"
+DB_KEY_BLANK = "blank"
+DB_PATH_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_path", default=DB_DEMO_PATH)
+DB_KEY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_key", default=DB_KEY_DEMO)
 
 LMSTUDIO_BASE_URL = os.environ.get("LCS_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234").rstrip("/")
 LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-instruct-v0.3")
@@ -42,16 +51,16 @@ async def _http_exception_handler(request: Request, exc: HTTPException):
     in a normal browser POST flow.
     """
     accept = (request.headers.get("accept") or "").lower()
-    if "text/html" in accept and str(request.url.path).startswith("/import/pdf"):
+    if "text/html" in accept and (str(request.url.path).startswith("/import/pdf") or str(request.url.path).startswith("/import/json")):
         # Render the import form again, but include the error detail.
+        template = "import_json.html" if str(request.url.path).startswith("/import/json") else "import_pdf.html"
+        ctx = {"error": str(exc.detail)}
+        if template == "import_pdf.html":
+            ctx.update({"lmstudio_base_url": LMSTUDIO_BASE_URL, "lmstudio_model": LMSTUDIO_MODEL})
         return templates.TemplateResponse(
             request,
-            "import_pdf.html",
-            {
-                "lmstudio_base_url": LMSTUDIO_BASE_URL,
-                "lmstudio_model": LMSTUDIO_MODEL,
-                "error": str(exc.detail),
-            },
+            template,
+            ctx,
             status_code=exc.status_code,
         )
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
@@ -66,15 +75,15 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
     traceback.print_exc()
 
     accept = (request.headers.get("accept") or "").lower()
-    if "text/html" in accept and str(request.url.path).startswith("/import/pdf"):
+    if "text/html" in accept and (str(request.url.path).startswith("/import/pdf") or str(request.url.path).startswith("/import/json")):
+        template = "import_json.html" if str(request.url.path).startswith("/import/json") else "import_pdf.html"
+        ctx = {"error": f"Unhandled error: {type(exc).__name__}: {exc}"}
+        if template == "import_pdf.html":
+            ctx.update({"lmstudio_base_url": LMSTUDIO_BASE_URL, "lmstudio_model": LMSTUDIO_MODEL})
         return templates.TemplateResponse(
             request,
-            "import_pdf.html",
-            {
-                "lmstudio_base_url": LMSTUDIO_BASE_URL,
-                "lmstudio_model": LMSTUDIO_MODEL,
-                "error": f"Unhandled error: {type(exc).__name__}: {exc}",
-            },
+            template,
+            ctx,
             status_code=500,
         )
 
@@ -93,11 +102,17 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 DEFAULT_USER = "anon"
 DEFAULT_ROLE: Role = "author"
 
+# --- Lightweight enterprise fields (MVP+) ---
+# Stored as JSON blobs to avoid migrations churn in the prototype.
+DEFAULT_TAGS: list[str] = []
+DEFAULT_META: dict[str, str] = {}
+
 ROLE_ORDER: dict[Role, int] = {
     "viewer": 0,
     "author": 1,
     "reviewer": 2,
-    "admin": 3,
+    "audit": 3,
+    "admin": 4,
 }
 
 
@@ -120,9 +135,20 @@ def can(role: Role, action: str) -> bool:
       - task:create, task:revise, task:submit, task:confirm
       - workflow:create, workflow:revise, workflow:submit, workflow:confirm
       - import:pdf
+      - import:json
+      - db:switch
+      - audit:view
+      - task:force_submit, task:force_confirm
+      - workflow:force_submit, workflow:force_confirm
     """
     if role == "admin":
         return True
+
+    if action == "audit:view":
+        return role in ("audit",)
+
+    if action.endswith(":force_confirm") or action.endswith(":force_submit"):
+        return role in ("admin",)
 
     if action.endswith(":confirm"):
         return role in ("reviewer",)
@@ -133,8 +159,11 @@ def can(role: Role, action: str) -> bool:
     if action.endswith(":create") or action.endswith(":revise"):
         return role in ("author",)
 
-    if action == "import:pdf":
+    if action in ("import:pdf", "import:json"):
         return role in ("author",)
+
+    if action == "db:switch":
+        return role in ("admin",)
 
     return False
 
@@ -148,6 +177,14 @@ class RBACMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request.state.user = _get_user(request)
         request.state.role = _get_role(request)
+
+        # DB selection (cookie). Default to demo DB.
+        key = _selected_db_key(request)
+        request.state.db_key = key
+        request.state.db_path = _db_path_for_key(key)
+        DB_KEY_CTX.set(key)
+        DB_PATH_CTX.set(request.state.db_path)
+
         return await call_next(request)
 
 
@@ -161,17 +198,41 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _selected_db_key(request: Request | None = None) -> str:
+    if request is None:
+        return DB_KEY_CTX.get()
+    k = (request.cookies.get(DB_KEY_COOKIE) or DB_KEY_DEMO).strip().lower()
+    if k not in (DB_KEY_DEMO, DB_KEY_BLANK):
+        return DB_KEY_DEMO
+    return k
+
+
+def _db_path_for_key(key: str) -> str:
+    return DB_DEMO_PATH if key == DB_KEY_DEMO else DB_BLANK_PATH
+
+
 def db() -> sqlite3.Connection:
+    """Open a connection to the currently selected DB (via context var)."""
     os.makedirs(DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    path = DB_PATH_CTX.get()
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
-def init_db() -> None:
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r["name"] == column for r in rows)
+
+
+def init_db_path(db_path: str) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+    # Temporarily point context to this path for schema/migrations.
+    DB_PATH_CTX.set(db_path)
+
     with db() as conn:
         conn.executescript(
             """
@@ -189,6 +250,9 @@ def init_db() -> None:
               dependencies_json TEXT NOT NULL,
               irreversible_flag INTEGER NOT NULL,
               task_assets_json TEXT NOT NULL,
+
+              tags_json TEXT NOT NULL DEFAULT '[]',
+              meta_json TEXT NOT NULL DEFAULT '{}',
 
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
@@ -211,6 +275,9 @@ def init_db() -> None:
 
               title TEXT NOT NULL,
               objective TEXT NOT NULL,
+
+              tags_json TEXT NOT NULL DEFAULT '[]',
+              meta_json TEXT NOT NULL DEFAULT '{}',
 
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
@@ -257,6 +324,22 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
             """
         )
+
+        # lightweight migrations (prototype-friendly)
+        if not _column_exists(conn, "tasks", "tags_json"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
+        if not _column_exists(conn, "tasks", "meta_json"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
+        if not _column_exists(conn, "workflows", "tags_json"):
+            conn.execute("ALTER TABLE workflows ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
+        if not _column_exists(conn, "workflows", "meta_json"):
+            conn.execute("ALTER TABLE workflows ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
+
+
+def init_db() -> None:
+    # Ensure both demo and blank DBs exist and are migrated.
+    init_db_path(DB_DEMO_PATH)
+    init_db_path(DB_BLANK_PATH)
 
 
 @app.on_event("startup")
@@ -524,9 +607,32 @@ def require_can_edit(status: str) -> None:
 
 
 def parse_lines(text: str) -> list[str]:
-    # Accept either newline-separated steps or JSON-ish list pasted.
-    lines = [ln.strip() for ln in text.splitlines()]
+    # Accept newline-separated list
+    lines = [ln.strip() for ln in (text or "").splitlines()]
     return [ln for ln in lines if ln]
+
+
+def parse_tags(text: str) -> list[str]:
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.split(",")]
+    return [p for p in parts if p]
+
+
+def parse_meta(text: str) -> dict[str, str]:
+    meta: dict[str, str] = {}
+    for ln in parse_lines(text or ""):
+        if "=" not in ln:
+            # ignore malformed lines in MVP
+            continue
+        k, v = ln.split("=", 1)
+        k = k.strip()
+        v = v.strip()
+        if not k:
+            continue
+        meta[k] = v
+    return meta
 
 
 # --- Routes ---
@@ -565,6 +671,66 @@ def home(request: Request):
         request,
         "home.html",
         {},
+    )
+
+
+# --- DB switching (MVP) ---
+
+@app.get("/db", response_class=HTMLResponse)
+def db_switch_form(request: Request):
+    require(request.state.role, "db:switch")
+    return templates.TemplateResponse(request, "db_switch.html", {})
+
+
+@app.post("/db/switch")
+def db_switch(request: Request, db_key: str = Form(DB_KEY_DEMO)):
+    require(request.state.role, "db:switch")
+    key = (db_key or DB_KEY_DEMO).strip().lower()
+    if key not in (DB_KEY_DEMO, DB_KEY_BLANK):
+        raise HTTPException(status_code=400, detail="Invalid db_key")
+
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
+    return resp
+
+
+@app.get("/audit", response_class=HTMLResponse)
+def audit_list(
+    request: Request,
+    entity_type: str | None = None,
+    record_id: str | None = None,
+    limit: int = 200,
+):
+    require(request.state.role, "audit:view")
+
+    entity_type = (entity_type or "").strip() or None
+    record_id = (record_id or "").strip() or None
+    limit = max(1, min(int(limit or 200), 1000))
+
+    where: list[str] = []
+    params: list[Any] = []
+    if entity_type:
+        where.append("entity_type=?")
+        params.append(entity_type)
+    if record_id:
+        where.append("record_id=?")
+        params.append(record_id)
+
+    sql = "SELECT id, entity_type, record_id, version, action, actor, at, note FROM audit_log"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY at DESC, id DESC LIMIT ?"
+    params.append(limit)
+
+    with db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+
+    items = [dict(r) for r in rows]
+
+    return templates.TemplateResponse(
+        request,
+        "audit_list.html",
+        {"items": items, "entity_type": entity_type, "record_id": record_id, "limit": limit},
     )
 
 
@@ -758,14 +924,284 @@ def import_pdf_run(
     return RedirectResponse(url="/tasks?status=draft", status_code=303)
 
 
+@app.get("/import/json", response_class=HTMLResponse)
+def import_json_form(request: Request):
+    require(request.state.role, "import:json")
+    return templates.TemplateResponse(request, "import_json.html", {})
+
+
+def _parse_task_json(obj: dict[str, Any]) -> dict[str, Any]:
+    title = str(obj.get("title", "")).strip()
+    outcome = str(obj.get("outcome", "")).strip()
+    procedure_name = str(obj.get("procedure_name", "")).strip() or title
+    if not title:
+        raise HTTPException(status_code=400, detail="Task import: title is required")
+    if not outcome:
+        raise HTTPException(status_code=400, detail=f"Task import '{title}': outcome is required")
+
+    facts = obj.get("facts") or []
+    concepts = obj.get("concepts") or []
+    deps = obj.get("dependencies") or []
+    steps = obj.get("steps") or []
+
+    if not isinstance(facts, list) or not isinstance(concepts, list) or not isinstance(deps, list):
+        raise HTTPException(status_code=400, detail=f"Task import '{title}': facts/concepts/dependencies must be lists")
+
+    steps_norm = _normalize_steps(steps)
+    _validate_steps_required(steps_norm)
+
+    irreversible_flag = 1 if bool(obj.get("irreversible_flag")) else 0
+    assets = obj.get("task_assets") or obj.get("assets") or []
+    if not isinstance(assets, list):
+        raise HTTPException(status_code=400, detail=f"Task import '{title}': task_assets must be a list")
+
+    return {
+        "record_id": str(obj.get("record_id") or "").strip() or str(uuid.uuid4()),
+        "version": int(obj.get("version") or 1),
+        "status": str(obj.get("status") or "draft"),
+        "title": title,
+        "outcome": outcome,
+        "procedure_name": procedure_name,
+        "facts": [str(x) for x in facts],
+        "concepts": [str(x) for x in concepts],
+        "dependencies": [str(x) for x in deps],
+        "steps": steps_norm,
+        "irreversible_flag": irreversible_flag,
+        "task_assets": assets,
+        "needs_review_flag": 1 if bool(obj.get("needs_review_flag")) else 0,
+        "needs_review_note": (str(obj.get("needs_review_note")) if obj.get("needs_review_note") is not None else None),
+    }
+
+
+def _parse_workflow_json(obj: dict[str, Any]) -> dict[str, Any]:
+    title = str(obj.get("title", "")).strip()
+    objective = str(obj.get("objective", "")).strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Workflow import: title is required")
+    if not objective:
+        raise HTTPException(status_code=400, detail=f"Workflow import '{title}': objective is required")
+
+    raw_refs = obj.get("task_refs") or obj.get("tasks") or []
+    refs: list[tuple[str, int]] = []
+
+    if isinstance(raw_refs, list):
+        for item in raw_refs:
+            if isinstance(item, str):
+                if "@" not in item:
+                    raise HTTPException(status_code=400, detail=f"Workflow import '{title}': invalid task ref '{item}'")
+                rid, ver = item.split("@", 1)
+                refs.append((rid.strip(), int(ver.strip())))
+            elif isinstance(item, dict):
+                rid = str(item.get("record_id") or item.get("task_record_id") or "").strip()
+                ver = item.get("version") or item.get("task_version")
+                if not rid or ver is None:
+                    raise HTTPException(status_code=400, detail=f"Workflow import '{title}': task_refs items require record_id + version")
+                refs.append((rid, int(ver)))
+            else:
+                raise HTTPException(status_code=400, detail=f"Workflow import '{title}': task_refs must contain strings or objects")
+    else:
+        raise HTTPException(status_code=400, detail=f"Workflow import '{title}': task_refs must be a list")
+
+    if not refs:
+        raise HTTPException(status_code=400, detail=f"Workflow import '{title}': at least one task_ref is required")
+
+    return {
+        "record_id": str(obj.get("record_id") or "").strip() or str(uuid.uuid4()),
+        "version": int(obj.get("version") or 1),
+        "status": str(obj.get("status") or "draft"),
+        "title": title,
+        "objective": objective,
+        "refs": refs,
+        "needs_review_flag": 1 if bool(obj.get("needs_review_flag")) else 0,
+        "needs_review_note": (str(obj.get("needs_review_note")) if obj.get("needs_review_note") is not None else None),
+    }
+
+
+@app.post("/import/json")
+def import_json_run(
+    request: Request,
+    upload: UploadFile = File(...),
+    actor_note: str = Form("Imported from JSON"),
+):
+    require(request.state.role, "import:json")
+    actor = request.state.user
+
+    raw = upload.file.read()
+    try:
+        payload = json.loads(raw)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    tasks_in: list[dict[str, Any]] = []
+    workflows_in: list[dict[str, Any]] = []
+
+    if isinstance(payload, dict):
+        if isinstance(payload.get("tasks"), list):
+            tasks_in = [x for x in payload.get("tasks") if isinstance(x, dict)]
+        if isinstance(payload.get("workflows"), list):
+            workflows_in = [x for x in payload.get("workflows") if isinstance(x, dict)]
+        # Allow single objects
+        if payload.get("type") == "task":
+            tasks_in = [payload]
+        if payload.get("type") == "workflow":
+            workflows_in = [payload]
+    elif isinstance(payload, list):
+        # list of heterogeneous objects
+        for x in payload:
+            if not isinstance(x, dict):
+                continue
+            if x.get("type") == "workflow":
+                workflows_in.append(x)
+            else:
+                # default to task
+                tasks_in.append(x)
+    else:
+        raise HTTPException(status_code=400, detail="Import JSON must be an object or a list")
+
+    if not tasks_in and not workflows_in:
+        raise HTTPException(status_code=400, detail="No tasks/workflows found in uploaded JSON")
+
+    created_task_ids: list[str] = []
+    created_workflow_ids: list[str] = []
+    now = utc_now_iso()
+
+    with db() as conn:
+        # tasks first
+        for t in tasks_in:
+            item = _parse_task_json(t)
+            if item["status"] not in ("draft", "submitted", "confirmed", "deprecated"):
+                raise HTTPException(status_code=400, detail=f"Task import '{item['title']}': invalid status '{item['status']}'")
+
+            # Prevent overwrite
+            exists = conn.execute(
+                "SELECT 1 FROM tasks WHERE record_id=? AND version=?",
+                (item["record_id"], item["version"]),
+            ).fetchone()
+            if exists:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Task import conflict: {item['record_id']}@{item['version']} already exists",
+                )
+
+            conn.execute(
+                """
+                INSERT INTO tasks(
+                  record_id, version, status,
+                  title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
+                  irreversible_flag, task_assets_json,
+                  created_at, updated_at, created_by, updated_by,
+                  reviewed_at, reviewed_by, change_note,
+                  needs_review_flag, needs_review_note
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    item["record_id"],
+                    item["version"],
+                    item["status"],
+                    item["title"],
+                    item["outcome"],
+                    _json_dump(item["facts"]),
+                    _json_dump(item["concepts"]),
+                    item["procedure_name"],
+                    _json_dump(item["steps"]),
+                    _json_dump(item["dependencies"]),
+                    item["irreversible_flag"],
+                    _json_dump(item["task_assets"]),
+                    now,
+                    now,
+                    actor,
+                    actor,
+                    None,
+                    None,
+                    actor_note.strip() or "Imported from JSON",
+                    item["needs_review_flag"],
+                    item["needs_review_note"],
+                ),
+            )
+            audit("task", item["record_id"], item["version"], "create", actor, note="import:json")
+            created_task_ids.append(item["record_id"])
+
+        # workflows
+        for w in workflows_in:
+            item = _parse_workflow_json(w)
+            if item["status"] not in ("draft", "submitted", "confirmed", "deprecated"):
+                raise HTTPException(status_code=400, detail=f"Workflow import '{item['title']}': invalid status '{item['status']}'")
+
+            exists = conn.execute(
+                "SELECT 1 FROM workflows WHERE record_id=? AND version=?",
+                (item["record_id"], item["version"]),
+            ).fetchone()
+            if exists:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Workflow import conflict: {item['record_id']}@{item['version']} already exists",
+                )
+
+            enforce_workflow_ref_rules(conn, item["refs"])
+            if item["status"] == "confirmed":
+                # confirmed workflows must reference confirmed tasks only
+                readiness = workflow_readiness(conn, item["refs"])
+                if readiness != "ready":
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Workflow import '{item['title']}': cannot import as confirmed; referenced tasks not all confirmed",
+                    )
+
+            conn.execute(
+                """
+                INSERT INTO workflows(
+                  record_id, version, status,
+                  title, objective,
+                  created_at, updated_at, created_by, updated_by,
+                  reviewed_at, reviewed_by, change_note,
+                  needs_review_flag, needs_review_note
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    item["record_id"],
+                    item["version"],
+                    item["status"],
+                    item["title"],
+                    item["objective"],
+                    now,
+                    now,
+                    actor,
+                    actor,
+                    None,
+                    None,
+                    actor_note.strip() or "Imported from JSON",
+                    item["needs_review_flag"],
+                    item["needs_review_note"],
+                ),
+            )
+            for idx, (rid, ver) in enumerate(item["refs"], start=1):
+                conn.execute(
+                    """
+                    INSERT INTO workflow_task_refs(workflow_record_id, workflow_version, order_index, task_record_id, task_version)
+                    VALUES (?,?,?,?,?)
+                    """,
+                    (item["record_id"], item["version"], idx, rid, ver),
+                )
+
+            audit("workflow", item["record_id"], item["version"], "create", actor, note="import:json")
+            created_workflow_ids.append(item["record_id"])
+
+    # Redirect to something sensible
+    if created_workflow_ids and not created_task_ids:
+        return RedirectResponse(url="/workflows", status_code=303)
+    return RedirectResponse(url="/tasks?status=draft", status_code=303)
+
+
 # ---- Tasks ----
 
 
 @app.get("/tasks", response_class=HTMLResponse)
-def tasks_list(request: Request, status: str | None = None):
+def tasks_list(request: Request, status: str | None = None, q: str | None = None):
+    q_norm = (q or "").strip().lower()
+
     with db() as conn:
-        q = "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id ORDER BY record_id"
-        rows = conn.execute(q).fetchall()
+        sql = "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id ORDER BY record_id"
+        rows = conn.execute(sql).fetchall()
 
         items = []
         for r in rows:
@@ -778,6 +1214,9 @@ def tasks_list(request: Request, status: str | None = None):
                 continue
             if status and latest["status"] != status:
                 continue
+            if q_norm and q_norm not in (latest["title"] or "").lower():
+                continue
+
             # derived: update_pending_confirmation
             confirmed_v = conn.execute(
                 "SELECT MAX(version) AS v FROM tasks WHERE record_id=? AND status='confirmed'",
@@ -787,6 +1226,8 @@ def tasks_list(request: Request, status: str | None = None):
             if confirmed_v is not None and latest_v > int(confirmed_v) and latest["status"] in ("draft", "submitted"):
                 update_pending = True
 
+            tags = _json_load(latest["tags_json"]) if "tags_json" in latest.keys() else []
+
             items.append(
                 {
                     "record_id": rid,
@@ -795,13 +1236,14 @@ def tasks_list(request: Request, status: str | None = None):
                     "status": latest["status"],
                     "needs_review_flag": bool(latest["needs_review_flag"]),
                     "update_pending_confirmation": update_pending,
+                    "tags": tags,
                 }
             )
 
     return templates.TemplateResponse(
         request,
         "tasks_list.html",
-        {"items": items, "status": status},
+        {"items": items, "status": status, "q": q},
     )
 
 
@@ -817,6 +1259,8 @@ def task_create(
     title: str = Form(...),
     outcome: str = Form(...),
     procedure_name: str = Form(...),
+    tags: str = Form(""),
+    meta: str = Form(""),
     facts: str = Form(""),
     concepts: str = Form(""),
     dependencies: str = Form(""),
@@ -832,6 +1276,8 @@ def task_create(
     facts_list = parse_lines(facts)
     concepts_list = parse_lines(concepts)
     deps_list = parse_lines(dependencies)
+    tags_list = parse_tags(tags)
+    meta_obj = parse_meta(meta)
     steps_list = _zip_steps(step_text, step_completion)
     _validate_steps_required(steps_list)
 
@@ -845,10 +1291,11 @@ def task_create(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -863,6 +1310,8 @@ def task_create(
                 _json_dump(deps_list),
                 1 if irreversible_flag else 0,
                 _json_dump([]),
+                _json_dump(tags_list),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
@@ -940,6 +1389,8 @@ def task_save(
     title: str = Form(...),
     outcome: str = Form(...),
     procedure_name: str = Form(...),
+    tags: str = Form(""),
+    meta: str = Form(""),
     facts: str = Form(""),
     concepts: str = Form(""),
     dependencies: str = Form(""),
@@ -958,6 +1409,8 @@ def task_save(
     facts_list = parse_lines(facts)
     concepts_list = parse_lines(concepts)
     deps_list = parse_lines(dependencies)
+    tags_list = parse_tags(tags)
+    meta_obj = parse_meta(meta)
     steps_list = _zip_steps(step_text, step_completion)
     _validate_steps_required(steps_list)
 
@@ -983,10 +1436,11 @@ def task_save(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1001,6 +1455,8 @@ def task_save(
                 _json_dump(deps_list),
                 1 if irreversible_flag else 0,
                 src["task_assets_json"],
+                _json_dump(tags_list),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
@@ -1037,10 +1493,11 @@ def task_new_version(request: Request, record_id: str, version: int):
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1055,6 +1512,8 @@ def task_new_version(request: Request, record_id: str, version: int):
                 src["dependencies_json"],
                 src["irreversible_flag"],
                 src["task_assets_json"],
+                (src["tags_json"] if "tags_json" in src.keys() else "[]"),
+                (src["meta_json"] if "meta_json" in src.keys() else "{}"),
                 now,
                 now,
                 actor,
@@ -1091,6 +1550,26 @@ def task_submit(request: Request, record_id: str, version: int):
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
 
+@app.post("/tasks/{record_id}/{version}/force-submit")
+def task_force_submit(request: Request, record_id: str, version: int):
+    require(request.state.role, "task:force_submit")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] in ("deprecated", "confirmed"):
+            raise HTTPException(409, detail=f"Cannot force-submit a {row['status']} task")
+        conn.execute(
+            "UPDATE tasks SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+    audit("task", record_id, version, "force_submit", actor, note="admin forced submission")
+    return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
 @app.post("/tasks/{record_id}/{version}/confirm")
 def task_confirm(request: Request, record_id: str, version: int):
     require(request.state.role, "task:confirm")
@@ -1123,14 +1602,51 @@ def task_confirm(request: Request, record_id: str, version: int):
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
 
+@app.post("/tasks/{record_id}/{version}/force-confirm")
+def task_force_confirm(request: Request, record_id: str, version: int):
+    require(request.state.role, "task:force_confirm")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] == "deprecated":
+            raise HTTPException(409, detail="Cannot force-confirm a deprecated task")
+
+        # Still enforce: you can't confirm an empty/bad record (structure checks are enforced earlier).
+        # Admin override is for lifecycle, not semantics.
+
+        # Deprecate any previously confirmed version
+        conn.execute(
+            "UPDATE tasks SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
+            (utc_now_iso(), actor, record_id),
+        )
+
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
+            WHERE record_id=? AND version=?
+            """,
+            (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
+        )
+
+    audit("task", record_id, version, "force_confirm", actor, note="admin forced confirmation")
+    return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
 # ---- Workflows ----
 
 
 @app.get("/workflows", response_class=HTMLResponse)
-def workflows_list(request: Request, status: str | None = None):
+def workflows_list(request: Request, status: str | None = None, q: str | None = None):
+    q_norm = (q or "").strip().lower()
+
     with db() as conn:
-        q = "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id ORDER BY record_id"
-        rows = conn.execute(q).fetchall()
+        sql = "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id ORDER BY record_id"
+        rows = conn.execute(sql).fetchall()
 
         items = []
         for r in rows:
@@ -1142,6 +1658,8 @@ def workflows_list(request: Request, status: str | None = None):
             if not latest:
                 continue
             if status and latest["status"] != status:
+                continue
+            if q_norm and q_norm not in (latest["title"] or "").lower():
                 continue
 
             # Derived readiness
@@ -1164,7 +1682,7 @@ def workflows_list(request: Request, status: str | None = None):
     return templates.TemplateResponse(
         request,
         "workflows_list.html",
-        {"items": items, "status": status},
+        {"items": items, "status": status, "q": q},
     )
 
 
@@ -1207,29 +1725,57 @@ def _parse_task_refs(task_refs: str) -> list[tuple[str, int]]:
 def workflow_readiness(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> Literal[
     "ready", "awaiting_task_confirmation", "invalid"
 ]:
-    """Derived status based on referenced Task version statuses.
+    # Backward-compatible: keep readiness as a simple derived label.
+    info = workflow_readiness_detail(conn, refs)
+    return info["readiness"]
+
+
+def workflow_readiness_detail(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> dict[str, Any]:
+    """Derived readiness + human-readable reasons.
 
     Rules:
       - If any reference is missing => invalid
       - If any reference is deprecated => invalid
       - Else if any reference is not confirmed (draft/submitted) => awaiting_task_confirmation
       - Else => ready
+
+    Returns:
+      { readiness: str, reasons: [str], blocking_task_refs: [(rid,ver,status)] }
     """
+    reasons: list[str] = []
+    blocking: list[tuple[str, int, str]] = []
+
+    if not refs:
+        return {
+            "readiness": "invalid",
+            "reasons": ["Workflow has no Task references."],
+            "blocking_task_refs": [],
+        }
+
     awaiting = False
 
     for rid, ver in refs:
         row = conn.execute(
-            "SELECT status FROM tasks WHERE record_id=? AND version=?", (rid, ver)
+            "SELECT status, title FROM tasks WHERE record_id=? AND version=?", (rid, ver)
         ).fetchone()
         if not row:
-            return "invalid"
+            reasons.append(f"Missing Task reference: {rid}@{ver} does not exist")
+            return {"readiness": "invalid", "reasons": reasons, "blocking_task_refs": blocking}
+
         st = row["status"]
         if st == "deprecated":
-            return "invalid"
+            reasons.append(f"Deprecated Task reference: {rid}@{ver} is deprecated")
+            return {"readiness": "invalid", "reasons": reasons, "blocking_task_refs": blocking}
+
         if st != "confirmed":
             awaiting = True
+            blocking.append((rid, int(ver), str(st)))
 
-    return "awaiting_task_confirmation" if awaiting else "ready"
+    if awaiting:
+        reasons.append("One or more referenced Task versions are not confirmed.")
+        return {"readiness": "awaiting_task_confirmation", "reasons": reasons, "blocking_task_refs": blocking}
+
+    return {"readiness": "ready", "reasons": [], "blocking_task_refs": []}
 
 
 def enforce_workflow_ref_rules(conn: sqlite3.Connection, refs: list[tuple[str, int]]) -> None:
@@ -1239,9 +1785,13 @@ def enforce_workflow_ref_rules(conn: sqlite3.Connection, refs: list[tuple[str, i
     Confirmed workflows must reference confirmed Task versions only (enforced at confirm-time).
 
     Hard constraints here:
-      - references must exist
+      - at least one task reference must exist
+      - referenced task versions must exist
       - referenced task versions must not be deprecated
     """
+    if not refs:
+        raise HTTPException(status_code=400, detail="Workflow must include at least one Task reference")
+
     derived = workflow_readiness(conn, refs)
     if derived == "invalid":
         raise HTTPException(
@@ -1255,6 +1805,8 @@ def workflow_create(
     request: Request,
     title: str = Form(...),
     objective: str = Form(...),
+    tags: str = Form(""),
+    meta: str = Form(""),
     task_refs: str = Form(""),
 ):
     require(request.state.role, "workflow:create")
@@ -1264,6 +1816,8 @@ def workflow_create(
     now = utc_now_iso()
 
     refs = _parse_task_refs(task_refs)
+    tags_list = parse_tags(tags)
+    meta_obj = parse_meta(meta)
 
     with db() as conn:
         enforce_workflow_ref_rules(conn, refs)
@@ -1273,10 +1827,11 @@ def workflow_create(
             INSERT INTO workflows(
               record_id, version, status,
               title, objective,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1284,6 +1839,8 @@ def workflow_create(
                 "draft",
                 title.strip(),
                 objective.strip(),
+                _json_dump(tags_list),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
@@ -1327,7 +1884,7 @@ def workflow_view(request: Request, record_id: str, version: int):
             (record_id, version),
         ).fetchall()
 
-        readiness = workflow_readiness(
+        readiness_info = workflow_readiness_detail(
             conn,
             [(r["record_id"], int(r["version"])) for r in refs],
         )
@@ -1335,7 +1892,13 @@ def workflow_view(request: Request, record_id: str, version: int):
     return templates.TemplateResponse(
         request,
         "workflow_view.html",
-        {"workflow": dict(wf), "refs": refs, "readiness": readiness},
+        {
+            "workflow": dict(wf),
+            "refs": refs,
+            "readiness": readiness_info["readiness"],
+            "readiness_reasons": readiness_info["reasons"],
+            "blocking_task_refs": readiness_info["blocking_task_refs"],
+        },
     )
 
 
@@ -1381,6 +1944,8 @@ def workflow_revise(
     version: int,
     title: str = Form(...),
     objective: str = Form(...),
+    tags: str = Form(""),
+    meta: str = Form(""),
     task_refs: str = Form(""),
     change_note: str = Form(""),
 ):
@@ -1392,6 +1957,8 @@ def workflow_revise(
         raise HTTPException(status_code=400, detail="change_note is required when creating a new version")
 
     refs = _parse_task_refs(task_refs)
+    tags_list = parse_tags(tags)
+    meta_obj = parse_meta(meta)
 
     with db() as conn:
         src = conn.execute(
@@ -1411,10 +1978,11 @@ def workflow_revise(
             INSERT INTO workflows(
               record_id, version, status,
               title, objective,
+              tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -1422,6 +1990,8 @@ def workflow_revise(
                 "draft",
                 title.strip(),
                 objective.strip(),
+                _json_dump(tags_list),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
@@ -1467,6 +2037,26 @@ def workflow_submit(request: Request, record_id: str, version: int):
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
 
 
+@app.post("/workflows/{record_id}/{version}/force-submit")
+def workflow_force_submit(request: Request, record_id: str, version: int):
+    require(request.state.role, "workflow:force_submit")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] in ("deprecated", "confirmed"):
+            raise HTTPException(409, detail=f"Cannot force-submit a {row['status']} workflow")
+        conn.execute(
+            "UPDATE workflows SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+    audit("workflow", record_id, version, "force_submit", actor, note="admin forced submission")
+    return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
 @app.post("/workflows/{record_id}/{version}/confirm")
 def workflow_confirm(request: Request, record_id: str, version: int):
     require(request.state.role, "workflow:confirm")
@@ -1508,6 +2098,153 @@ def workflow_confirm(request: Request, record_id: str, version: int):
 
     audit("workflow", record_id, version, "confirm", actor)
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
+@app.post("/workflows/{record_id}/{version}/force-confirm")
+def workflow_force_confirm(request: Request, record_id: str, version: int):
+    require(request.state.role, "workflow:force_confirm")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] == "deprecated":
+            raise HTTPException(409, detail="Cannot force-confirm a deprecated workflow")
+
+        refs = conn.execute(
+            "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+            (record_id, version),
+        ).fetchall()
+        readiness = workflow_readiness(conn, [(r["task_record_id"], int(r["task_version"])) for r in refs])
+        if readiness != "ready":
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot force-confirm workflow: referenced Task versions must still be confirmed.",
+            )
+
+        # Deprecate any previously confirmed version
+        conn.execute(
+            "UPDATE workflows SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
+            (utc_now_iso(), actor, record_id),
+        )
+
+        conn.execute(
+            """
+            UPDATE workflows
+            SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
+            WHERE record_id=? AND version=?
+            """,
+            (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
+        )
+
+    audit("workflow", record_id, version, "force_confirm", actor, note="admin forced confirmation")
+    return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
+def _task_export_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    r = dict(row)
+    return {
+        "type": "task",
+        "record_id": r["record_id"],
+        "version": int(r["version"]),
+        "status": r["status"],
+        "title": r["title"],
+        "outcome": r["outcome"],
+        "facts": _json_load(r["facts_json"]) or [],
+        "concepts": _json_load(r["concepts_json"]) or [],
+        "procedure_name": r["procedure_name"],
+        "steps": _normalize_steps(_json_load(r["steps_json"]) or []),
+        "dependencies": _json_load(r["dependencies_json"]) or [],
+        "irreversible_flag": bool(r["irreversible_flag"]),
+        "task_assets": _json_load(r["task_assets_json"]) or [],
+        "needs_review_flag": bool(r["needs_review_flag"]),
+        "needs_review_note": r["needs_review_note"],
+        "meta": {
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+            "created_by": r["created_by"],
+            "updated_by": r["updated_by"],
+            "reviewed_at": r["reviewed_at"],
+            "reviewed_by": r["reviewed_by"],
+            "change_note": r["change_note"],
+        },
+    }
+
+
+def _workflow_export_dict(wf_row: sqlite3.Row, refs_rows: list[sqlite3.Row]) -> dict[str, Any]:
+    wf = dict(wf_row)
+    return {
+        "type": "workflow",
+        "record_id": wf["record_id"],
+        "version": int(wf["version"]),
+        "status": wf["status"],
+        "title": wf["title"],
+        "objective": wf["objective"],
+        "task_refs": [
+            {
+                "order_index": int(r["order_index"]),
+                "record_id": r["task_record_id"],
+                "version": int(r["task_version"]),
+            }
+            for r in refs_rows
+        ],
+        "needs_review_flag": bool(wf["needs_review_flag"]),
+        "needs_review_note": wf["needs_review_note"],
+        "meta": {
+            "created_at": wf["created_at"],
+            "updated_at": wf["updated_at"],
+            "created_by": wf["created_by"],
+            "updated_by": wf["updated_by"],
+            "reviewed_at": wf["reviewed_at"],
+            "reviewed_by": wf["reviewed_by"],
+            "change_note": wf["change_note"],
+        },
+    }
+
+
+@app.get("/export/task/{record_id}/{version}.json")
+def export_task_json(record_id: str, version: int):
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404)
+
+    payload = _task_export_dict(row)
+    filename = f"task__{record_id}__v{version}.json"
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/export/workflow/{record_id}/{version}.json")
+def export_workflow_json(record_id: str, version: int):
+    with db() as conn:
+        wf = conn.execute(
+            "SELECT * FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not wf:
+            raise HTTPException(404)
+        refs = conn.execute(
+            """
+            SELECT order_index, task_record_id, task_version
+            FROM workflow_task_refs
+            WHERE workflow_record_id=? AND workflow_version=?
+            ORDER BY order_index
+            """,
+            (record_id, version),
+        ).fetchall()
+
+    payload = _workflow_export_dict(wf, refs)
+    filename = f"workflow__{record_id}__v{version}.json"
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @app.get("/workflows/{record_id}/{version}/export.md")

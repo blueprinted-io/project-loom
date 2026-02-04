@@ -16,22 +16,31 @@
   <a href="/workflows?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
   <a href="/workflows?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
   <a href="/workflows?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
+
+  <form method="get" action="/workflows" class="search">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
+    <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
+    <button class="btn" type="submit">Search</button>
+  </form>
 </div>
 
 <table class="table">
   <thead>
     <tr>
-      <th>Record</th>
-      <th>Latest</th>
+      <th>Title</th>
+      <th>Ver</th>
       <th>Status</th>
-      <th>Derived</th>
+      <th>Readiness</th>
     </tr>
   </thead>
   <tbody>
   {% for it in items %}
     <tr>
-      <td><code>{{ it.record_id }}</code></td>
-      <td><a href="/workflows/{{ it.record_id }}/{{ it.latest_version }}">v{{ it.latest_version }} — {{ it.title }}</a></td>
+      <td>
+        <a href="/workflows/{{ it.record_id }}/{{ it.latest_version }}">{{ it.title }}</a>
+        <div class="muted" style="margin-top:4px">Record: <code>{{ it.record_id[:8] }}…</code></div>
+      </td>
+      <td><code>{{ it.latest_version }}</code></td>
       <td><span class="badge badge-{{ it.status }}">{{ it.status }}</span></td>
       <td>
         {% if it.readiness == 'ready' %}

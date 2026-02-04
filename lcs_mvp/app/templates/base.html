@@ -9,24 +9,66 @@
 <body>
   <header class="topbar">
     <div class="wrap">
-      <div class="brand"><a href="/">LCS MVP</a></div>
-      <nav>
-        <a href="/tasks">Tasks</a>
-        <a href="/workflows">Workflows</a>
-        {% if can(request.state.role, 'import:pdf') %}
-          <a href="/import/pdf">Import PDF</a>
-        {% endif %}
-        <span class="muted" style="margin-left:14px">user: <b>{{ request.state.user }}</b> · role: <b>{{ request.state.role }}</b></span>
-        <a href="/login" style="margin-left:14px">switch</a>
+      <div class="brand">
+        <a class="brand-link" href="/">
+          <img class="brand-logo" src="/static/blueprinted.png" alt="blueprinted.io" />
+          <span class="brand-name">blueprinted.io</span>
+        </a>
+        <span class="brand-sub">Compliance Workspace</span>
+      </div>
+      <div class="topbar-right">
+        <div class="userchip">
+          <div class="userchip-label">User</div>
+          <div><b>{{ request.state.user }}</b> <span class="muted">·</span> <span class="role">{{ request.state.role }}</span></div>
+        </div>
+        <a class="btn secondary" href="/login">Switch</a>
         <form method="post" action="/logout" style="display:inline">
-          <button class="btn secondary" type="submit" style="margin-left:8px;padding:4px 10px">logout</button>
+          <button class="btn secondary" type="submit">Logout</button>
         </form>
-      </nav>
+      </div>
     </div>
   </header>
 
-  <main class="wrap">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="layout wrap">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">Records</div>
+        <a class="navlink" href="/tasks">Tasks</a>
+        <a class="navlink" href="/workflows">Workflows</a>
+      </div>
+
+      {% if can(request.state.role, 'audit:view') %}
+      <div class="sidebar-section">
+        <div class="sidebar-title">Assurance</div>
+        <a class="navlink" href="/audit">Audit Log</a>
+      </div>
+      {% endif %}
+
+      {% if can(request.state.role, 'import:pdf') or can(request.state.role, 'import:json') %}
+      <div class="sidebar-section">
+        <div class="sidebar-title">Ingestion</div>
+        {% if can(request.state.role, 'import:pdf') %}
+          <a class="navlink" href="/import/pdf">Import PDF</a>
+        {% endif %}
+        {% if can(request.state.role, 'import:json') %}
+          <a class="navlink" href="/import/json">Import JSON</a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="sidebar-foot muted">
+        Active DB: <b>{{ request.state.db_key }}</b>
+        {% if request.state.role == 'admin' %}
+          <div style="margin-top:8px">
+            <a class="navlink" href="/db">Switch database</a>
+          </div>
+        {% endif %}
+      </div>
+    </aside>
+
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 </body>
 </html>

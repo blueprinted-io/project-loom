@@ -1,18 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Learning Content System MVP</h1>
-<p>This is a small prototype implementing Tasks + Workflows with governance states.</p>
+<h1>Records</h1>
+<p class="muted">Draft, submit, confirm. Everything is versioned and auditable.</p>
 
 <div class="grid">
   <div class="card">
     <h2>Tasks</h2>
-    <p>Create and govern atomic Tasks.</p>
+    <p class="muted">Atomic, verifiable outcomes with governed procedure steps.</p>
     <p><a class="btn" href="/tasks">Open Tasks</a></p>
   </div>
   <div class="card">
     <h2>Workflows</h2>
-    <p>Compose confirmed Task versions into Workflows and export.</p>
+    <p class="muted">Ordered compositions of Tasks that roll up to one objective.</p>
     <p><a class="btn" href="/workflows">Open Workflows</a></p>
+  </div>
+  <div class="card">
+    <h2>Audit</h2>
+    <p class="muted">Change traceability across records and versions.</p>
+    <p><a class="btn" href="/audit">Open Audit Log</a></p>
   </div>
 </div>
 {% endblock %}

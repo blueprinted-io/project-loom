@@ -9,7 +9,7 @@
 
   <label>Role</label>
   <select name="role" required>
-    {% for r in ['viewer','author','reviewer','admin'] %}
+    {% for r in ['viewer','author','reviewer','audit','admin'] %}
       <option value="{{ r }}" {% if request.state.role == r %}selected{% endif %}>{{ r }}</option>
     {% endfor %}
   </select>
