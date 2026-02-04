@@ -1,20 +1,39 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Switch user / role</h1>
-<p class="muted">This is a prototype role switcher (cookie-based), not real authentication.</p>
+<h1>Login</h1>
+<p class="muted">Demo-mode local auth. Pick a user below (rockstar theme) and log in.</p>
+
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Demo users</h2>
+  <p class="muted">Passwords are shown for convenience in this MVP demo. Admin can manage users.</p>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>username</th>
+        <th>role</th>
+        <th>password</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td><code>{{ u.username }}</code></td>
+        <td><span class="badge">{{ u.role }}</span></td>
+        <td><code>{{ u.demo_password }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 
 <form method="post" action="/login" class="card">
-  <label>User</label>
-  <input name="user" value="{{ request.state.user }}" required />
+  <label>Username</label>
+  <input name="username" placeholder="jhendrix" required />
 
-  <label>Role</label>
-  <select name="role" required>
-    {% for r in ['viewer','author','reviewer','audit','admin'] %}
-      <option value="{{ r }}" {% if request.state.role == r %}selected{% endif %}>{{ r }}</option>
-    {% endfor %}
-  </select>
+  <label>Password</label>
+  <input name="password" type="password" placeholder="password1" required />
 
-  <button class="btn" type="submit">Apply</button>
-  <a class="btn secondary" href="/">Cancel</a>
+  <button class="btn" type="submit">Login</button>
 </form>
 {% endblock %}

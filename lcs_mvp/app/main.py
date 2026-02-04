@@ -97,10 +97,14 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-# --- RBAC (MVP) ---
+# --- Auth + RBAC (MVP) ---
 
-DEFAULT_USER = "anon"
-DEFAULT_ROLE: Role = "author"
+# Demo-friendly local auth:
+# - Users are stored in the selected SQLite DB.
+# - Login issues a server-side session token (cookie).
+# - Roles are not client-controlled.
+DEFAULT_ROLE: Role = "viewer"
+SESSION_COOKIE = "lcs_session"
 
 # --- Lightweight enterprise fields (MVP+) ---
 # Stored as JSON blobs to avoid migrations churn in the prototype.
@@ -116,16 +120,8 @@ ROLE_ORDER: dict[Role, int] = {
 }
 
 
-def _get_role(request: Request) -> Role:
-    role = request.cookies.get("lcs_role", DEFAULT_ROLE)
-    if role not in ROLE_ORDER:
-        return DEFAULT_ROLE
-    return role  # type: ignore[return-value]
-
-
-def _get_user(request: Request) -> str:
-    u = (request.cookies.get("lcs_user") or DEFAULT_USER).strip()
-    return u or DEFAULT_USER
+def _is_public_path(path: str) -> bool:
+    return path.startswith("/static/") or path in ("/login", "/logout")
 
 
 def can(role: Role, action: str) -> bool:
@@ -173,11 +169,34 @@ def require(role: Role, action: str) -> None:
         raise HTTPException(status_code=403, detail=f"Forbidden: requires permission {action}")
 
 
-class RBACMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        request.state.user = _get_user(request)
-        request.state.role = _get_role(request)
+def _hash_password(password: str, salt_hex: str) -> str:
+    import hashlib
 
+    pw = (password or "").encode("utf-8")
+    salt = bytes.fromhex(salt_hex)
+    dk = hashlib.pbkdf2_hmac("sha256", pw, salt, 200_000)
+    return dk.hex()
+
+
+def _verify_password(password: str, salt_hex: str, hash_hex: str) -> bool:
+    import hmac
+
+    return hmac.compare_digest(_hash_password(password, salt_hex), hash_hex)
+
+
+def _new_session_token() -> str:
+    import secrets
+
+    return secrets.token_urlsafe(32)
+
+
+def _require_login(request: Request) -> bool:
+    # Login page should be reachable without a session.
+    return not _is_public_path(str(request.url.path))
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
         # DB selection (cookie). Default to demo DB.
         key = _selected_db_key(request)
         request.state.db_key = key
@@ -185,10 +204,37 @@ class RBACMiddleware(BaseHTTPMiddleware):
         DB_KEY_CTX.set(key)
         DB_PATH_CTX.set(request.state.db_path)
 
+        # Default unauth state (used by /login rendering).
+        request.state.user = ""
+        request.state.role = DEFAULT_ROLE
+
+        if _require_login(request):
+            token = (request.cookies.get(SESSION_COOKIE) or "").strip()
+            if token:
+                with db() as conn:
+                    row = conn.execute(
+                        """
+                        SELECT u.username, u.role
+                        FROM sessions s
+                        JOIN users u ON u.id = s.user_id
+                        WHERE s.token=? AND s.revoked_at IS NULL
+                        """,
+                        (token,),
+                    ).fetchone()
+                if row:
+                    request.state.user = str(row["username"])
+                    request.state.role = str(row["role"])  # type: ignore[assignment]
+
+            if not request.state.user:
+                accept = (request.headers.get("accept") or "").lower()
+                if "text/html" in accept:
+                    return RedirectResponse(url="/login", status_code=303)
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
         return await call_next(request)
 
 
-app.add_middleware(RBACMiddleware)
+app.add_middleware(AuthMiddleware)
 
 # make permission checks available in templates
 templates.env.globals["can"] = can
@@ -320,6 +366,27 @@ def init_db_path(db_path: str) -> None:
               note TEXT
             );
 
+            -- Local auth (demo-friendly; real auth may be added later)
+            CREATE TABLE IF NOT EXISTS users (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              username TEXT NOT NULL UNIQUE,
+              role TEXT NOT NULL,
+              password_salt_hex TEXT NOT NULL,
+              password_hash_hex TEXT NOT NULL,
+              demo_password TEXT,
+              created_at TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              disabled_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS sessions (
+              token TEXT PRIMARY KEY,
+              user_id INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              revoked_at TEXT,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
             """
@@ -336,10 +403,46 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE workflows ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
 
 
+def _seed_demo_users(conn: sqlite3.Connection) -> None:
+    now = utc_now_iso()
+    # Only seed if no users exist.
+    exists = conn.execute("SELECT 1 FROM users LIMIT 1").fetchone()
+    if exists:
+        return
+
+    # Demo credentials are intentionally obvious.
+    # Passwords are stored hashed, but also displayed on the login page via demo_password.
+    demo = [
+        ("jhendrix", "reviewer", "password1"),
+        ("jjoplin", "author", "password2"),
+        ("mcury", "viewer", "password3"),
+        ("dspringsteen", "audit", "password4"),
+        ("admin", "admin", "admin"),
+    ]
+
+    import secrets
+
+    for username, role, pw in demo:
+        salt = secrets.token_bytes(16).hex()
+        conn.execute(
+            """
+            INSERT INTO users(username, role, password_salt_hex, password_hash_hex, demo_password, created_at, created_by)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (username, role, salt, _hash_password(pw, salt), pw, now, "seed"),
+        )
+
+
 def init_db() -> None:
     # Ensure both demo and blank DBs exist and are migrated.
     init_db_path(DB_DEMO_PATH)
     init_db_path(DB_BLANK_PATH)
+
+    # Seed demo-friendly users for both DBs (safe for MVP).
+    for p in (DB_DEMO_PATH, DB_BLANK_PATH):
+        DB_PATH_CTX.set(p)
+        with db() as conn:
+            _seed_demo_users(conn)
 
 
 @app.on_event("startup")
@@ -640,28 +743,56 @@ def parse_meta(text: str) -> dict[str, str]:
 
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request):
-    return templates.TemplateResponse(request, "login.html", {})
+    # Show demo users and their passwords (MVP demo convenience).
+    with db() as conn:
+        users = conn.execute(
+            "SELECT username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
+        ).fetchall()
+
+    return templates.TemplateResponse(request, "login.html", {"users": [dict(u) for u in users]})
 
 
 @app.post("/login")
-def login_set(user: str = Form(DEFAULT_USER), role: str = Form(DEFAULT_ROLE)):
-    # Basic validation
-    user = (user or DEFAULT_USER).strip() or DEFAULT_USER
-    role_val: Role = DEFAULT_ROLE
-    if role in ROLE_ORDER:
-        role_val = role  # type: ignore[assignment]
+def login_run(request: Request, username: str = Form(""), password: str = Form("")):
+    username = (username or "").strip()
+    password = password or ""
+    if not username:
+        raise HTTPException(status_code=400, detail="username is required")
+
+    with db() as conn:
+        u = conn.execute(
+            """
+            SELECT id, username, role, password_salt_hex, password_hash_hex
+            FROM users
+            WHERE username=? AND disabled_at IS NULL
+            """,
+            (username,),
+        ).fetchone()
+        if not u:
+            raise HTTPException(status_code=403, detail="Invalid credentials")
+        if not _verify_password(password, str(u["password_salt_hex"]), str(u["password_hash_hex"])):
+            raise HTTPException(status_code=403, detail="Invalid credentials")
+
+        token = _new_session_token()
+        conn.execute(
+            "INSERT INTO sessions(token, user_id, created_at) VALUES (?,?,?)",
+            (token, int(u["id"]), utc_now_iso()),
+        )
 
     resp = RedirectResponse(url="/", status_code=303)
-    resp.set_cookie("lcs_user", user, httponly=False, samesite="lax")
-    resp.set_cookie("lcs_role", role_val, httponly=False, samesite="lax")
+    resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax")
     return resp
 
 
 @app.post("/logout")
-def logout():
-    resp = RedirectResponse(url="/", status_code=303)
-    resp.delete_cookie("lcs_user")
-    resp.delete_cookie("lcs_role")
+def logout(request: Request):
+    token = (request.cookies.get(SESSION_COOKIE) or "").strip()
+    if token:
+        with db() as conn:
+            conn.execute("UPDATE sessions SET revoked_at=? WHERE token=? AND revoked_at IS NULL", (utc_now_iso(), token))
+
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie(SESSION_COOKIE)
     return resp
 
 
