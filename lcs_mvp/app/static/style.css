@@ -42,9 +42,27 @@
 }
 
 html[data-theme="light"]{
+  /* Force light even if system prefers dark */
   color-scheme: light;
+  --bg:#f5f7fb;
+  --panel:#ffffff;
+  --ink:#111827;
+  --muted:#6b7280;
+  --border:#e5e7eb;
+
+  --brand:#0b2a4a;
+  --brand-2:#123a63;
+  --accent:#2563eb;
+  --accent-2:#1d4ed8;
+
+  --signal:#06b6d4;
+
+  --warn:#b45309;
+  --ok:#15803d;
+  --danger:#b91c1c;
 }
 html[data-theme="dark"]{
+  /* Force dark even if system prefers light */
   color-scheme: dark;
   --bg:#0b1220;
   --panel:#0f1a2b;
