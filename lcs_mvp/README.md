@@ -61,6 +61,10 @@ This is cookie-based role switching (not real authentication):
 - `audit`: read-only access, including audit log
 - `admin`: can see everything; can also **force submit/confirm** (logged distinctly)
 
+## Post-MVP TODOs
+
+- Replace ad-hoc static cache-busting (e.g. `style.css?v=...`) with proper static asset fingerprinting / cache-control strategy.
+
 ## Notes
 
 - PDF import expects a local LM Studio server if used (see `LCS_LMSTUDIO_BASE_URL`).
