@@ -2237,6 +2237,17 @@ def task_save(
         if not src:
             raise HTTPException(404)
 
+        # If the source version was returned for changes, force the change_note to reference the return note.
+        if src["status"] == "returned":
+            rn = conn.execute(
+                "SELECT note, at, actor FROM audit_log WHERE entity_type='task' AND record_id=? AND version=? AND action='return_for_changes' ORDER BY at DESC LIMIT 1",
+                (record_id, version),
+            ).fetchone()
+            if rn and rn["note"]:
+                prefix = f"Response to return note by {rn['actor']} at {rn['at']}: {rn['note']} | "
+                if prefix not in note:
+                    note = prefix + note
+
         # New version number is latest + 1
         latest_v = get_latest_version(conn, "tasks", record_id) or version
         new_v = latest_v + 1
