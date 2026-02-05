@@ -864,27 +864,28 @@ def _chunk_text(pages: list[dict[str, Any]], max_chars: int = 12000) -> list[dic
     return chunks
 
 
-def _lmstudio_probe() -> dict[str, Any]:
+def _lmstudio_probe(base_url: str | None = None) -> dict[str, Any]:
     """Fast health probe for LM Studio.
 
-    Returns {ok: bool, detail: str}.
+    Returns {ok: bool, detail: str, base_url: str}.
     """
+    bu = (base_url or LMSTUDIO_BASE_URL).rstrip("/")
     try:
         with httpx.Client(timeout=httpx.Timeout(2.0, connect=1.0)) as client:
             # Prefer OpenAI-compatible endpoint; HEAD is not always supported, so use GET.
-            r = client.get(f"{LMSTUDIO_BASE_URL}/v1/models")
+            r = client.get(f"{bu}/v1/models")
             if r.status_code < 400:
-                return {"ok": True, "detail": "ok"}
+                return {"ok": True, "detail": "ok", "base_url": bu}
             # Fallback probe
-            r2 = client.get(f"{LMSTUDIO_BASE_URL}/api/v1/models")
+            r2 = client.get(f"{bu}/api/v1/models")
             if r2.status_code < 400:
-                return {"ok": True, "detail": "ok"}
-            return {"ok": False, "detail": f"HTTP {r.status_code}"}
+                return {"ok": True, "detail": "ok", "base_url": bu}
+            return {"ok": False, "detail": f"HTTP {r.status_code}", "base_url": bu}
     except Exception as e:
-        return {"ok": False, "detail": str(e)}
+        return {"ok": False, "detail": str(e), "base_url": bu}
 
 
-def _lmstudio_chat(messages: list[dict[str, str]], temperature: float = 0.2, max_tokens: int = 2000) -> str:
+def _lmstudio_chat(messages: list[dict[str, str]], temperature: float = 0.2, max_tokens: int = 2000, base_url: str | None = None) -> str:
     """Call LM Studio local server.
 
     NOTE: Some LM Studio model prompt templates only support `user` + `assistant` roles.
@@ -926,12 +927,14 @@ def _lmstudio_chat(messages: list[dict[str, str]], temperature: float = 0.2, max
         "max_tokens": max_tokens,
     }
 
+    bu = (base_url or LMSTUDIO_BASE_URL).rstrip("/")
+
     try:
         with httpx.Client(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
-            r = client.post(f"{LMSTUDIO_BASE_URL}/v1/chat/completions", json=payload)
+            r = client.post(f"{bu}/v1/chat/completions", json=payload)
             if r.status_code == 404:
                 # Fallback to LM Studio API (only when OpenAI-compatible endpoint is absent)
-                r2 = client.post(f"{LMSTUDIO_BASE_URL}/api/v1/chat", json=payload)
+                r2 = client.post(f"{bu}/api/v1/chat", json=payload)
                 if r2.status_code >= 400:
                     raise HTTPException(
                         status_code=502,
@@ -1582,10 +1585,10 @@ def audit_list(
 
 
 @app.get("/_lmstudio/status")
-def lmstudio_status(request: Request):
+def lmstudio_status(request: Request, base_url: str | None = None):
     require(request.state.role, "import:pdf")
-    probe = _lmstudio_probe()
-    return {"ok": bool(probe.get("ok")), "base_url": LMSTUDIO_BASE_URL, "detail": str(probe.get("detail"))}
+    probe = _lmstudio_probe(base_url)
+    return {"ok": bool(probe.get("ok")), "base_url": str(probe.get("base_url")), "detail": str(probe.get("detail"))}
 
 
 @app.get("/import/pdf", response_class=HTMLResponse)
@@ -1599,13 +1602,14 @@ def import_pdf_form(request: Request):
             (actor,),
         ).fetchall()
 
+    # Base URL is client-overridable (browser-local). Server default shown as fallback.
     probe = _lmstudio_probe()
 
     return templates.TemplateResponse(
         request,
         "import_pdf.html",
         {
-            "lmstudio_base_url": LMSTUDIO_BASE_URL,
+            "lmstudio_base_url": str(probe.get("base_url")) or LMSTUDIO_BASE_URL,
             "lmstudio_model": LMSTUDIO_MODEL,
             "lmstudio_ok": bool(probe.get("ok")),
             "lmstudio_detail": str(probe.get("detail")),
@@ -1621,13 +1625,14 @@ def import_pdf_prepare(
     max_tasks: int = Form(10),
     max_chunks: int = Form(8),
     actor_note: str = Form("Imported from PDF"),
+    lmstudio_base_url: str = Form(""),
 ):
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
-    probe = _lmstudio_probe()
+    probe = _lmstudio_probe(lmstudio_base_url)
     if not probe.get("ok"):
-        raise HTTPException(status_code=502, detail=f"LM Studio is not reachable at {LMSTUDIO_BASE_URL} ({probe.get('detail')})")
+        raise HTTPException(status_code=502, detail=f"LM Studio is not reachable at {probe.get('base_url')} ({probe.get('detail')})")
 
     # Save upload + compute hash identity
     os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -1676,17 +1681,17 @@ def import_pdf_prepare(
                     (ingestion_id, idx, _json_dump(ch.get("pages", [])), ch.get("text", ""), None, now),
                 )
 
-    return RedirectResponse(url=f"/import/pdf/run?ingestion_id={ingestion_id}&max_tasks={max_tasks}&max_chunks={max_chunks}", status_code=303)
+    return RedirectResponse(url=f"/import/pdf/run?ingestion_id={ingestion_id}&max_tasks={max_tasks}&max_chunks={max_chunks}&lmstudio_base_url={probe.get('base_url')}", status_code=303)
 
 
 @app.get("/import/pdf/run", response_class=HTMLResponse)
-def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max_chunks: int = 8):
+def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max_chunks: int = 8, lmstudio_base_url: str = ""):
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
-    probe = _lmstudio_probe()
+    probe = _lmstudio_probe(lmstudio_base_url)
     if not probe.get("ok"):
-        raise HTTPException(status_code=502, detail=f"LM Studio is not reachable at {LMSTUDIO_BASE_URL} ({probe.get('detail')})")
+        raise HTTPException(status_code=502, detail=f"LM Studio is not reachable at {probe.get('base_url')} ({probe.get('detail')})")
 
     max_tasks = max(1, min(int(max_tasks), 10))
     max_chunks = max(1, min(int(max_chunks), 20))
@@ -1781,6 +1786,7 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
                 [system, {"role": "user", "content": user_prompt}],
                 temperature=0.2,
                 max_tokens=2000,
+                base_url=str(probe.get("base_url")),
             )
             try:
                 data = json.loads(raw)
@@ -1861,7 +1867,7 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
             "Rules: a workflow must reference 2-6 tasks by exact title; do not invent titles.\n\n"
             + _json_dump({"task_titles": titles})
         )
-        raw = _lmstudio_chat([wf_system, {"role": "user", "content": wf_user}], temperature=0.2, max_tokens=800)
+        raw = _lmstudio_chat([wf_system, {"role": "user", "content": wf_user}], temperature=0.2, max_tokens=800, base_url=str(probe.get("base_url")))
         data = json.loads(raw)
         wfs = data.get("workflows") if isinstance(data, dict) else None
         if isinstance(wfs, list):
@@ -1886,7 +1892,7 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
         request,
         "import_pdf_preview.html",
         {
-            "ingestion": {"id": ingestion_id, "cursor_chunk": int(ing["cursor_chunk"]), "filename": ing["filename"]},
+            "ingestion": {"id": ingestion_id, "cursor_chunk": int(ing["cursor_chunk"]), "filename": ing["filename"], "lmstudio_base_url": str(probe.get("base_url"))},
             "candidates": flagged,
             "workflows": wf_candidates,
             "error": None,
@@ -2016,7 +2022,7 @@ def import_pdf_commit(
                 "Rules: a workflow must reference 2-6 tasks by exact title; do not invent titles.\n\n"
                 + _json_dump({"task_titles": titles})
             )
-            raw = _lmstudio_chat([wf_system, {"role": "user", "content": wf_user}], temperature=0.2, max_tokens=900)
+            raw = _lmstudio_chat([wf_system, {"role": "user", "content": wf_user}], temperature=0.2, max_tokens=900, base_url=str(probe.get("base_url")))
             data = json.loads(raw)
             wfs = data.get("workflows") if isinstance(data, dict) else None
             if isinstance(wfs, list):

@@ -14,10 +14,12 @@
 
 <div class="card">
   <div class="row">
-    <div>
-      <p class="muted" style="margin:0">LM Studio base URL: <code>{{ lmstudio_base_url }}</code></p>
-      <p class="muted" style="margin:0">Model: <code>{{ lmstudio_model }}</code></p>
-      <p class="muted" style="margin:0">Override via env vars: <code>LCS_LMSTUDIO_BASE_URL</code>, <code>LCS_LMSTUDIO_MODEL</code></p>
+    <div style="flex:1">
+      <label style="margin-top:0">LM Studio base URL (browser-local)</label>
+      <input id="lmstudio-base-url" value="{{ lmstudio_base_url }}" placeholder="http://127.0.0.1:1234" />
+      <div class="muted" style="margin-top:6px">Model: <code>{{ lmstudio_model }}</code></div>
+      <div class="muted">Override via env vars: <code>LCS_LMSTUDIO_BASE_URL</code>, <code>LCS_LMSTUDIO_MODEL</code></div>
+      <div class="muted" style="margin-top:6px">Post-MVP: store this server-side per user.</div>
     </div>
     <div>
       {% if lmstudio_ok %}
@@ -32,11 +34,27 @@
 </div>
 
 <script>
+function getLmStudioBaseUrl(){
+  const el = document.getElementById('lmstudio-base-url');
+  return (el && el.value ? el.value : '').trim();
+}
+function persistLmStudioBaseUrl(){
+  try{ localStorage.setItem('lmstudio_base_url', getLmStudioBaseUrl()); }catch(e){}
+}
+function loadLmStudioBaseUrl(){
+  try{
+    const saved = localStorage.getItem('lmstudio_base_url');
+    const el = document.getElementById('lmstudio-base-url');
+    if(el && saved){ el.value = saved; }
+  }catch(e){}
+}
 async function recheckLmStudio(){
   const pill = document.getElementById('lmstudio-pill');
   const detail = document.getElementById('lmstudio-detail');
+  const baseUrl = encodeURIComponent(getLmStudioBaseUrl());
+  persistLmStudioBaseUrl();
   try{
-    const r = await fetch('/_lmstudio/status', {headers:{'Accept':'application/json'}});
+    const r = await fetch('/_lmstudio/status?base_url=' + baseUrl, {headers:{'Accept':'application/json'}});
     const d = await r.json();
     if(d.ok){
       pill.className = 'badge badge-confirmed';
@@ -52,6 +70,8 @@ async function recheckLmStudio(){
     if(detail) detail.textContent = String(e);
   }
 }
+
+loadLmStudioBaseUrl();
 </script>
 
 {% if ingestions %}
@@ -75,7 +95,9 @@ async function recheckLmStudio(){
 </div>
 {% endif %}
 
-<form method="post" action="/import/pdf/prepare" enctype="multipart/form-data" class="card">
+<form method="post" action="/import/pdf/prepare" enctype="multipart/form-data" class="card" onsubmit="persistLmStudioBaseUrl(); document.getElementById('lmstudio-base-url-hidden').value=getLmStudioBaseUrl();">
+  <input type="hidden" name="lmstudio_base_url" id="lmstudio-base-url-hidden" value="" />
+
   <label>PDF file</label>
   <input type="file" name="pdf" accept="application/pdf" required />
 
