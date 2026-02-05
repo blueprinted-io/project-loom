@@ -187,6 +187,8 @@ html[data-theme="dark"] .badge{background:rgba(255,255,255,.06)}
 .badge-deprecated{background:#f3f4f6;border-color:#e5e7eb;color:#6b7280}
 .badge-warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
 
+html[data-theme="dark"] .badge-returned{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.35);color:rgba(245,158,11,.95)}
+
 .callout{border-radius:12px;padding:12px;margin-top:12px;border:1px solid var(--border);background:var(--panel)}
 .callout.warn{border-color:#fed7aa;background:#fff7ed}
 .callout.danger{border-color:#fecaca;background:#fef2f2}

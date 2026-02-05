@@ -1983,6 +1983,15 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
             if tag_norm and tag_norm not in set(tags):
                 continue
 
+            # Returned-for-changes signal: does this version have a return note?
+            has_return_note = False
+            if latest["status"] == "returned":
+                rn = conn.execute(
+                    "SELECT 1 FROM audit_log WHERE entity_type='task' AND record_id=? AND version=? AND action='return_for_changes' LIMIT 1",
+                    (rid, latest_v),
+                ).fetchone()
+                has_return_note = bool(rn)
+
             items.append(
                 {
                     "record_id": rid,
@@ -1993,6 +2002,7 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
                     "update_pending_confirmation": update_pending,
                     "tags": tags,
                     "domain": domain_val,
+                    "has_return_note": has_return_note,
                 }
             )
 

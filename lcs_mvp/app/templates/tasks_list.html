@@ -14,6 +14,7 @@
   <a href="/tasks" class="pill {{ '' if status else 'active' }}">All</a>
   <a href="/tasks?status=draft" class="pill {{ 'active' if status=='draft' else '' }}">Draft</a>
   <a href="/tasks?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
+  <a href="/tasks?status=returned" class="pill {{ 'active' if status=='returned' else '' }}">Returned</a>
   <a href="/tasks?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
   <a href="/tasks?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
 
@@ -70,6 +71,7 @@
       <td>
         {% if it.needs_review_flag %}<span class="badge badge-warn">needs_review</span>{% endif %}
         {% if it.update_pending_confirmation %}<span class="badge badge-warn">update_pending_confirmation</span>{% endif %}
+        {% if it.has_return_note %}<span class="badge badge-warn">review_note</span>{% endif %}
       </td>
     </tr>
   {% endfor %}
