@@ -16,6 +16,7 @@
         </a>
       </div>
       <div class="topbar-right">
+        <button class="btn secondary mobile-only" type="button" id="nav-toggle" title="Menu">Menu</button>
         <div class="userchip">
           <div class="userchip-label">User</div>
           <div><b>{{ request.state.user }}</b> <span class="muted">·</span> <span class="role">{{ request.state.role }}</span></div>
@@ -118,13 +119,45 @@
         }
       }
 
+      function setSidebarOpen(open){
+        const sb = document.getElementById('sidebar');
+        const bd = document.getElementById('sidebar-backdrop');
+        if(!sb || !bd) return;
+        if(open){
+          sb.classList.add('open');
+          bd.classList.add('show');
+          try{ document.body.classList.add('no-scroll'); }catch(e){}
+        } else {
+          sb.classList.remove('open');
+          bd.classList.remove('show');
+          try{ document.body.classList.remove('no-scroll'); }catch(e){}
+        }
+      }
+
+      function initMobileNav(){
+        const btn = document.getElementById('nav-toggle');
+        const bd = document.getElementById('sidebar-backdrop');
+        if(btn){
+          btn.addEventListener('click', function(){
+            const sb = document.getElementById('sidebar');
+            const open = sb && sb.classList.contains('open');
+            setSidebarOpen(!open);
+          });
+        }
+        if(bd){
+          bd.addEventListener('click', function(){ setSidebarOpen(false); });
+        }
+      }
+
       initTheme();
+      initMobileNav();
       loadPulse();
     })();
   </script>
 
   <div class="layout wrap">
-    <aside class="sidebar">
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+    <aside class="sidebar" id="sidebar">
       <div class="sidebar-section">
         <div class="sidebar-title">Records</div>
         <a class="navlink" href="/tasks">Tasks</a>
