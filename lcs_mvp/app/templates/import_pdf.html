@@ -13,10 +13,46 @@
 </div>
 
 <div class="card">
-  <p class="muted">LM Studio base URL: <code>{{ lmstudio_base_url }}</code></p>
-  <p class="muted">Model: <code>{{ lmstudio_model }}</code></p>
-  <p class="muted">Override via env vars: <code>LCS_LMSTUDIO_BASE_URL</code>, <code>LCS_LMSTUDIO_MODEL</code></p>
+  <div class="row">
+    <div>
+      <p class="muted" style="margin:0">LM Studio base URL: <code>{{ lmstudio_base_url }}</code></p>
+      <p class="muted" style="margin:0">Model: <code>{{ lmstudio_model }}</code></p>
+      <p class="muted" style="margin:0">Override via env vars: <code>LCS_LMSTUDIO_BASE_URL</code>, <code>LCS_LMSTUDIO_MODEL</code></p>
+    </div>
+    <div>
+      {% if lmstudio_ok %}
+        <span class="badge badge-confirmed" id="lmstudio-pill">LM Studio: reachable</span>
+      {% else %}
+        <span class="badge badge-warn" id="lmstudio-pill">LM Studio: not reachable</span>
+      {% endif %}
+      <div class="muted" style="margin-top:6px" id="lmstudio-detail">{{ lmstudio_detail }}</div>
+      <button class="btn" type="button" style="margin-top:8px" onclick="recheckLmStudio()">Recheck</button>
+    </div>
+  </div>
 </div>
+
+<script>
+async function recheckLmStudio(){
+  const pill = document.getElementById('lmstudio-pill');
+  const detail = document.getElementById('lmstudio-detail');
+  try{
+    const r = await fetch('/_lmstudio/status', {headers:{'Accept':'application/json'}});
+    const d = await r.json();
+    if(d.ok){
+      pill.className = 'badge badge-confirmed';
+      pill.textContent = 'LM Studio: reachable';
+    } else {
+      pill.className = 'badge badge-warn';
+      pill.textContent = 'LM Studio: not reachable';
+    }
+    detail.textContent = d.detail || '';
+  } catch(e){
+    pill.className = 'badge badge-warn';
+    pill.textContent = 'LM Studio: not reachable';
+    if(detail) detail.textContent = String(e);
+  }
+}
+</script>
 
 {% if ingestions %}
 <div class="card">

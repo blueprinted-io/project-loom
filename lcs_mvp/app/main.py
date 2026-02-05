@@ -864,6 +864,26 @@ def _chunk_text(pages: list[dict[str, Any]], max_chars: int = 12000) -> list[dic
     return chunks
 
 
+def _lmstudio_probe() -> dict[str, Any]:
+    """Fast health probe for LM Studio.
+
+    Returns {ok: bool, detail: str}.
+    """
+    try:
+        with httpx.Client(timeout=httpx.Timeout(2.0, connect=1.0)) as client:
+            # Prefer OpenAI-compatible endpoint; HEAD is not always supported, so use GET.
+            r = client.get(f"{LMSTUDIO_BASE_URL}/v1/models")
+            if r.status_code < 400:
+                return {"ok": True, "detail": "ok"}
+            # Fallback probe
+            r2 = client.get(f"{LMSTUDIO_BASE_URL}/api/v1/models")
+            if r2.status_code < 400:
+                return {"ok": True, "detail": "ok"}
+            return {"ok": False, "detail": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
+
+
 def _lmstudio_chat(messages: list[dict[str, str]], temperature: float = 0.2, max_tokens: int = 2000) -> str:
     """Call LM Studio local server.
 
@@ -1561,6 +1581,13 @@ def audit_list(
     )
 
 
+@app.get("/_lmstudio/status")
+def lmstudio_status(request: Request):
+    require(request.state.role, "import:pdf")
+    probe = _lmstudio_probe()
+    return {"ok": bool(probe.get("ok")), "base_url": LMSTUDIO_BASE_URL, "detail": str(probe.get("detail"))}
+
+
 @app.get("/import/pdf", response_class=HTMLResponse)
 def import_pdf_form(request: Request):
     require(request.state.role, "import:pdf")
@@ -1572,12 +1599,16 @@ def import_pdf_form(request: Request):
             (actor,),
         ).fetchall()
 
+    probe = _lmstudio_probe()
+
     return templates.TemplateResponse(
         request,
         "import_pdf.html",
         {
             "lmstudio_base_url": LMSTUDIO_BASE_URL,
             "lmstudio_model": LMSTUDIO_MODEL,
+            "lmstudio_ok": bool(probe.get("ok")),
+            "lmstudio_detail": str(probe.get("detail")),
             "ingestions": [dict(r) for r in rows],
         },
     )
@@ -1593,6 +1624,10 @@ def import_pdf_prepare(
 ):
     require(request.state.role, "import:pdf")
     actor = request.state.user
+
+    probe = _lmstudio_probe()
+    if not probe.get("ok"):
+        raise HTTPException(status_code=502, detail=f"LM Studio is not reachable at {LMSTUDIO_BASE_URL} ({probe.get('detail')})")
 
     # Save upload + compute hash identity
     os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -1648,6 +1683,10 @@ def import_pdf_prepare(
 def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max_chunks: int = 8):
     require(request.state.role, "import:pdf")
     actor = request.state.user
+
+    probe = _lmstudio_probe()
+    if not probe.get("ok"):
+        raise HTTPException(status_code=502, detail=f"LM Studio is not reachable at {LMSTUDIO_BASE_URL} ({probe.get('detail')})")
 
     max_tasks = max(1, min(int(max_tasks), 10))
     max_chunks = max(1, min(int(max_chunks), 20))
