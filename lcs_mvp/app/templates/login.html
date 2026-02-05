@@ -4,16 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Login · blueprinted.io</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=3" />
 </head>
 <body>
   <div class="wrap" style="padding: 24px 0">
-    <div class="card" style="display:flex; align-items:center; gap:12px; margin-bottom:16px">
-      <img class="brand-logo" src="/static/blueprinted.png" alt="blueprinted.io" style="width:42px; height:42px" />
-      <div>
-        <div style="font-weight:700">blueprinted.io</div>
-        <div class="muted">Demo-mode local auth</div>
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px">
+      <div style="display:flex; align-items:center; gap:12px">
+        <img class="brand-logo" src="/static/blueprinted.png" alt="blueprinted.io" style="width:42px; height:42px" />
+        <div>
+          <div style="font-weight:700">blueprinted.io</div>
+          <div class="muted">Demo-mode local auth</div>
+        </div>
       </div>
+      <button class="btn secondary" type="button" id="theme-toggle" title="Theme">Theme</button>
     </div>
 
     <div class="card" style="margin-bottom:16px">
@@ -50,5 +53,39 @@
       <button class="btn" type="submit">Login</button>
     </form>
   </div>
+  <script>
+    (function(){
+      function setTheme(mode){
+        const root = document.documentElement;
+        if(mode === 'dark'){
+          root.setAttribute('data-theme','dark');
+          try{ localStorage.setItem('theme','dark'); }catch(e){}
+        } else {
+          root.removeAttribute('data-theme');
+          try{ localStorage.setItem('theme','light'); }catch(e){}
+        }
+        const btn = document.getElementById('theme-toggle');
+        if(btn){
+          const cur = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+          btn.textContent = `Theme: ${cur}`;
+        }
+      }
+
+      function initTheme(){
+        const btn = document.getElementById('theme-toggle');
+        let saved = 'light';
+        try{ saved = localStorage.getItem('theme') || 'light'; }catch(e){}
+        setTheme(saved === 'dark' ? 'dark' : 'light');
+        if(btn){
+          btn.addEventListener('click', function(){
+            const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+            setTheme(cur === 'light' ? 'dark' : 'light');
+          });
+        }
+      }
+
+      initTheme();
+    })();
+  </script>
 </body>
 </html>

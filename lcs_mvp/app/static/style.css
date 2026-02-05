@@ -1,5 +1,5 @@
 /* Theme variables.
-   Default is light; dark is applied via prefers-color-scheme unless overridden by data-theme. */
+   Default is LIGHT. Dark is opt-in via the theme toggle (no auto mode). */
 :root{
   --bg:#f5f7fb;
   --panel:#ffffff;
@@ -20,49 +20,8 @@
   --danger:#b91c1c;
 }
 
-@media (prefers-color-scheme: dark){
-  :root{
-    --bg:#0b1220;
-    --panel:#0f1a2b;
-    --ink:#e5e7eb;
-    --muted:#a8b3c7;
-    --border:#23324a;
-
-    --brand:#081a33;
-    --brand-2:#0b2a4a;
-    --accent:#60a5fa;
-    --accent-2:#3b82f6;
-
-    --signal:#22d3ee;
-
-    --warn:#f59e0b;
-    --ok:#34d399;
-    --danger:#fb7185;
-  }
-}
-
-html[data-theme="light"]{
-  /* Force light even if system prefers dark */
-  color-scheme: light;
-  --bg:#f5f7fb;
-  --panel:#ffffff;
-  --ink:#111827;
-  --muted:#6b7280;
-  --border:#e5e7eb;
-
-  --brand:#0b2a4a;
-  --brand-2:#123a63;
-  --accent:#2563eb;
-  --accent-2:#1d4ed8;
-
-  --signal:#06b6d4;
-
-  --warn:#b45309;
-  --ok:#15803d;
-  --danger:#b91c1c;
-}
 html[data-theme="dark"]{
-  /* Force dark even if system prefers light */
+  /* Force dark (opt-in) */
   color-scheme: dark;
   --bg:#0b1220;
   --panel:#0f1a2b;
