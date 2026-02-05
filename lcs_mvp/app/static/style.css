@@ -130,6 +130,9 @@ html[data-theme="dark"] .table th{background:rgba(2,6,23,.35);color:rgba(229,231
 /* buttons inside content panels */
 .content .btn.secondary{background:var(--panel);color:var(--ink);border:1px solid var(--border)}
 
+/* buttons inside cards (e.g., login header) */
+.card .btn.secondary{background:var(--panel);color:var(--ink);border:1px solid var(--border)}
+
 label{display:block;margin-top:12px;margin-bottom:6px;font-weight:800;color:var(--ink)}
 input,textarea,select{width:100%;background:var(--panel);color:var(--ink);border:1px solid var(--border);border-radius:10px;padding:10px}
 .check{display:flex;align-items:center;gap:10px;font-weight:800}
