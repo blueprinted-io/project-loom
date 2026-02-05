@@ -319,7 +319,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 accept = (request.headers.get("accept") or "").lower()
                 if "text/html" in accept:
                     return RedirectResponse(url="/login", status_code=303)
-                raise HTTPException(status_code=401, detail="Unauthorized")
+                # Don't raise inside middleware (can produce noisy exception groups).
+                return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
         return await call_next(request)
 
@@ -1691,7 +1692,18 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
 
     probe = _lmstudio_probe(lmstudio_base_url)
     if not probe.get("ok"):
-        raise HTTPException(status_code=502, detail=f"LM Studio is not reachable at {probe.get('base_url')} ({probe.get('detail')})")
+        # Render a friendly error page (instead of raw 502)
+        return templates.TemplateResponse(
+            request,
+            "import_pdf_preview.html",
+            {
+                "ingestion": {"id": ingestion_id, "cursor_chunk": "?", "filename": "(unknown)", "lmstudio_base_url": str(probe.get("base_url"))},
+                "candidates": [],
+                "workflows": [],
+                "error": f"LM Studio is not reachable at {probe.get('base_url')} ({probe.get('detail')})",
+                "done": False,
+            },
+        )
 
     max_tasks = max(1, min(int(max_tasks), 10))
     max_chunks = max(1, min(int(max_chunks), 20))
@@ -1771,51 +1783,65 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
     candidates: list[dict[str, Any]] = []
 
     # Fail whole run: any chunk failure aborts without advancing cursor.
-    for cr in chunk_rows:
-        chunk_index = int(cr["chunk_index"])
-        cached = cr["llm_result_json"]
+    try:
+        for cr in chunk_rows:
+            chunk_index = int(cr["chunk_index"])
+            cached = cr["llm_result_json"]
 
-        if cached:
-            try:
-                data = json.loads(cached)
-            except Exception:
-                data = None
-        else:
-            user_prompt = user_prompt_tpl.replace("{per_chunk}", str(per_chunk)).replace("{source}", cr["text"])
-            raw = _lmstudio_chat(
-                [system, {"role": "user", "content": user_prompt}],
-                temperature=0.2,
-                max_tokens=2000,
-                base_url=str(probe.get("base_url")),
-            )
-            try:
-                data = json.loads(raw)
-            except Exception:
-                raise HTTPException(status_code=502, detail=f"Model returned non-JSON for chunk {chunk_index}")
-
-            with db() as conn:
-                conn.execute(
-                    "UPDATE ingestion_chunks SET llm_result_json=? WHERE ingestion_id=? AND chunk_index=?",
-                    (_json_dump(data), ingestion_id, chunk_index),
+            if cached:
+                try:
+                    data = json.loads(cached)
+                except Exception:
+                    data = None
+            else:
+                user_prompt = user_prompt_tpl.replace("{per_chunk}", str(per_chunk)).replace("{source}", cr["text"])
+                raw = _lmstudio_chat(
+                    [system, {"role": "user", "content": user_prompt}],
+                    temperature=0.2,
+                    max_tokens=2000,
+                    base_url=str(probe.get("base_url")),
                 )
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    raise ValueError(f"Model returned non-JSON for chunk {chunk_index}")
 
-        tasks = data.get("tasks") if isinstance(data, dict) else None
-        if not isinstance(tasks, list):
-            raise HTTPException(status_code=502, detail=f"Model returned invalid schema for chunk {chunk_index}")
+                with db() as conn:
+                    conn.execute(
+                        "UPDATE ingestion_chunks SET llm_result_json=? WHERE ingestion_id=? AND chunk_index=?",
+                        (_json_dump(data), ingestion_id, chunk_index),
+                    )
 
-        for t in tasks:
-            if not isinstance(t, dict):
-                continue
-            title = str(t.get("title", "")).strip()
-            if not title:
-                continue
-            # Keep candidates light for UI: store only what we need now.
-            cand = {
-                "chunk_index": chunk_index,
-                "pages": _json_load(cr["pages_json"]) or [],
-                "task": t,
-            }
-            candidates.append(cand)
+            tasks = data.get("tasks") if isinstance(data, dict) else None
+            if not isinstance(tasks, list):
+                raise ValueError(f"Model returned invalid schema for chunk {chunk_index}")
+
+            for t in tasks:
+                if not isinstance(t, dict):
+                    continue
+                title = str(t.get("title", "")).strip()
+                if not title:
+                    continue
+                # Keep candidates light for UI: store only what we need now.
+                cand = {
+                    "chunk_index": chunk_index,
+                    "pages": _json_load(cr["pages_json"]) or [],
+                    "task": t,
+                }
+                candidates.append(cand)
+    except Exception as e:
+        # Render friendly error; do not advance cursor.
+        return templates.TemplateResponse(
+            request,
+            "import_pdf_preview.html",
+            {
+                "ingestion": {"id": ingestion_id, "cursor_chunk": cursor, "filename": ing["filename"], "lmstudio_base_url": str(probe.get("base_url"))},
+                "candidates": [],
+                "workflows": [],
+                "error": str(e),
+                "done": False,
+            },
+        )
 
     # Merge + cap to max_tasks
     # De-dupe within candidate list by fingerprint
