@@ -6,6 +6,7 @@ import re
 import sqlite3
 import uuid
 import contextvars
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -18,7 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-Status = Literal["draft", "submitted", "confirmed", "deprecated"]
+Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated"]
 Role = Literal["viewer", "author", "reviewer", "audit", "admin"]
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -497,6 +498,32 @@ def init_db_path(db_path: str) -> None:
               FOREIGN KEY (domain) REFERENCES domains(name) ON DELETE RESTRICT
             );
 
+            CREATE TABLE IF NOT EXISTS ingestions (
+              id TEXT PRIMARY KEY,
+              source_type TEXT NOT NULL,
+              source_sha256 TEXT NOT NULL,
+              filename TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'draft',
+              cursor_chunk INTEGER NOT NULL DEFAULT 0,
+              max_tasks_per_run INTEGER NOT NULL DEFAULT 10,
+              note TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS ingestion_chunks (
+              ingestion_id TEXT NOT NULL,
+              chunk_index INTEGER NOT NULL,
+              pages_json TEXT NOT NULL,
+              text TEXT NOT NULL,
+              llm_result_json TEXT,
+              created_at TEXT NOT NULL,
+              PRIMARY KEY (ingestion_id, chunk_index),
+              FOREIGN KEY (ingestion_id) REFERENCES ingestions(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ingestions_sha ON ingestions(source_sha256);
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
             """
@@ -920,6 +947,74 @@ def _json_load(s: str) -> Any:
 
 def _json_dump(v: Any) -> str:
     return json.dumps(v, ensure_ascii=False)
+
+
+def _sha256_bytes(b: bytes) -> str:
+    h = hashlib.sha256()
+    h.update(b)
+    return h.hexdigest()
+
+
+def _norm_text(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+def _task_fingerprint(task: dict[str, Any]) -> str:
+    """Deterministic fingerprint for exact-ish dedupe."""
+    title = _norm_text(str(task.get("title", "")))
+    outcome = _norm_text(str(task.get("outcome", "")))
+    steps = task.get("steps") or []
+    steps_norm = _normalize_steps(steps)
+    parts: list[str] = [title, outcome]
+    for st in steps_norm:
+        parts.append(_norm_text(str(st.get("text", ""))))
+        parts.append(_norm_text(str(st.get("completion", ""))))
+    raw = "\n".join(parts).encode("utf-8", errors="ignore")
+    return _sha256_bytes(raw)
+
+
+def _extract_step_targets(steps: list[dict[str, Any]]) -> set[str]:
+    """Extract rough targets for near-duplicate hints (paths, services, packages)."""
+    targets: set[str] = set()
+    path_re = re.compile(r"(/etc/[^\s]+|/var/[^\s]+|/usr/[^\s]+|/opt/[^\s]+)")
+    svc_re = re.compile(r"\b(systemctl)\s+(restart|reload|enable|disable)\s+([a-zA-Z0-9_.@-]+)")
+    pkg_re = re.compile(r"\bapt(-get)?\s+install\s+(-y\s+)?([a-zA-Z0-9+_.:-]+)")
+
+    for st in steps or []:
+        t = (st.get("text") or "") + "\n" + (st.get("completion") or "")
+        for m in path_re.findall(t):
+            targets.add(m.lower())
+        for m in svc_re.findall(t):
+            targets.add(f"service:{m[2].lower()}")
+        for m in pkg_re.findall(t):
+            targets.add(f"pkg:{m[2].lower()}")
+    return targets
+
+
+def _near_duplicate_score(a: dict[str, Any], b: dict[str, Any]) -> float:
+    """Heuristic similarity score in [0,1]."""
+    a_steps = _normalize_steps(a.get("steps") or [])
+    b_steps = _normalize_steps(b.get("steps") or [])
+
+    a_title = set(_norm_text(str(a.get("title", ""))).split())
+    b_title = set(_norm_text(str(b.get("title", ""))).split())
+    a_out = set(_norm_text(str(a.get("outcome", ""))).split())
+    b_out = set(_norm_text(str(b.get("outcome", ""))).split())
+
+    def jacc(x: set[str], y: set[str]) -> float:
+        if not x and not y:
+            return 0.0
+        return len(x & y) / max(1, len(x | y))
+
+    title_sim = jacc(a_title, b_title)
+    out_sim = jacc(a_out, b_out)
+
+    a_tgt = _extract_step_targets(a_steps)
+    b_tgt = _extract_step_targets(b_steps)
+    tgt_sim = jacc(a_tgt, b_tgt)
+
+    # Weighted: outcome + targets matter more than title.
+    return 0.20 * title_sim + 0.45 * out_sim + 0.35 * tgt_sim
 
 
 def audit(entity_type: str, record_id: str, version: int, action: str, actor: str, note: str | None = None) -> None:
@@ -1469,44 +1564,142 @@ def audit_list(
 @app.get("/import/pdf", response_class=HTMLResponse)
 def import_pdf_form(request: Request):
     require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, filename, created_at, status, cursor_chunk FROM ingestions WHERE source_type='pdf' AND created_by=? ORDER BY created_at DESC LIMIT 50",
+            (actor,),
+        ).fetchall()
+
     return templates.TemplateResponse(
         request,
         "import_pdf.html",
         {
             "lmstudio_base_url": LMSTUDIO_BASE_URL,
             "lmstudio_model": LMSTUDIO_MODEL,
+            "ingestions": [dict(r) for r in rows],
         },
     )
 
 
-@app.post("/import/pdf")
-def import_pdf_run(
+@app.post("/import/pdf/prepare")
+def import_pdf_prepare(
     request: Request,
     pdf: UploadFile = File(...),
-    max_tasks: int = Form(20),
+    max_tasks: int = Form(10),
     max_chunks: int = Form(8),
     actor_note: str = Form("Imported from PDF"),
 ):
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
-    # Save upload
+    # Save upload + compute hash identity
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", pdf.filename or "upload.pdf")
     file_id = str(uuid.uuid4())
     out_path = os.path.join(UPLOADS_DIR, f"{file_id}__{safe_name}")
+    file_bytes = pdf.file.read()
     with open(out_path, "wb") as f:
-        f.write(pdf.file.read())
+        f.write(file_bytes)
 
-    pages = _pdf_extract_pages(out_path)
-    chunks = _chunk_text(pages, max_chars=12000)
-    if not chunks:
-        raise HTTPException(status_code=400, detail="No extractable text found in PDF")
+    sha = _sha256_bytes(file_bytes)
 
-    max_tasks = max(1, min(int(max_tasks), 200))
-    max_chunks = max(1, min(int(max_chunks), 200))
+    max_tasks = max(1, min(int(max_tasks), 50))
+    max_chunks = max(1, min(int(max_chunks), 50))
 
-    # Prompt: ask for tasks only; concepts best-effort; must include completion checks.
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT * FROM ingestions WHERE source_type='pdf' AND source_sha256=? AND created_by=? ORDER BY created_at DESC LIMIT 1",
+            (sha, actor),
+        ).fetchone()
+
+        if existing:
+            ingestion_id = str(existing["id"])
+        else:
+            ingestion_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO ingestions(id, source_type, source_sha256, filename, created_by, created_at, status, cursor_chunk, max_tasks_per_run, note) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (ingestion_id, "pdf", sha, safe_name, actor, utc_now_iso(), "draft", 0, max_tasks, actor_note.strip() or "Imported from PDF"),
+            )
+
+        # If we don't have cached chunks yet, extract + store now.
+        cached = conn.execute(
+            "SELECT 1 FROM ingestion_chunks WHERE ingestion_id=? LIMIT 1",
+            (ingestion_id,),
+        ).fetchone()
+
+        if not cached:
+            pages = _pdf_extract_pages(out_path)
+            chunks = _chunk_text(pages, max_chars=12000)
+            if not chunks:
+                raise HTTPException(status_code=400, detail="No extractable text found in PDF")
+            now = utc_now_iso()
+            for idx, ch in enumerate(chunks):
+                conn.execute(
+                    "INSERT OR REPLACE INTO ingestion_chunks(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at) VALUES (?,?,?,?,?,?)",
+                    (ingestion_id, idx, _json_dump(ch.get("pages", [])), ch.get("text", ""), None, now),
+                )
+
+    return RedirectResponse(url=f"/import/pdf/run?ingestion_id={ingestion_id}&max_tasks={max_tasks}&max_chunks={max_chunks}", status_code=303)
+
+
+@app.get("/import/pdf/run", response_class=HTMLResponse)
+def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max_chunks: int = 8):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    max_tasks = max(1, min(int(max_tasks), 10))
+    max_chunks = max(1, min(int(max_chunks), 20))
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT * FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+
+        cursor = int(ing["cursor_chunk"])
+        chunk_rows = conn.execute(
+            "SELECT chunk_index, pages_json, text, llm_result_json FROM ingestion_chunks WHERE ingestion_id=? AND chunk_index>=? ORDER BY chunk_index ASC LIMIT ?",
+            (ingestion_id, cursor, max_chunks),
+        ).fetchall()
+
+        if not chunk_rows:
+            return templates.TemplateResponse(
+                request,
+                "import_pdf_preview.html",
+                {
+                    "ingestion": dict(ing),
+                    "candidates": [],
+                    "workflows": [],
+                    "error": None,
+                    "done": True,
+                },
+            )
+
+        # Build existing task signatures for dedupe
+        latest_rows = conn.execute(
+            "SELECT record_id, MAX(version) AS v FROM tasks GROUP BY record_id"
+        ).fetchall()
+        existing_tasks: list[dict[str, Any]] = []
+        for r in latest_rows:
+            row = conn.execute(
+                "SELECT title, outcome, steps_json FROM tasks WHERE record_id=? AND version=?",
+                (r["record_id"], int(r["v"])),
+            ).fetchone()
+            if not row:
+                continue
+            existing_tasks.append(
+                {
+                    "record_id": r["record_id"],
+                    "title": row["title"],
+                    "outcome": row["outcome"],
+                    "steps": _json_load(row["steps_json"]) or [],
+                }
+            )
+
     system = {
         "role": "system",
         "content": (
@@ -1522,50 +1715,48 @@ def import_pdf_run(
         "Rules:\n"
         "- A Task is one atomic outcome.\n"
         "- Provide: title, outcome, facts[], concepts[], dependencies[], procedure_name.\n"
-        "- Provide steps[] where each step has: text, completion.\n"
+        "- Provide steps[] where each step has: text, completion, and optional actions[].\n"
         "- Steps and completion MUST be concrete and verifiable.\n"
         "- Do NOT include troubleshooting.\n"
-        "- Do NOT duplicate tasks that are semantically identical to ones already proposed earlier.\n"
-        "- Return JSON ONLY: {{\"tasks\": [ ... ]}} (no markdown, no commentary).\n\n"
+        "- Return JSON ONLY: {\"tasks\": [ ... ]} (no markdown, no commentary).\n\n"
         "SOURCE TEXT:\n{source}\n"
     )
 
-    # Multi-chunk: map over chunks, aggregate tasks.
-    aggregate: list[dict[str, Any]] = []
-    seen_titles: set[str] = set()
+    per_chunk = 3
 
-    # Simple quota split
-    per_chunk = max(1, (max_tasks + max_chunks - 1) // max_chunks)
+    candidates: list[dict[str, Any]] = []
 
-    for chunk in chunks[:max_chunks]:
-        if len(aggregate) >= max_tasks:
-            break
+    # Fail whole run: any chunk failure aborts without advancing cursor.
+    for cr in chunk_rows:
+        chunk_index = int(cr["chunk_index"])
+        cached = cr["llm_result_json"]
 
-        # Avoid str.format() here so that any literal braces in the prompt (e.g. JSON examples)
-        # can never trigger KeyError/ValueError.
-        user_prompt = (
-            user_prompt_tpl.replace("{per_chunk}", str(per_chunk)).replace("{source}", chunk["text"])
-        )
-
-        try:
+        if cached:
+            try:
+                data = json.loads(cached)
+            except Exception:
+                data = None
+        else:
+            user_prompt = user_prompt_tpl.replace("{per_chunk}", str(per_chunk)).replace("{source}", cr["text"])
             raw = _lmstudio_chat(
                 [system, {"role": "user", "content": user_prompt}],
                 temperature=0.2,
-                max_tokens=2500,
+                max_tokens=2000,
             )
-        except HTTPException:
-            # If one chunk fails (timeout/model hiccup), continue (MVP).
-            continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                raise HTTPException(status_code=502, detail=f"Model returned non-JSON for chunk {chunk_index}")
 
-        try:
-            data = json.loads(raw)
-        except Exception:
-            # If one chunk returns non-JSON, continue (MVP).
-            continue
+            with db() as conn:
+                conn.execute(
+                    "UPDATE ingestion_chunks SET llm_result_json=? WHERE ingestion_id=? AND chunk_index=?",
+                    (_json_dump(data), ingestion_id, chunk_index),
+                )
 
         tasks = data.get("tasks") if isinstance(data, dict) else None
         if not isinstance(tasks, list):
-            continue
+            raise HTTPException(status_code=502, detail=f"Model returned invalid schema for chunk {chunk_index}")
 
         for t in tasks:
             if not isinstance(t, dict):
@@ -1573,25 +1764,146 @@ def import_pdf_run(
             title = str(t.get("title", "")).strip()
             if not title:
                 continue
-            key = re.sub(r"\s+", " ", title).strip().lower()
-            if key in seen_titles:
+            # Keep candidates light for UI: store only what we need now.
+            cand = {
+                "chunk_index": chunk_index,
+                "pages": _json_load(cr["pages_json"]) or [],
+                "task": t,
+            }
+            candidates.append(cand)
+
+    # Merge + cap to max_tasks
+    # De-dupe within candidate list by fingerprint
+    out: list[dict[str, Any]] = []
+    seen_fp: set[str] = set()
+    for c in candidates:
+        fp = _task_fingerprint(c["task"])
+        if fp in seen_fp:
+            continue
+        seen_fp.add(fp)
+        out.append(c)
+        if len(out) >= max_tasks:
+            break
+
+    # Attach dup flags
+    flagged: list[dict[str, Any]] = []
+    for c in out:
+        t = c["task"]
+        fp = _task_fingerprint(t)
+        near_matches: list[dict[str, Any]] = []
+        for ex in existing_tasks:
+            ex_fp = _task_fingerprint(ex)
+            if ex_fp == fp:
+                near_matches.append({"record_id": ex["record_id"], "kind": "exact", "score": 1.0})
                 continue
-            seen_titles.add(key)
-            aggregate.append(t)
-            if len(aggregate) >= max_tasks:
-                break
+            score = _near_duplicate_score(t, ex)
+            if score >= 0.72:
+                near_matches.append({"record_id": ex["record_id"], "kind": "near", "score": round(score, 3)})
+        near_matches = sorted(near_matches, key=lambda x: x["score"], reverse=True)[:3]
 
-    if not aggregate:
-        raise HTTPException(status_code=502, detail="Model did not return any tasks across processed chunks")
+        flagged.append(
+            {
+                "id": _sha256_bytes((fp + str(c["chunk_index"])).encode("utf-8"))[:16],
+                "title": str(t.get("title", "")).strip(),
+                "chunk_index": c["chunk_index"],
+                "pages": c["pages"],
+                "dup_matches": near_matches,
+            }
+        )
 
-    created_ids: list[str] = []
-    now = utc_now_iso()
+    # Propose workflows from candidate titles (optional)
+    wf_candidates: list[dict[str, Any]] = []
+    if flagged:
+        titles = [x["title"] for x in flagged]
+        wf_system = {"role": "system", "content": "You propose small Workflows from a list of Task titles. Return JSON only."}
+        wf_user = (
+            "Given these Task titles, propose up to 3 Workflow candidates.\n"
+            "Return JSON ONLY: {\"workflows\": [{\"title\":...,\"objective\":...,\"task_titles\":[...] }]}\n"
+            "Rules: a workflow must reference 2-6 tasks by exact title; do not invent titles.\n\n"
+            + _json_dump({"task_titles": titles})
+        )
+        raw = _lmstudio_chat([wf_system, {"role": "user", "content": wf_user}], temperature=0.2, max_tokens=800)
+        data = json.loads(raw)
+        wfs = data.get("workflows") if isinstance(data, dict) else None
+        if isinstance(wfs, list):
+            for wf in wfs[:3]:
+                if not isinstance(wf, dict):
+                    continue
+                wt = str(wf.get("title", "")).strip()
+                obj = str(wf.get("objective", "")).strip()
+                tts = wf.get("task_titles") or []
+                if not wt or not obj or not isinstance(tts, list):
+                    continue
+                wf_candidates.append(
+                    {
+                        "id": _sha256_bytes((wt + obj).encode("utf-8"))[:16],
+                        "title": wt,
+                        "objective": obj,
+                        "task_titles": [str(x) for x in tts if str(x).strip() in titles],
+                    }
+                )
 
+    return templates.TemplateResponse(
+        request,
+        "import_pdf_preview.html",
+        {
+            "ingestion": {"id": ingestion_id, "cursor_chunk": int(ing["cursor_chunk"]), "filename": ing["filename"]},
+            "candidates": flagged,
+            "workflows": wf_candidates,
+            "error": None,
+            "done": False,
+        },
+    )
+
+
+@app.post("/import/pdf/commit")
+def import_pdf_commit(
+    request: Request,
+    ingestion_id: str = Form(...),
+    candidate_id: list[str] = Form([]),
+    workflow_id: list[str] = Form([]),
+):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    # Load last run candidates from cached llm results for current cursor window.
     with db() as conn:
-        for t in aggregate[:max_tasks]:
-            if not isinstance(t, dict):
-                continue
+        ing = conn.execute("SELECT * FROM ingestions WHERE id=? AND created_by=?", (ingestion_id, actor)).fetchone()
+        if not ing:
+            raise HTTPException(404)
 
+        cursor = int(ing["cursor_chunk"])
+        max_chunks = 8
+        chunk_rows = conn.execute(
+            "SELECT chunk_index, pages_json, text, llm_result_json FROM ingestion_chunks WHERE ingestion_id=? AND chunk_index>=? ORDER BY chunk_index ASC LIMIT ?",
+            (ingestion_id, cursor, max_chunks),
+        ).fetchall()
+
+        if not chunk_rows:
+            return RedirectResponse(url="/tasks?status=draft", status_code=303)
+
+        # Reconstruct candidates deterministically
+        reconstructed: list[dict[str, Any]] = []
+        for cr in chunk_rows:
+            if not cr["llm_result_json"]:
+                continue
+            data = json.loads(cr["llm_result_json"])
+            tasks = data.get("tasks") if isinstance(data, dict) else []
+            for t in tasks:
+                if not isinstance(t, dict):
+                    continue
+                fp = _task_fingerprint(t)
+                cid = _sha256_bytes((fp + str(int(cr["chunk_index"]))).encode("utf-8"))[:16]
+                if cid not in candidate_id:
+                    continue
+                reconstructed.append({"task": t, "pages": _json_load(cr["pages_json"]) or []})
+
+        now = utc_now_iso()
+        created_tasks: dict[str, tuple[str, int]] = {}  # title -> (record_id, version)
+
+        # Insert selected tasks
+        for item in reconstructed:
+            t = item["task"]
             title = str(t.get("title", "")).strip()
             outcome = str(t.get("outcome", "")).strip()
             procedure_name = str(t.get("procedure_name", "")).strip() or title
@@ -1606,12 +1918,11 @@ def import_pdf_run(
             record_id = str(uuid.uuid4())
             version = 1
 
-            # Attach source as a task asset for MVP traceability
             assets = [
                 {
-                    "url": f"source:{os.path.basename(out_path)}",
+                    "url": f"ingestion:{ingestion_id}",
                     "type": "link",
-                    "label": f"source_pdf:{safe_name}",
+                    "label": f"source_pdf:{ing['filename']} pages:{item['pages']}",
                 }
             ]
 
@@ -1647,13 +1958,65 @@ def import_pdf_run(
                     actor,
                     None,
                     None,
-                    actor_note.strip() or "Imported from PDF",
+                    f"import:pdf ingestion={ingestion_id}",
                     1,
-                    "AI-imported: concepts likely need human review",
+                    "AI-imported: check for duplicates and correctness",
                 ),
             )
             audit("task", record_id, version, "create", actor, note="import:pdf")
-            created_ids.append(record_id)
+            created_tasks[title] = (record_id, version)
+
+        # Insert workflows selected
+        # Recompute workflow candidates from selected titles (best-effort)
+        if workflow_id and created_tasks:
+            titles = list(created_tasks.keys())
+            wf_system = {"role": "system", "content": "You propose small Workflows from a list of Task titles. Return JSON only."}
+            wf_user = (
+                "Given these Task titles, propose up to 3 Workflow candidates.\n"
+                "Return JSON ONLY: {\"workflows\": [{\"id\":...,\"title\":...,\"objective\":...,\"task_titles\":[...] }]}\n"
+                "Rules: a workflow must reference 2-6 tasks by exact title; do not invent titles.\n\n"
+                + _json_dump({"task_titles": titles})
+            )
+            raw = _lmstudio_chat([wf_system, {"role": "user", "content": wf_user}], temperature=0.2, max_tokens=900)
+            data = json.loads(raw)
+            wfs = data.get("workflows") if isinstance(data, dict) else None
+            if isinstance(wfs, list):
+                for wf in wfs:
+                    if not isinstance(wf, dict):
+                        continue
+                    wid = str(wf.get("id", "")).strip() or _sha256_bytes((str(wf.get("title",""))+str(wf.get("objective",""))).encode("utf-8"))[:16]
+                    if wid not in workflow_id:
+                        continue
+                    title = str(wf.get("title", "")).strip()
+                    objective = str(wf.get("objective", "")).strip()
+                    tts = wf.get("task_titles") or []
+                    if not title or not objective or not isinstance(tts, list):
+                        continue
+
+                    wf_rid = str(uuid.uuid4())
+                    wf_ver = 1
+                    conn.execute(
+                        "INSERT INTO workflows(record_id, version, status, title, objective, domains_json, tags_json, meta_json, created_at, updated_at, created_by, updated_by, reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (wf_rid, wf_ver, "draft", title, objective, "[]", "[]", "{}", now, now, actor, actor, None, None, f"import:pdf ingestion={ingestion_id}", 1, "AI-imported: check composition"),
+                    )
+
+                    order = 1
+                    for tt in [str(x) for x in tts if str(x) in created_tasks]:
+                        tr, tv = created_tasks[tt]
+                        conn.execute(
+                            "INSERT INTO workflow_task_refs(workflow_record_id, workflow_version, order_index, task_record_id, task_version) VALUES (?,?,?,?,?)",
+                            (wf_rid, wf_ver, order, tr, tv),
+                        )
+                        order += 1
+
+                    audit("workflow", wf_rid, wf_ver, "create", actor, note="import:pdf")
+
+        # Advance cursor if commit happened (clean, deterministic)
+        if reconstructed:
+            conn.execute(
+                "UPDATE ingestions SET cursor_chunk=cursor_chunk+? , status='in_progress' WHERE id=?",
+                (len(chunk_rows), ingestion_id),
+            )
 
     return RedirectResponse(url="/tasks?status=draft", status_code=303)
 

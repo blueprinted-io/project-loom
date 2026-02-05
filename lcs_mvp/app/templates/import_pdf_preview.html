@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>PDF import candidates</h1>
+
+<div class="card">
+  <div class="muted">Source: <b>{{ ingestion.filename }}</b></div>
+  <div class="muted">Cursor: chunk <b>{{ ingestion.cursor_chunk }}</b></div>
+</div>
+
+{% if error %}
+  <div class="callout danger">
+    <b>Import failed:</b> {{ error }}
+  </div>
+{% endif %}
+
+{% if done %}
+  <div class="callout warn">
+    No more chunks remain for this PDF ingestion.
+  </div>
+{% endif %}
+
+{% if not candidates and not workflows %}
+  <div class="callout warn">
+    No candidates were produced for this run.
+  </div>
+{% else %}
+<form method="post" action="/import/pdf/commit" class="card">
+  <input type="hidden" name="ingestion_id" value="{{ ingestion.id }}" />
+
+  <h2>Task candidates</h2>
+  <p class="muted">Select items to create as <b>draft</b>. Possible duplicates are allowed but flagged.</p>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th style="width:34px"></th>
+        <th>Title</th>
+        <th>Pages</th>
+        <th>Dup signals</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in candidates %}
+      <tr>
+        <td><input type="checkbox" name="candidate_id" value="{{ c.id }}" /></td>
+        <td>{{ c.title }}</td>
+        <td class="muted">{{ c.pages }}</td>
+        <td>
+          {% if c.dup_matches %}
+            {% for m in c.dup_matches %}
+              <div class="muted">{{ m.kind }} dup: <code>{{ m.record_id[:8] }}…</code> ({{ m.score }})</div>
+            {% endfor %}
+          {% else %}
+            <span class="muted">none</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:18px">Workflow candidates</h2>
+  <p class="muted">Optional. Workflows reference selected Tasks by title.</p>
+
+  {% if workflows %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th style="width:34px"></th>
+        <th>Title</th>
+        <th>Objective</th>
+        <th>Tasks</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in workflows %}
+      <tr>
+        <td><input type="checkbox" name="workflow_id" value="{{ w.id }}" /></td>
+        <td>{{ w.title }}</td>
+        <td class="muted">{{ w.objective }}</td>
+        <td class="muted">{{ w.task_titles }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <div class="muted">No workflows proposed in this run.</div>
+  {% endif %}
+
+  <div style="margin-top:14px">
+    <button class="btn" type="submit">Create selected drafts</button>
+    <a class="btn secondary" href="/import/pdf">Back</a>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
