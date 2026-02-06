@@ -411,12 +411,24 @@ def _create_custom_db_profile(key: str) -> None:
 
 
 def db() -> sqlite3.Connection:
-    """Open a connection to the currently selected DB (via context var)."""
+    """Open a connection to the currently selected DB (via context var).
+
+    Notes:
+    - FastAPI sync routes run in a threadpool; we open a fresh connection per request.
+    - SQLite is single-writer; WAL + a busy timeout avoids spurious "database is locked"
+      errors under light concurrency.
+    """
     os.makedirs(DATA_DIR, exist_ok=True)
     path = DB_PATH_CTX.get()
-    conn = sqlite3.connect(path)
+
+    # timeout: how long sqlite3 waits on a locked DB before raising OperationalError.
+    conn = sqlite3.connect(path, timeout=10.0)
     conn.row_factory = sqlite3.Row
+
+    # Pragmas are per-connection.
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
 
 
