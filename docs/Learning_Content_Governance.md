@@ -5,7 +5,7 @@
 ## Purpose of This Document
 
 This document defines how technical learning content is constructed,
-governed, and delivered across all formats in our ecosystem. It ensures
+governed, and delivered across all formats in the ecosystem. It ensures
 that every piece of content, whether a written guide, workflow, video,
 SCORM module, or live lab, is built on a consistent, testable, and
 scalable structure.
