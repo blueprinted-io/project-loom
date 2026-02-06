@@ -7,6 +7,7 @@ import sqlite3
 import uuid
 import contextvars
 import hashlib
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -34,6 +35,8 @@ DB_KEY_DEMO = "demo"
 DB_KEY_BLANK = "blank"
 DB_PATH_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_path", default=DB_DEMO_PATH)
 DB_KEY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_key", default=DB_KEY_DEMO)
+
+DB_PROFILE_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 
 LMSTUDIO_BASE_URL = os.environ.get("LCS_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234").rstrip("/")
 LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-instruct-v0.3")
@@ -339,13 +342,72 @@ def _selected_db_key(request: Request | None = None) -> str:
     if request is None:
         return DB_KEY_CTX.get()
     k = (request.cookies.get(DB_KEY_COOKIE) or DB_KEY_DEMO).strip().lower()
-    if k not in (DB_KEY_DEMO, DB_KEY_BLANK):
+    if k not in _available_db_keys():
         return DB_KEY_DEMO
     return k
 
 
 def _db_path_for_key(key: str) -> str:
-    return DB_DEMO_PATH if key == DB_KEY_DEMO else DB_BLANK_PATH
+    if key == DB_KEY_DEMO:
+        return DB_DEMO_PATH
+    if key == DB_KEY_BLANK:
+        return DB_BLANK_PATH
+    return os.path.join(DATA_DIR, f"lcs_{key}.db")
+
+
+def _available_db_keys() -> set[str]:
+    return {DB_KEY_DEMO, DB_KEY_BLANK, *_list_custom_db_keys()}
+
+
+def _list_custom_db_keys() -> list[str]:
+    """Return custom db profile keys from files in DATA_DIR.
+
+    Custom DB files are named: lcs_<key>.db
+    Reserved keys demo/blank are excluded.
+    """
+    os.makedirs(DATA_DIR, exist_ok=True)
+    keys: list[str] = []
+    for name in os.listdir(DATA_DIR):
+        if not name.startswith("lcs_") or not name.endswith(".db"):
+            continue
+        if name in (os.path.basename(DB_DEMO_PATH), os.path.basename(DB_BLANK_PATH)):
+            continue
+        key = name[len("lcs_") : -len(".db")].strip().lower()
+        if not key:
+            continue
+        if key in (DB_KEY_DEMO, DB_KEY_BLANK):
+            continue
+        if not DB_PROFILE_KEY_RE.match(key):
+            # ignore weird files
+            continue
+        keys.append(key)
+    keys.sort()
+    return keys
+
+
+def _create_custom_db_profile(key: str) -> None:
+    key = (key or "").strip().lower()
+    if key in (DB_KEY_DEMO, DB_KEY_BLANK):
+        raise HTTPException(status_code=400, detail="Reserved profile key")
+    if not DB_PROFILE_KEY_RE.match(key):
+        raise HTTPException(status_code=400, detail="Invalid profile key (use: a-z, 0-9, _, -)")
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    dst = _db_path_for_key(key)
+    if os.path.exists(dst):
+        raise HTTPException(status_code=409, detail="Profile already exists")
+
+    # Copy the blank DB as a template (schema + seeded users/domains; no content).
+    # This keeps the MVP flow simple (switching DBs will still allow logging in).
+    if not os.path.exists(DB_BLANK_PATH):
+        init_db_path(DB_BLANK_PATH)
+        DB_PATH_CTX.set(DB_BLANK_PATH)
+        with db() as conn:
+            _seed_demo_users(conn)
+            _seed_demo_domains(conn)
+            _seed_demo_entitlements(conn)
+
+    shutil.copyfile(DB_BLANK_PATH, dst)
 
 
 def db() -> sqlite3.Connection:
@@ -1239,17 +1301,33 @@ def pulse(request: Request):
 @app.get("/db", response_class=HTMLResponse)
 def db_switch_form(request: Request):
     require(request.state.role, "db:switch")
-    return templates.TemplateResponse(request, "db_switch.html", {})
+    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + _list_custom_db_keys()]
+    return templates.TemplateResponse(request, "db_switch.html", {"profiles": profiles})
 
 
 @app.post("/db/switch")
 def db_switch(request: Request, db_key: str = Form(DB_KEY_DEMO)):
     require(request.state.role, "db:switch")
     key = (db_key or DB_KEY_DEMO).strip().lower()
-    if key not in (DB_KEY_DEMO, DB_KEY_BLANK):
+    if key not in _available_db_keys():
         raise HTTPException(status_code=400, detail="Invalid db_key")
 
     resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
+    return resp
+
+
+@app.post("/db/create")
+def db_create(request: Request, db_key: str = Form("")):
+    require(request.state.role, "db:switch")
+    key = (db_key or "").strip().lower()
+    if not key:
+        raise HTTPException(status_code=400, detail="db_key is required")
+
+    _create_custom_db_profile(key)
+
+    # Switch to it immediately.
+    resp = RedirectResponse(url="/db", status_code=303)
     resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
     return resp
 
