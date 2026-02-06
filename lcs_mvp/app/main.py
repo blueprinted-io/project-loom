@@ -1115,12 +1115,34 @@ def _near_duplicate_score(a: dict[str, Any], b: dict[str, Any]) -> float:
     return 0.20 * title_sim + 0.45 * out_sim + 0.35 * tgt_sim
 
 
-def audit(entity_type: str, record_id: str, version: int, action: str, actor: str, note: str | None = None) -> None:
-    with db() as conn:
-        conn.execute(
-            "INSERT INTO audit_log(entity_type, record_id, version, action, actor, at, note) VALUES (?,?,?,?,?,?,?)",
-            (entity_type, record_id, version, action, actor, utc_now_iso(), note),
-        )
+def audit(
+    entity_type: str,
+    record_id: str,
+    version: int,
+    action: str,
+    actor: str,
+    note: str | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Write an audit_log row.
+
+    Important: if you're already inside `with db() as conn:` and have performed writes,
+    pass that same `conn=` here. Otherwise audit() will open a second connection and
+    SQLite can throw `OperationalError: database is locked`.
+    """
+    if conn is None:
+        with db() as conn2:
+            conn2.execute(
+                "INSERT INTO audit_log(entity_type, record_id, version, action, actor, at, note) VALUES (?,?,?,?,?,?,?)",
+                (entity_type, record_id, version, action, actor, utc_now_iso(), note),
+            )
+        return
+
+    conn.execute(
+        "INSERT INTO audit_log(entity_type, record_id, version, action, actor, at, note) VALUES (?,?,?,?,?,?,?)",
+        (entity_type, record_id, version, action, actor, utc_now_iso(), note),
+    )
 
 
 def get_latest_version(conn: sqlite3.Connection, table: str, record_id: str) -> int | None:
@@ -1390,7 +1412,7 @@ def admin_users_create(request: Request, username: str = Form(""), role: str = F
                 """,
                 (username, role, salt, _hash_password(password, salt), password, utc_now_iso(), request.state.user),
             )
-            audit("user", username, 1, "create", request.state.user, note=f"role={role}")
+            audit("user", username, 1, "create", request.state.user, note=f"role={role}", conn=conn)
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="username already exists")
 
@@ -1418,7 +1440,7 @@ def admin_users_reset(request: Request, username: str = Form(""), password: str 
         )
         # Revoke sessions
         conn.execute("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", (utc_now_iso(), int(row["id"])))
-        audit("user", username, 1, "reset_password", request.state.user)
+        audit("user", username, 1, "reset_password", request.state.user, conn=conn)
 
     return RedirectResponse(url="/admin/users", status_code=303)
 
@@ -1436,7 +1458,7 @@ def admin_users_disable(request: Request, username: str = Form("")):
             raise HTTPException(status_code=404, detail="user not found")
         conn.execute("UPDATE users SET disabled_at=? WHERE username=?", (utc_now_iso(), username))
         conn.execute("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", (utc_now_iso(), int(row["id"])))
-        audit("user", username, 1, "disable", request.state.user)
+        audit("user", username, 1, "disable", request.state.user, conn=conn)
 
     # If you disabled yourself, you'll be bounced to /login on next request.
     return RedirectResponse(url="/admin/users", status_code=303)
@@ -1454,7 +1476,7 @@ def admin_users_enable(request: Request, username: str = Form("")):
         if not row:
             raise HTTPException(status_code=404, detail="user not found")
         conn.execute("UPDATE users SET disabled_at=NULL WHERE username=?", (username,))
-        audit("user", username, 1, "enable", request.state.user)
+        audit("user", username, 1, "enable", request.state.user, conn=conn)
 
     return RedirectResponse(url="/admin/users", status_code=303)
 
@@ -1475,7 +1497,7 @@ def admin_users_delete(request: Request, username: str = Form("")):
         uid = int(row["id"])
         conn.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
         conn.execute("DELETE FROM users WHERE id=?", (uid,))
-        audit("user", username, 1, "delete", request.state.user)
+        audit("user", username, 1, "delete", request.state.user, conn=conn)
 
     return RedirectResponse(url="/admin/users", status_code=303)
 
@@ -1528,7 +1550,7 @@ def admin_user_domains_save(request: Request, username: str = Form(""), domain: 
                 (uid, d, now, request.state.user),
             )
 
-        audit("user", username, 1, "set_domains", request.state.user, note=",".join(selected))
+        audit("user", username, 1, "set_domains", request.state.user, note=",".join(selected), conn=conn)
 
     return RedirectResponse(url="/admin/users", status_code=303)
 
@@ -1556,7 +1578,7 @@ def admin_domains_create(request: Request, name: str = Form("")):
                 "INSERT INTO domains(name, created_at, created_by) VALUES (?,?,?)",
                 (name_norm, utc_now_iso(), request.state.user),
             )
-            audit("domain", name_norm, 1, "create", request.state.user)
+            audit("domain", name_norm, 1, "create", request.state.user, conn=conn)
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="domain already exists")
 
@@ -1572,7 +1594,7 @@ def admin_domains_disable(request: Request, name: str = Form("")):
         if not row:
             raise HTTPException(status_code=404, detail="domain not found")
         conn.execute("UPDATE domains SET disabled_at=? WHERE name=?", (utc_now_iso(), name_norm))
-        audit("domain", name_norm, 1, "disable", request.state.user)
+        audit("domain", name_norm, 1, "disable", request.state.user, conn=conn)
 
     return RedirectResponse(url="/admin/domains", status_code=303)
 
@@ -1586,7 +1608,7 @@ def admin_domains_enable(request: Request, name: str = Form("")):
         if not row:
             raise HTTPException(status_code=404, detail="domain not found")
         conn.execute("UPDATE domains SET disabled_at=NULL WHERE name=?", (name_norm,))
-        audit("domain", name_norm, 1, "enable", request.state.user)
+        audit("domain", name_norm, 1, "enable", request.state.user, conn=conn)
 
     return RedirectResponse(url="/admin/domains", status_code=303)
 
@@ -1603,7 +1625,7 @@ def admin_domains_delete(request: Request, name: str = Form("")):
             conn.execute("DELETE FROM domains WHERE name=?", (name_norm,))
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="domain is referenced by user entitlements; disable it instead")
-        audit("domain", name_norm, 1, "delete", request.state.user)
+        audit("domain", name_norm, 1, "delete", request.state.user, conn=conn)
 
     return RedirectResponse(url="/admin/domains", status_code=303)
 
