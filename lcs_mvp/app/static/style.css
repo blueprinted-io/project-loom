@@ -212,9 +212,16 @@ a:hover{text-decoration:underline}
 
 .btn:focus-visible{outline:3px solid color-mix(in oklab, var(--accent) 55%, transparent);outline-offset:2px}
 
-/* buttons inside topbar need inverted secondary styling */
-.topbar .btn.secondary{background:transparent;color:#fff;border-color:rgba(255,255,255,.25)}
-.topbar .btn.secondary:hover{background:rgba(255,255,255,.08)}
+/* buttons inside topbar: opaque pills (no transparency) */
+.topbar .btn.secondary{
+  background:var(--brand-2);
+  color:#fff;
+  border-color:rgba(255,255,255,.18);
+  height:36px;
+  padding:0 14px;
+  box-shadow:0 1px 0 rgba(0,0,0,.28) inset;
+}
+.topbar .btn.secondary:hover{filter:brightness(1.06)}
 
 label{display:block;margin-top:14px;margin-bottom:7px;font-weight:750;color:color-mix(in oklab, var(--muted) 55%, var(--ink))}
 input,textarea,select{width:100%;background:color-mix(in oklab, var(--panel) 96%, var(--bg));color:var(--ink);border:1px solid color-mix(in oklab, var(--border) 70%, transparent);border-radius:12px;padding:11px;transition:border-color .15s ease, box-shadow .15s ease, background .15s ease}
