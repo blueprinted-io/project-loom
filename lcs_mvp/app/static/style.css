@@ -7,10 +7,10 @@
   --muted:#6b7280;
   --border:#e5e7eb;
 
-  --brand:#0b2a4a;
-  --brand-2:#123a63;
-  --accent:#2563eb;
-  --accent-2:#1d4ed8;
+  --brand:#000033;
+  --brand-2:#0a0a3d;
+  --accent:#2f6bff;
+  --accent-2:#1f55d8;
 
   /* secondary accent (used sparingly for focus/system cues) */
   --signal:#06b6d4;
@@ -29,10 +29,10 @@ html[data-theme="dark"]{
   --muted:#a8b3c7;
   --border:#23324a;
 
-  --brand:#081a33;
-  --brand-2:#0b2a4a;
-  --accent:#60a5fa;
-  --accent-2:#3b82f6;
+  --brand:#000022;
+  --brand-2:#000033;
+  --accent:#7aa2ff;
+  --accent-2:#5a86ff;
 
   --signal:#22d3ee;
 
