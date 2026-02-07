@@ -112,7 +112,13 @@
             </td>
             <td><input name="ref_record_id" value="{{ r.ref_record_id }}" /></td>
             <td><input name="ref_version" value="{{ r.ref_version }}" /></td>
-            <td><button class="btn secondary" type="button" onclick="this.closest('tr').remove()">Remove</button></td>
+            <td style="display:flex;gap:8px">
+              {% set comp = 'facts' %}
+              {% if (item and item.claim=='concept_probe') %}{% set comp = 'concepts' %}{% endif %}
+              {% if (item and item.claim=='procedure_proxy') %}{% set comp = 'procedure' %}{% endif %}
+              <a class="btn secondary" target="_blank" rel="noopener noreferrer" href="/_refs/peek?ref_type={{ r.ref_type }}&record_id={{ r.ref_record_id }}&version={{ r.ref_version }}&component={{ comp }}">Peek</a>
+              <button class="btn secondary" type="button" onclick="this.closest('tr').remove()">Remove</button>
+            </td>
           </tr>
         {% endfor %}
       </tbody>
@@ -144,9 +150,23 @@
           </td>
           <td><input name="ref_record_id" value="${esc(ref.record_id)}" /></td>
           <td><input name="ref_version" value="${esc(String(ref.version))}" /></td>
-          <td><button class="btn secondary" type="button">Remove</button></td>
+          <td style="display:flex;gap:8px">
+            <button class="btn secondary" type="button" data-act="peek">Peek</button>
+            <button class="btn secondary" type="button" data-act="remove">Remove</button>
+          </td>
         `;
-        tr.querySelector('button').addEventListener('click', () => tr.remove());
+        tr.querySelector('[data-act=remove]').addEventListener('click', () => tr.remove());
+        tr.querySelector('[data-act=peek]').addEventListener('click', () => {
+          const rt = tr.querySelector('select[name=ref_type]').value;
+          const rid = tr.querySelector('input[name=ref_record_id]').value;
+          const ver = tr.querySelector('input[name=ref_version]').value;
+          const claim = document.querySelector('select[name=claim]')?.value || 'fact_probe';
+          let component = 'facts';
+          if(claim === 'concept_probe') component = 'concepts';
+          if(claim === 'procedure_proxy') component = 'procedure';
+          const url = `/_refs/peek?ref_type=${encodeURIComponent(rt)}&record_id=${encodeURIComponent(rid)}&version=${encodeURIComponent(ver)}&component=${encodeURIComponent(component)}`;
+          window.open(url, '_blank', 'noopener,noreferrer,width=920,height=720');
+        });
         body.appendChild(tr);
       }
 

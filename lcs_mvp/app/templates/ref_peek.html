@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Reference peek</h1>
+<div class="muted" style="margin-top:6px">
+  <code>{{ ref_type }}</code> {{ record_id }} v{{ version }}
+</div>
+
+{% if title %}
+  <h2 style="margin-top:14px">{{ title }}</h2>
+{% endif %}
+
+{% if kind == 'task' %}
+  <div class="card" style="margin-top:12px">
+    <div><b>Domain:</b> <code>{{ domain }}</code></div>
+    <div class="muted" style="margin-top:8px">Showing: <code>{{ component }}</code></div>
+
+    {% if component == 'facts' %}
+      <ul>
+      {% for x in facts %}<li>{{ x }}</li>{% endfor %}
+      </ul>
+    {% elif component == 'concepts' %}
+      <ul>
+      {% for x in concepts %}<li>{{ x }}</li>{% endfor %}
+      </ul>
+    {% elif component == 'dependencies' %}
+      <ul>
+      {% for x in dependencies %}<li>{{ x }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <div class="muted">Procedure: {{ procedure_name }}</div>
+      <ol style="margin-top:10px">
+        {% for st in steps %}
+          <li style="margin-bottom:10px">
+            <div><b>{{ st.text }}</b></div>
+            <div class="muted">Completion: {{ st.completion }}</div>
+            {% if st.actions %}
+              <div class="muted">Actions:</div>
+              <pre style="white-space:pre-wrap">{{ st.actions|join('\n') }}</pre>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+    {% endif %}
+  </div>
+{% else %}
+  <div class="card" style="margin-top:12px">
+    <div class="muted">Showing: tasks referenced by this workflow (for writing composite scenario proxies)</div>
+    <ol style="margin-top:10px">
+      {% for t in tasks %}
+        <li style="margin-bottom:10px">
+          <div><b>{{ t.title }}</b> <span class="muted">({{ t.record_id }} v{{ t.version }})</span></div>
+          <div class="muted">Domain: <code>{{ t.domain }}</code></div>
+        </li>
+      {% endfor %}
+    </ol>
+  </div>
+{% endif %}
+
+<div class="row" style="margin-top:14px">
+  <a class="btn secondary" href="/assessments/new" target="_self">Back</a>
+</div>
+{% endblock %}

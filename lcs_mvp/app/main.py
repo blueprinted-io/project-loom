@@ -3918,6 +3918,90 @@ def refs_search(request: Request, kind: str = "task", q: str = "", limit: int = 
         return {"items": items[:limit]}
 
 
+@app.get("/_refs/peek", response_class=HTMLResponse)
+def refs_peek(request: Request, ref_type: str, record_id: str, version: int, component: str = "facts"):
+    """Open a small window for assessment authors to view underlying task/workflow data.
+
+    This is intentionally a separate page (not inline) to avoid spamming the assessment form.
+    """
+    require(request.state.role, "assessment:create")
+
+    ref_type = (ref_type or "").strip().lower()
+    component = (component or "facts").strip().lower()
+
+    with db() as conn:
+        if ref_type == "task":
+            row = conn.execute(
+                "SELECT record_id, version, title, status, domain, procedure_name, facts_json, concepts_json, dependencies_json, steps_json FROM tasks WHERE record_id=? AND version=?",
+                (record_id, int(version)),
+            ).fetchone()
+            if not row:
+                raise HTTPException(404)
+            return templates.TemplateResponse(
+                request,
+                "ref_peek.html",
+                {
+                    "kind": "task",
+                    "ref_type": "task",
+                    "record_id": row["record_id"],
+                    "version": int(row["version"]),
+                    "title": row["title"],
+                    "status": row["status"],
+                    "domain": row["domain"],
+                    "procedure_name": row["procedure_name"],
+                    "component": component,
+                    "facts": _json_load(row["facts_json"]) or [],
+                    "concepts": _json_load(row["concepts_json"]) or [],
+                    "dependencies": _json_load(row["dependencies_json"]) or [],
+                    "steps": _normalize_steps(_json_load(row["steps_json"]) or []),
+                    "tasks": [],
+                },
+            )
+
+        if ref_type == "workflow":
+            row = conn.execute(
+                "SELECT record_id, version, title, status FROM workflows WHERE record_id=? AND version=?",
+                (record_id, int(version)),
+            ).fetchone()
+            if not row:
+                raise HTTPException(404)
+            refs = conn.execute(
+                "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+                (record_id, int(version)),
+            ).fetchall()
+            tasks: list[dict[str, Any]] = []
+            for r in refs:
+                t = conn.execute(
+                    "SELECT record_id, version, title, domain FROM tasks WHERE record_id=? AND version=?",
+                    (r["task_record_id"], int(r["task_version"])),
+                ).fetchone()
+                if t:
+                    tasks.append({"record_id": t["record_id"], "version": int(t["version"]), "title": t["title"], "domain": t["domain"]})
+
+            return templates.TemplateResponse(
+                request,
+                "ref_peek.html",
+                {
+                    "kind": "workflow",
+                    "ref_type": "workflow",
+                    "record_id": row["record_id"],
+                    "version": int(row["version"]),
+                    "title": row["title"],
+                    "status": row["status"],
+                    "domain": "",
+                    "procedure_name": "",
+                    "component": "",
+                    "facts": [],
+                    "concepts": [],
+                    "dependencies": [],
+                    "steps": [],
+                    "tasks": tasks,
+                },
+            )
+
+    raise HTTPException(status_code=400, detail="Invalid ref_type")
+
+
 @app.get("/assessments", response_class=HTMLResponse)
 def assessments_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, claim: str | None = None):
     q_norm = (q or "").strip().lower()
