@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "LCS MVP" }}</title>
-  <link rel="stylesheet" href="/static/style.css?v=16" />
+  <link rel="stylesheet" href="/static/style.css?v=17" />
 </head>
 <body>
   <header class="topbar">
@@ -16,8 +16,7 @@
       </div>
       <div class="topbar-right">
         <div class="userchip">
-          <div class="userchip-label">User</div>
-          <div><b>{{ request.state.user }}</b> <span class="muted">·</span> <span class="role">{{ request.state.role }}</span></div>
+          <div><span class="userchip-label">User</span> <b>{{ request.state.user }}</b> <span class="muted">·</span> <span class="role">{{ request.state.role }}</span></div>
         </div>
         <button class="btn secondary" type="button" id="theme-toggle" title="Theme">Theme</button>
         <form method="post" action="/logout" style="display:inline">

@@ -138,18 +138,19 @@ a:hover{text-decoration:underline}
   border-top:1px solid rgba(255,255,255,.18);
   background:var(--brand);
 }
-.pulse-inner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0}
+.pulse-inner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0}
 .pulse-left,.pulse-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.pulse-title{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#fff}
+.pulse-title{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#fff;margin-left:2px}
 .pulse-item{
   display:inline-flex;align-items:center;gap:8px;
+  height:28px;
   font-size:12px;
   color:#fff;
-  padding:5px 10px;
+  padding:0 12px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,.24);
-  background:rgba(255,255,255,.10);
-  box-shadow:0 1px 0 rgba(0,0,0,.25) inset;
+  background:var(--brand-2);
+  box-shadow:0 1px 0 rgba(0,0,0,.28) inset;
 }
 .pulse-item.muted{color:rgba(255,255,255,.92)}
 
@@ -164,8 +165,18 @@ a:hover{text-decoration:underline}
 .brand-sub{font-size:12px;color:rgba(255,255,255,.75)}
 .topbar-right{display:flex;align-items:center;gap:10px}
 
-.userchip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 10px;color:#fff}
-.userchip-label{font-size:11px;color:rgba(255,255,255,.7)}
+.userchip{
+  background:var(--brand-2);
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:12px;
+  padding:0 12px;
+  height:28px;
+  display:inline-flex;
+  align-items:center;
+  color:#fff;
+  box-shadow:0 1px 0 rgba(0,0,0,.28) inset;
+}
+.userchip-label{font-size:11px;color:rgba(255,255,255,.78);font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-right:6px}
 .role{font-weight:700}
 
 .layout{display:flex;gap:16px;align-items:flex-start}
