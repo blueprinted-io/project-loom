@@ -154,11 +154,14 @@ def can(role: Role, action: str) -> bool:
 
     if action.endswith(":confirm"):
         # Review firewall: reviewers can review/confirm *everything*.
+        # They do not revise content/assessments; they only confirm or return.
         return role in ("reviewer",)
 
     if action.startswith("assessment:"):
-        # Content/assessment firewall: assessment authors create/revise/submit assessments,
-        # but do not author tasks/workflows.
+        # Content/assessment firewall:
+        # - assessment authors create/revise/submit assessments
+        # - reviewers can confirm/return (handled by :confirm)
+        # - content authors do not author assessments
         if action.endswith(":submit"):
             return role in ("assessment_author",)
         if action.endswith(":create") or action.endswith(":revise"):
@@ -167,7 +170,11 @@ def can(role: Role, action: str) -> bool:
     if action.endswith(":submit"):
         return role in ("author",)
 
-    if action.endswith(":create") or action.endswith(":revise"):
+    if action.endswith(":create"):
+        return role in ("author",)
+
+    if action.endswith(":revise"):
+        # Review firewall: reviewers do not revise.
         return role in ("author",)
 
     if action in ("import:pdf", "import:json"):
