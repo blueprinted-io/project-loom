@@ -523,6 +523,54 @@ def init_db_path(db_path: str) -> None:
                 ON DELETE RESTRICT
             );
 
+            -- ---- Assessments (MVP) ----
+
+            CREATE TABLE IF NOT EXISTS assessment_items (
+              record_id TEXT NOT NULL,
+              version INTEGER NOT NULL,
+              status TEXT NOT NULL,
+
+              stem TEXT NOT NULL,
+              options_json TEXT NOT NULL,
+              correct_key TEXT NOT NULL,
+              rationale TEXT NOT NULL DEFAULT '',
+
+              claim TEXT NOT NULL DEFAULT 'fact_probe',
+              domains_json TEXT NOT NULL DEFAULT '[]',
+              lint_json TEXT NOT NULL DEFAULT '[]',
+              refs_json TEXT NOT NULL DEFAULT '[]',
+
+              tags_json TEXT NOT NULL DEFAULT '[]',
+              meta_json TEXT NOT NULL DEFAULT '{}',
+
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              updated_by TEXT NOT NULL,
+              reviewed_at TEXT,
+              reviewed_by TEXT,
+              change_note TEXT,
+
+              needs_review_flag INTEGER NOT NULL DEFAULT 0,
+              needs_review_note TEXT,
+
+              PRIMARY KEY (record_id, version)
+            );
+
+            CREATE TABLE IF NOT EXISTS assessment_refs (
+              assessment_record_id TEXT NOT NULL,
+              assessment_version INTEGER NOT NULL,
+              order_index INTEGER NOT NULL,
+              ref_type TEXT NOT NULL,
+              ref_record_id TEXT NOT NULL,
+              ref_version INTEGER NOT NULL,
+
+              PRIMARY KEY (assessment_record_id, assessment_version, order_index),
+              FOREIGN KEY (assessment_record_id, assessment_version)
+                REFERENCES assessment_items(record_id, version)
+                ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS audit_log (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               entity_type TEXT NOT NULL,
@@ -1289,17 +1337,50 @@ def pulse(request: Request):
         reviewer_domains: list[str] = []
         if role in ("reviewer", "admin"):
             reviewer_domains = _user_domains(conn, user)
+
             if role == "admin":
                 # admin sees everything
                 reviewer_pending = int(
-                    conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE status='submitted'").fetchone()["c"]
+                    conn.execute(
+                        "SELECT ("
+                        " (SELECT COUNT(*) FROM tasks WHERE status='submitted') +"
+                        " (SELECT COUNT(*) FROM workflows WHERE status='submitted') +"
+                        " (SELECT COUNT(*) FROM assessment_items WHERE status='submitted')"
+                        ") AS c"
+                    ).fetchone()["c"]
                 )
             else:
                 if reviewer_domains:
-                    q = "SELECT COUNT(*) AS c FROM tasks WHERE status='submitted' AND domain IN (%s)" % (
-                        ",".join(["?"] * len(reviewer_domains))
+                    qmarks = ",".join(["?"] * len(reviewer_domains))
+
+                    t = int(
+                        conn.execute(
+                            f"SELECT COUNT(*) AS c FROM tasks WHERE status='submitted' AND domain IN ({qmarks})",
+                            reviewer_domains,
+                        ).fetchone()["c"]
                     )
-                    reviewer_pending = int(conn.execute(q, reviewer_domains).fetchone()["c"])
+                    # Workflows: domain match is derived via domains_json; filter in Python for portability.
+                    w_rows = conn.execute(
+                        "SELECT domains_json FROM workflows WHERE status='submitted'"
+                    ).fetchall()
+                    w = 0
+                    rdset = {d.strip().lower() for d in reviewer_domains if d}
+                    for wr in w_rows:
+                        doms = [str(x).strip().lower() for x in (_json_load(wr["domains_json"]) or [])]
+                        if rdset.intersection(doms):
+                            w += 1
+
+                    # Assessments: same.
+                    a_rows = conn.execute(
+                        "SELECT domains_json FROM assessment_items WHERE status='submitted'"
+                    ).fetchall()
+                    a = 0
+                    for ar in a_rows:
+                        doms = [str(x).strip().lower() for x in (_json_load(ar["domains_json"]) or [])]
+                        if rdset.intersection(doms):
+                            a += 1
+
+                    reviewer_pending = t + w + a
                 else:
                     reviewer_pending = 0
 
@@ -1307,6 +1388,12 @@ def pulse(request: Request):
         wf_counts = {
             r["status"]: int(r["c"])
             for r in conn.execute("SELECT status, COUNT(*) AS c FROM workflows GROUP BY status").fetchall()
+        }
+
+        # Assessment counts
+        as_counts = {
+            r["status"]: int(r["c"])
+            for r in conn.execute("SELECT status, COUNT(*) AS c FROM assessment_items GROUP BY status").fetchall()
         }
 
         last_audit = conn.execute("SELECT at, actor, action FROM audit_log ORDER BY at DESC LIMIT 1").fetchone()
@@ -1321,6 +1408,11 @@ def pulse(request: Request):
             "draft": wf_counts.get("draft", 0),
             "submitted": wf_counts.get("submitted", 0),
             "confirmed": wf_counts.get("confirmed", 0),
+        },
+        "assessments": {
+            "draft": as_counts.get("draft", 0),
+            "submitted": as_counts.get("submitted", 0),
+            "confirmed": as_counts.get("confirmed", 0),
         },
         "review": {
             "pending": reviewer_pending,
@@ -1647,12 +1739,38 @@ def review_queue(request: Request):
 
         items: list[dict[str, Any]] = []
         if doms:
+            dset = {d.strip().lower() for d in doms if d}
             qmarks = ",".join(["?"] * len(doms))
-            rows = conn.execute(
+
+            # Tasks
+            t_rows = conn.execute(
                 f"SELECT record_id, version, title, status, domain FROM tasks WHERE status='submitted' AND domain IN ({qmarks}) ORDER BY domain ASC, title ASC",
                 doms,
             ).fetchall()
-            items = [dict(r) for r in rows]
+            for r in t_rows:
+                items.append({"type": "task", "record_id": r["record_id"], "version": int(r["version"]), "title": r["title"], "status": r["status"], "domains": [str(r["domain"])],})
+
+            # Workflows (domain derived)
+            w_rows = conn.execute(
+                "SELECT record_id, version, title, status, domains_json FROM workflows WHERE status='submitted' ORDER BY title ASC"
+            ).fetchall()
+            for r in w_rows:
+                wdoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
+                if dset.intersection(wdoms):
+                    items.append({"type": "workflow", "record_id": r["record_id"], "version": int(r["version"]), "title": r["title"], "status": r["status"], "domains": wdoms,})
+
+            # Assessments
+            a_rows = conn.execute(
+                "SELECT record_id, version, stem, status, domains_json FROM assessment_items WHERE status='submitted' ORDER BY stem ASC"
+            ).fetchall()
+            for r in a_rows:
+                adoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
+                if dset.intersection(adoms):
+                    title = str(r["stem"])[:80]
+                    items.append({"type": "assessment", "record_id": r["record_id"], "version": int(r["version"]), "title": title, "status": r["status"], "domains": adoms,})
+
+            # stable sort: domain then type
+            items.sort(key=lambda it: ("".join(it.get("domains") or []), it.get("type"), it.get("title")))
 
     return templates.TemplateResponse(request, "review_queue.html", {"items": items, "domains": doms})
 
@@ -3607,6 +3725,566 @@ def workflow_force_confirm(request: Request, record_id: str, version: int):
     audit("workflow", record_id, version, "force_confirm", actor, note="admin forced confirmation")
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
 
+
+# ---- Assessments (MVP) ----
+
+AssessmentClaim = Literal["fact_probe", "concept_probe", "procedure_proxy"]
+
+
+def _assessment_domains(conn: sqlite3.Connection, refs: list[dict[str, Any]]) -> list[str]:
+    """Derive domains from attached task/workflow refs."""
+    doms: set[str] = set()
+    for r in refs or []:
+        rt = (r.get("ref_type") or "").strip().lower()
+        rid = str(r.get("ref_record_id") or "").strip()
+        ver = int(r.get("ref_version") or 0)
+        if not rt or not rid or ver <= 0:
+            continue
+        if rt == "task":
+            row = conn.execute("SELECT domain FROM tasks WHERE record_id=? AND version=?", (rid, ver)).fetchone()
+            d = (str(row["domain"]) if row else "").strip().lower()
+            if d:
+                doms.add(d)
+        elif rt == "workflow":
+            row = conn.execute("SELECT domains_json FROM workflows WHERE record_id=? AND version=?", (rid, ver)).fetchone()
+            if row and row["domains_json"]:
+                for d in (_json_load(row["domains_json"]) or []):
+                    dn = (str(d) or "").strip().lower()
+                    if dn:
+                        doms.add(dn)
+    return sorted(doms)
+
+
+def _assessment_lint(stem: str, options: list[dict[str, str]], correct_key: str, claim: str) -> list[dict[str, Any]]:
+    """Return lint findings [{level, code, msg}]. level in (error|warn)."""
+    findings: list[dict[str, Any]] = []
+
+    stem_norm = (stem or "").strip()
+    if not stem_norm:
+        findings.append({"level": "error", "code": "stem.empty", "msg": "Stem is required"})
+
+    if "which of the following" in stem_norm.lower():
+        findings.append({"level": "warn", "code": "stem.which_of_following", "msg": "Avoid 'which of the following' phrasing"})
+
+    # Options
+    if len(options) != 4:
+        findings.append({"level": "error", "code": "options.count", "msg": "Exactly 4 options are required"})
+
+    keys = [str(o.get("key") or "").strip().upper() for o in options]
+    texts = [str(o.get("text") or "").strip() for o in options]
+
+    if any(not k or k not in ("A", "B", "C", "D") for k in keys):
+        findings.append({"level": "error", "code": "options.keys", "msg": "Option keys must be A, B, C, D"})
+
+    if any(not t for t in texts):
+        findings.append({"level": "error", "code": "options.empty", "msg": "All option texts are required"})
+
+    ck = (correct_key or "").strip().upper()
+    if ck not in keys:
+        findings.append({"level": "error", "code": "correct.missing", "msg": "Correct answer key must match one of the options"})
+
+    # Duplicate texts
+    seen: set[str] = set()
+    for t in texts:
+        tn = re.sub(r"\s+", " ", (t or "").strip().lower())
+        if not tn:
+            continue
+        if tn in seen:
+            findings.append({"level": "error", "code": "options.duplicate", "msg": "Duplicate option text detected"})
+            break
+        seen.add(tn)
+
+    # Absolute terms heuristic
+    abs_terms = (" always ", " never ", " only ")
+    for idx, t in enumerate(texts):
+        tl = f" {t.lower()} "
+        if any(a in tl for a in abs_terms):
+            findings.append({"level": "warn", "code": "options.absolute_terms", "msg": f"Option {keys[idx] or '?'} contains absolute terms (always/never/only)"})
+            break
+
+    # Length band (warn)
+    wcounts = [len((t or "").split()) for t in texts if t]
+    if wcounts:
+        if max(wcounts) - min(wcounts) > 6:
+            findings.append({"level": "warn", "code": "options.length_band", "msg": "Options vary widely in length; this can create visual clues"})
+
+    claim_norm = (claim or "").strip()
+    if claim_norm not in ("fact_probe", "concept_probe", "procedure_proxy"):
+        findings.append({"level": "error", "code": "claim.invalid", "msg": "Invalid claim (fact_probe|concept_probe|procedure_proxy)"})
+
+    if claim_norm == "procedure_proxy":
+        # Soft check: require some scenario signal.
+        if not any(x in stem_norm.lower() for x in ("scenario", "you", "environment", "given", "after")):
+            findings.append({"level": "warn", "code": "procedure_proxy.weak_scenario", "msg": "Procedure proxy items should usually be scenario-framed"})
+
+    return findings
+
+
+def _assessment_export_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    r = dict(row)
+    return {
+        "type": "assessment",
+        "record_id": r["record_id"],
+        "version": int(r["version"]),
+        "status": r["status"],
+        "stem": r["stem"],
+        "options": _json_load(r["options_json"]) or [],
+        "correct_key": r["correct_key"],
+        "rationale": r.get("rationale") or "",
+        "claim": r.get("claim") or "fact_probe",
+        "domains": _json_load(r.get("domains_json") or "[]") or [],
+        "refs": _json_load(r.get("refs_json") or "[]") or [],
+        "lint": _json_load(r.get("lint_json") or "[]") or [],
+        "needs_review_flag": bool(r.get("needs_review_flag")),
+        "needs_review_note": r.get("needs_review_note"),
+        "meta": {
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at"),
+            "created_by": r.get("created_by"),
+            "updated_by": r.get("updated_by"),
+            "reviewed_at": r.get("reviewed_at"),
+            "reviewed_by": r.get("reviewed_by"),
+            "change_note": r.get("change_note"),
+        },
+    }
+
+
+@app.get("/assessments", response_class=HTMLResponse)
+def assessments_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, claim: str | None = None):
+    q_norm = (q or "").strip().lower()
+    domain_norm = (domain or "").strip().lower() or None
+    claim_norm = (claim or "").strip().lower() or None
+
+    with db() as conn:
+        sql = "SELECT record_id, MAX(version) AS latest_version FROM assessment_items GROUP BY record_id ORDER BY record_id"
+        rows = conn.execute(sql).fetchall()
+
+        domains = _active_domains(conn)
+        items: list[dict[str, Any]] = []
+        for r in rows:
+            rid = r["record_id"]
+            latest_v = int(r["latest_version"])
+            latest = conn.execute(
+                "SELECT * FROM assessment_items WHERE record_id=? AND version=?", (rid, latest_v)
+            ).fetchone()
+            if not latest:
+                continue
+            if status and latest["status"] != status:
+                continue
+            if q_norm and q_norm not in (latest["stem"] or "").lower():
+                continue
+            if claim_norm and (str(latest.get("claim") or "").strip().lower() != claim_norm):
+                continue
+
+            doms = [str(d).strip().lower() for d in (_json_load(latest.get("domains_json") or "[]") or [])]
+            if domain_norm and domain_norm not in set(doms):
+                continue
+
+            items.append(
+                {
+                    "record_id": rid,
+                    "latest_version": latest_v,
+                    "stem": latest["stem"],
+                    "status": latest["status"],
+                    "claim": latest.get("claim") or "fact_probe",
+                    "domains": doms,
+                    "needs_review_flag": bool(latest.get("needs_review_flag")),
+                }
+            )
+
+    return templates.TemplateResponse(
+        request,
+        "assessments_list.html",
+        {"items": items, "status": status, "q": q, "domain": domain_norm or "", "domains": domains, "claim": claim_norm or ""},
+    )
+
+
+@app.get("/assessments/new", response_class=HTMLResponse)
+def assessment_new_form(request: Request, task_record_id: str | None = None, task_version: int | None = None):
+    require(request.state.role, "assessment:create")
+
+    ref = None
+    if task_record_id and task_version:
+        ref = {"ref_type": "task", "ref_record_id": task_record_id, "ref_version": int(task_version)}
+
+    return templates.TemplateResponse(
+        request,
+        "assessment_edit.html",
+        {
+            "mode": "new",
+            "item": None,
+            "refs": [ref] if ref else [],
+            "lint": [],
+        },
+    )
+
+
+@app.post("/assessments/new")
+def assessment_create(
+    request: Request,
+    stem: str = Form(""),
+    claim: str = Form("fact_probe"),
+    correct_key: str = Form("A"),
+    option_a: str = Form(""),
+    option_b: str = Form(""),
+    option_c: str = Form(""),
+    option_d: str = Form(""),
+    rationale: str = Form(""),
+    change_note: str = Form(""),
+    ref_type: list[str] = Form([]),
+    ref_record_id: list[str] = Form([]),
+    ref_version: list[int] = Form([]),
+):
+    require(request.state.role, "assessment:create")
+    actor = request.state.user
+
+    record_id = str(uuid.uuid4())
+    version = 1
+    now = utc_now_iso()
+
+    options = [
+        {"key": "A", "text": (option_a or "").strip()},
+        {"key": "B", "text": (option_b or "").strip()},
+        {"key": "C", "text": (option_c or "").strip()},
+        {"key": "D", "text": (option_d or "").strip()},
+    ]
+
+    refs: list[dict[str, Any]] = []
+    for rt, rid, ver in zip(ref_type or [], ref_record_id or [], ref_version or []):
+        rt_n = (rt or "").strip().lower()
+        rid_n = (rid or "").strip()
+        try:
+            ver_i = int(ver)
+        except Exception:
+            ver_i = 0
+        if rt_n and rid_n and ver_i > 0:
+            refs.append({"ref_type": rt_n, "ref_record_id": rid_n, "ref_version": ver_i})
+
+    with db() as conn:
+        domains = _assessment_domains(conn, refs)
+        lint = _assessment_lint(stem, options, correct_key, claim)
+
+        conn.execute(
+            """
+            INSERT INTO assessment_items(
+              record_id, version, status,
+              stem, options_json, correct_key, rationale,
+              claim, domains_json, lint_json, refs_json,
+              tags_json, meta_json,
+              created_at, updated_at, created_by, updated_by,
+              reviewed_at, reviewed_by, change_note,
+              needs_review_flag, needs_review_note
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                record_id,
+                version,
+                "draft",
+                (stem or "").strip(),
+                _json_dump(options),
+                (correct_key or "A").strip().upper(),
+                (rationale or "").strip(),
+                (claim or "fact_probe").strip().lower(),
+                _json_dump(domains),
+                _json_dump(lint),
+                _json_dump(refs),
+                _json_dump([]),
+                _json_dump({}),
+                now,
+                now,
+                actor,
+                actor,
+                None,
+                None,
+                (change_note or "").strip() or None,
+                0,
+                None,
+            ),
+        )
+
+        # refs table
+        for idx, r in enumerate(refs, start=1):
+            conn.execute(
+                "INSERT INTO assessment_refs(assessment_record_id, assessment_version, order_index, ref_type, ref_record_id, ref_version) VALUES (?,?,?,?,?,?)",
+                (record_id, version, idx, r["ref_type"], r["ref_record_id"], int(r["ref_version"])),
+            )
+
+        audit("assessment", record_id, version, "create", actor, conn=conn)
+
+    return RedirectResponse(url=f"/assessments/{record_id}/{version}/edit?created=1", status_code=303)
+
+
+@app.get("/assessments/{record_id}/{version}", response_class=HTMLResponse)
+def assessment_view(request: Request, record_id: str, version: int):
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+
+        ref_rows = conn.execute(
+            "SELECT ref_type, ref_record_id, ref_version FROM assessment_refs WHERE assessment_record_id=? AND assessment_version=? ORDER BY order_index",
+            (record_id, version),
+        ).fetchall()
+
+    item = _assessment_export_dict(row)
+    item["refs"] = [dict(r) for r in ref_rows]
+
+    return_note = None
+    if item.get("status") == "returned":
+        with db() as conn:
+            rn = conn.execute(
+                "SELECT note, at, actor FROM audit_log WHERE entity_type='assessment' AND record_id=? AND version=? AND action='return_for_changes' ORDER BY at DESC LIMIT 1",
+                (record_id, version),
+            ).fetchone()
+            if rn and rn["note"]:
+                return_note = {"note": rn["note"], "at": rn["at"], "actor": rn["actor"]}
+
+    return templates.TemplateResponse(request, "assessment_view.html", {"item": item, "return_note": return_note})
+
+
+@app.get("/assessments/{record_id}/{version}/edit", response_class=HTMLResponse)
+def assessment_edit_form(request: Request, record_id: str, version: int):
+    require(request.state.role, "assessment:revise")
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+
+        ref_rows = conn.execute(
+            "SELECT ref_type, ref_record_id, ref_version FROM assessment_refs WHERE assessment_record_id=? AND assessment_version=? ORDER BY order_index",
+            (record_id, version),
+        ).fetchall()
+
+    item = dict(row)
+    lint = _json_load(item.get("lint_json") or "[]") or []
+    options = _json_load(item.get("options_json") or "[]") or []
+    item["options"] = options
+
+    return templates.TemplateResponse(
+        request,
+        "assessment_edit.html",
+        {"mode": "edit", "item": item, "refs": [dict(r) for r in ref_rows], "lint": lint},
+    )
+
+
+@app.post("/assessments/{record_id}/{version}/save")
+def assessment_save(
+    request: Request,
+    record_id: str,
+    version: int,
+    stem: str = Form(""),
+    claim: str = Form("fact_probe"),
+    correct_key: str = Form("A"),
+    option_a: str = Form(""),
+    option_b: str = Form(""),
+    option_c: str = Form(""),
+    option_d: str = Form(""),
+    rationale: str = Form(""),
+    change_note: str = Form(""),
+    ref_type: list[str] = Form([]),
+    ref_record_id: list[str] = Form([]),
+    ref_version: list[int] = Form([]),
+):
+    """Immutable records: saving creates a NEW VERSION (draft) with required change_note."""
+    require(request.state.role, "assessment:revise")
+    actor = request.state.user
+
+    note = (change_note or "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="change_note is required when creating a new version")
+
+    options = [
+        {"key": "A", "text": (option_a or "").strip()},
+        {"key": "B", "text": (option_b or "").strip()},
+        {"key": "C", "text": (option_c or "").strip()},
+        {"key": "D", "text": (option_d or "").strip()},
+    ]
+
+    refs: list[dict[str, Any]] = []
+    for rt, rid, ver in zip(ref_type or [], ref_record_id or [], ref_version or []):
+        rt_n = (rt or "").strip().lower()
+        rid_n = (rid or "").strip()
+        try:
+            ver_i = int(ver)
+        except Exception:
+            ver_i = 0
+        if rt_n and rid_n and ver_i > 0:
+            refs.append({"ref_type": rt_n, "ref_record_id": rid_n, "ref_version": ver_i})
+
+    with db() as conn:
+        src = conn.execute(
+            "SELECT * FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not src:
+            raise HTTPException(404)
+
+        if src["status"] == "returned":
+            rn = conn.execute(
+                "SELECT note, at, actor FROM audit_log WHERE entity_type='assessment' AND record_id=? AND version=? AND action='return_for_changes' ORDER BY at DESC LIMIT 1",
+                (record_id, version),
+            ).fetchone()
+            if rn and rn["note"]:
+                prefix = f"Response to return note by {rn['actor']} at {rn['at']}: {rn['note']} | "
+                if prefix not in note:
+                    note = prefix + note
+
+        latest_v = get_latest_version(conn, "assessment_items", record_id) or version
+        new_v = latest_v + 1
+        now = utc_now_iso()
+
+        domains = _assessment_domains(conn, refs)
+        lint = _assessment_lint(stem, options, correct_key, claim)
+
+        conn.execute(
+            """
+            INSERT INTO assessment_items(
+              record_id, version, status,
+              stem, options_json, correct_key, rationale,
+              claim, domains_json, lint_json, refs_json,
+              tags_json, meta_json,
+              created_at, updated_at, created_by, updated_by,
+              reviewed_at, reviewed_by, change_note,
+              needs_review_flag, needs_review_note
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                record_id,
+                new_v,
+                "draft",
+                (stem or "").strip(),
+                _json_dump(options),
+                (correct_key or "A").strip().upper(),
+                (rationale or "").strip(),
+                (claim or "fact_probe").strip().lower(),
+                _json_dump(domains),
+                _json_dump(lint),
+                _json_dump(refs),
+                (src["tags_json"] if "tags_json" in src.keys() else "[]"),
+                (src["meta_json"] if "meta_json" in src.keys() else "{}"),
+                now,
+                now,
+                actor,
+                actor,
+                None,
+                None,
+                note,
+                int(src["needs_review_flag"]),
+                src["needs_review_note"],
+            ),
+        )
+
+        # refs table for new version
+        for idx, r in enumerate(refs, start=1):
+            conn.execute(
+                "INSERT INTO assessment_refs(assessment_record_id, assessment_version, order_index, ref_type, ref_record_id, ref_version) VALUES (?,?,?,?,?,?)",
+                (record_id, new_v, idx, r["ref_type"], r["ref_record_id"], int(r["ref_version"])),
+            )
+
+        audit("assessment", record_id, new_v, "new_version", actor, note=f"from v{version}: {note}", conn=conn)
+
+    return RedirectResponse(url=f"/assessments/{record_id}/{new_v}", status_code=303)
+
+
+@app.post("/assessments/{record_id}/{version}/submit")
+def assessment_submit(request: Request, record_id: str, version: int):
+    require(request.state.role, "assessment:submit")
+    actor = request.state.user
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status, domains_json FROM assessment_items WHERE record_id=? AND version=?",
+            (record_id, version),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] != "draft":
+            raise HTTPException(409, detail="Only draft assessments can be submitted")
+
+        # Require at least one domain via refs
+        doms = [str(d).strip().lower() for d in (_json_load(row["domains_json"]) or [])]
+        if not doms:
+            raise HTTPException(status_code=409, detail="Cannot submit assessment: attach it to at least one task/workflow")
+        for d in doms:
+            if not _user_has_domain(conn, actor, d):
+                raise HTTPException(status_code=403, detail=f"Forbidden: you are not authorized for domain '{d}'")
+
+        # Must pass lint errors
+        lint = _json_load(
+            conn.execute("SELECT lint_json FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)).fetchone()["lint_json"]
+        )
+        for f in (lint or []):
+            if (f.get("level") or "").lower() == "error":
+                raise HTTPException(status_code=409, detail="Cannot submit assessment: fix lint errors first")
+
+        conn.execute(
+            "UPDATE assessment_items SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+        audit("assessment", record_id, version, "submit", actor, conn=conn)
+
+    return RedirectResponse(url=f"/assessments/{record_id}/{version}", status_code=303)
+
+
+@app.post("/assessments/{record_id}/{version}/return")
+def assessment_return_for_changes(request: Request, record_id: str, version: int, note: str = Form("")):
+    require(request.state.role, "assessment:confirm")
+    actor = request.state.user
+    msg = (note or "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="Return note is required")
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM assessment_items WHERE record_id=? AND version=?",
+            (record_id, version),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] != "submitted":
+            raise HTTPException(status_code=409, detail="Only submitted assessments can be returned")
+
+        conn.execute(
+            "UPDATE assessment_items SET status='returned', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+        audit("assessment", record_id, version, "return_for_changes", actor, note=msg, conn=conn)
+
+    return RedirectResponse(url=f"/assessments/{record_id}/{version}", status_code=303)
+
+
+@app.post("/assessments/{record_id}/{version}/confirm")
+def assessment_confirm(request: Request, record_id: str, version: int):
+    require(request.state.role, "assessment:confirm")
+    actor = request.state.user
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM assessment_items WHERE record_id=? AND version=?",
+            (record_id, version),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] != "submitted":
+            raise HTTPException(status_code=409, detail="Only submitted assessments can be confirmed")
+
+        conn.execute(
+            "UPDATE assessment_items SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
+            (utc_now_iso(), actor, record_id),
+        )
+        conn.execute(
+            "UPDATE assessment_items SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
+        )
+        audit("assessment", record_id, version, "confirm", actor, conn=conn)
+
+    return RedirectResponse(url=f"/assessments/{record_id}/{version}", status_code=303)
+
+
+# ---- Export helpers ----
 
 def _task_export_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     r = dict(row)

@@ -3,7 +3,7 @@
 <div class="row">
   <div>
     <h1>Review queue</h1>
-    <div class="muted">Submitted Tasks in domains you are authorized for.</div>
+    <div class="muted">Submitted records (Tasks, Workflows, Assessments) in domains you are authorized for.</div>
   </div>
 </div>
 
@@ -14,18 +14,32 @@
 <table class="table">
   <thead>
     <tr>
-      <th>Title</th>
+      <th>Type</th>
+      <th>Title / Stem</th>
       <th>Ver</th>
-      <th>Domain</th>
+      <th>Domains</th>
       <th>Status</th>
     </tr>
   </thead>
   <tbody>
   {% for it in items %}
     <tr>
-      <td><a href="/tasks/{{ it.record_id }}/{{ it.version }}">{{ it.title }}</a></td>
+      <td><span class="badge">{{ it.type }}</span></td>
+      <td>
+        {% if it.type == 'task' %}
+          <a href="/tasks/{{ it.record_id }}/{{ it.version }}">{{ it.title }}</a>
+        {% elif it.type == 'workflow' %}
+          <a href="/workflows/{{ it.record_id }}/{{ it.version }}">{{ it.title }}</a>
+        {% else %}
+          <a href="/assessments/{{ it.record_id }}/{{ it.version }}">{{ it.title }}</a>
+        {% endif %}
+      </td>
       <td><code>{{ it.version }}</code></td>
-      <td><code>{{ it.domain }}</code></td>
+      <td>
+        {% for d in it.domains %}
+          <span class="badge">{{ d }}</span>
+        {% endfor %}
+      </td>
       <td><span class="badge badge-{{ it.status }}">{{ it.status }}</span></td>
     </tr>
   {% endfor %}
@@ -35,7 +49,7 @@
 {% if not items %}
   <div class="card">
     <b>Nothing to review</b>
-    <div class="muted" style="margin-top:6px">No submitted tasks exist in your authorized domains.</div>
+    <div class="muted" style="margin-top:6px">No submitted records exist in your authorized domains.</div>
   </div>
 {% endif %}
 {% endblock %}

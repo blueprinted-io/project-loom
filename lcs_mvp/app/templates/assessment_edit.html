@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{% if mode=='new' %}New Assessment{% else %}Revise from Assessment v{{ item.version }} (creates new version){% endif %}</h1>
+
+{% if lint %}
+  <div class="callout {% if lint|selectattr('level','equalto','error')|list|length > 0 %}bad{% else %}warn{% endif %}">
+    <b>Lint findings:</b>
+    <ul>
+      {% for f in lint %}
+        <li><code>{{ f.level }}</code> <span class="muted">{{ f.code }}</span> — {{ f.msg }}</li>
+      {% endfor %}
+    </ul>
+    <div class="muted">Errors block submission. Warnings do not.</div>
+  </div>
+{% endif %}
+
+<form method="post" action="{% if mode=='new' %}/assessments/new{% else %}/assessments/{{ item.record_id }}/{{ item.version }}/save{% endif %}">
+
+  <label>Claim</label>
+  <select name="claim">
+    {% set cur = (item.claim if item else 'fact_probe') %}
+    {% for c in ['fact_probe','concept_probe','procedure_proxy'] %}
+      <option value="{{ c }}" {% if cur==c %}selected{% endif %}>{{ c }}</option>
+    {% endfor %}
+  </select>
+  <div class="muted" style="margin-top:6px">fact_probe ↔ facts, concept_probe ↔ concepts, procedure_proxy ↔ procedure scenario proxy.</div>
+
+  <label>Stem</label>
+  <textarea name="stem" rows="3" required>{{ item.stem if item else '' }}</textarea>
+
+  <label>Options</label>
+  <div class="card" style="padding:12px">
+    <div class="row">
+      <div style="flex:1">
+        <label>A</label>
+        <textarea name="option_a" rows="2" required>{% if item and item.options %}{{ item.options[0].text }}{% endif %}</textarea>
+      </div>
+      <div style="flex:1">
+        <label>B</label>
+        <textarea name="option_b" rows="2" required>{% if item and item.options %}{{ item.options[1].text }}{% endif %}</textarea>
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:1">
+        <label>C</label>
+        <textarea name="option_c" rows="2" required>{% if item and item.options %}{{ item.options[2].text }}{% endif %}</textarea>
+      </div>
+      <div style="flex:1">
+        <label>D</label>
+        <textarea name="option_d" rows="2" required>{% if item and item.options %}{{ item.options[3].text }}{% endif %}</textarea>
+      </div>
+    </div>
+
+    <label>Correct answer</label>
+    {% set ck = (item.correct_key if item else 'A') %}
+    <select name="correct_key">
+      {% for k in ['A','B','C','D'] %}
+        <option value="{{ k }}" {% if ck==k %}selected{% endif %}>{{ k }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <label>Rationale (optional)</label>
+  <textarea name="rationale" rows="3">{{ item.rationale if item else '' }}</textarea>
+
+  {% if mode=='edit' %}
+    <label>Change note (required)</label>
+    <input name="change_note" placeholder="Why are you creating a new version?" required />
+  {% else %}
+    <label>Change note (optional)</label>
+    <input name="change_note" placeholder="Optional note for v1" />
+  {% endif %}
+
+  {% for r in refs %}
+    <input type="hidden" name="ref_type" value="{{ r.ref_type }}" />
+    <input type="hidden" name="ref_record_id" value="{{ r.ref_record_id }}" />
+    <input type="hidden" name="ref_version" value="{{ r.ref_version }}" />
+  {% endfor %}
+
+  {% if refs %}
+    <div class="card" style="margin-top:12px">
+      <b>Attached refs</b>
+      <ul>
+      {% for r in refs %}
+        <li><code>{{ r.ref_type }}</code> {{ r.ref_record_id }} v{{ r.ref_version }}</li>
+      {% endfor %}
+      </ul>
+      <div class="muted">Attachment editing UI is minimal in MVP; create a new assessment from a Task/Workflow to pre-attach.</div>
+    </div>
+  {% endif %}
+
+  <div class="row" style="margin-top:14px">
+    <button class="btn" type="submit">Save (new version)</button>
+    {% if mode=='edit' %}
+      <a class="btn secondary" href="/assessments/{{ item.record_id }}/{{ item.version }}">Cancel</a>
+    {% else %}
+      <a class="btn secondary" href="/assessments">Back</a>
+    {% endif %}
+  </div>
+</form>
+
+{% endblock %}

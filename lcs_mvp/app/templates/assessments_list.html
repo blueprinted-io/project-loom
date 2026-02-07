@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+  <div>
+    <h1>Assessments</h1>
+    <div class="muted">Latest version of each assessment item.</div>
+  </div>
+  {% if can(request.state.role, 'assessment:create') %}
+  <div>
+    <a class="btn" href="/assessments/new">New assessment</a>
+  </div>
+  {% endif %}
+</div>
+
+<form method="get" action="/assessments" class="card" style="padding:12px">
+  <div class="row">
+    <div style="flex:1">
+      <label>Search (stem contains)</label>
+      <input name="q" value="{{ q or '' }}" placeholder="e.g. dependency, next step" />
+    </div>
+    <div style="width:220px">
+      <label>Status</label>
+      <select name="status">
+        <option value="" {% if not status %}selected{% endif %}>(any)</option>
+        {% for s in ['draft','submitted','returned','confirmed','deprecated'] %}
+          <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="width:220px">
+      <label>Claim</label>
+      <select name="claim">
+        <option value="" {% if not claim %}selected{% endif %}>(any)</option>
+        {% for c in ['fact_probe','concept_probe','procedure_proxy'] %}
+          <option value="{{ c }}" {% if claim==c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="width:220px">
+      <label>Domain</label>
+      <select name="domain">
+        <option value="" {% if not domain %}selected{% endif %}>(any)</option>
+        {% for d in domains %}
+          <option value="{{ d }}" {% if domain==d %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div style="margin-top:10px">
+    <button class="btn" type="submit">Filter</button>
+    <a class="btn secondary" href="/assessments">Reset</a>
+  </div>
+</form>
+
+<table class="table" style="margin-top:14px">
+  <thead>
+    <tr>
+      <th>Stem</th>
+      <th>Ver</th>
+      <th>Claim</th>
+      <th>Domains</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for it in items %}
+    <tr>
+      <td><a href="/assessments/{{ it.record_id }}/{{ it.latest_version }}">{{ it.stem }}</a></td>
+      <td><code>{{ it.latest_version }}</code></td>
+      <td><code>{{ it.claim }}</code></td>
+      <td>
+        {% for d in it.domains %}
+          <span class="badge">{{ d }}</span>
+        {% endfor %}
+      </td>
+      <td><span class="badge badge-{{ it.status }}">{{ it.status }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if not items %}
+  <div class="card"><b>No assessments found</b></div>
+{% endif %}
+{% endblock %}
