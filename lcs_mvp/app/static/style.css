@@ -140,7 +140,7 @@ a:hover{text-decoration:underline}
 }
 .pulse-inner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0}
 .pulse-left,.pulse-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.pulse-title{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#fff;margin-left:2px}
+.pulse-title{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#fff;margin-left:14px}
 .pulse-item{
   display:inline-flex;align-items:center;gap:8px;
   height:28px;
@@ -170,7 +170,7 @@ a:hover{text-decoration:underline}
   border:1px solid rgba(255,255,255,.18);
   border-radius:12px;
   padding:0 12px;
-  height:28px;
+  height:36px;
   display:inline-flex;
   align-items:center;
   color:#fff;
