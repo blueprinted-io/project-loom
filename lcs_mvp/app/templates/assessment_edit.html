@@ -16,17 +16,61 @@
 
 <form method="post" action="{% if mode=='new' %}/assessments/new{% else %}/assessments/{{ item.record_id }}/{{ item.version }}/save{% endif %}">
 
-  <label>Claim</label>
-  <select name="claim">
-    {% set cur = (item.claim if item else 'fact_probe') %}
-    {% for c in ['fact_probe','concept_probe','procedure_proxy'] %}
-      <option value="{{ c }}" {% if cur==c %}selected{% endif %}>{{ c }}</option>
-    {% endfor %}
-  </select>
-  <div class="muted" style="margin-top:6px">fact_probe ↔ facts, concept_probe ↔ concepts, procedure_proxy ↔ procedure scenario proxy.</div>
+  <div class="card" style="padding:12px">
+    <h2 style="margin-top:0">1) Choose claim</h2>
+    <label>Claim</label>
+    <select name="claim" id="claim">
+      {% set cur = (item.claim if item else 'fact_probe') %}
+      {% for c in ['fact_probe','concept_probe','procedure_proxy'] %}
+        <option value="{{ c }}" {% if cur==c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <div class="muted" style="margin-top:6px">
+      <div><b>fact_probe</b>: can you remember X</div>
+      <div><b>concept_probe</b>: how does this relate to reality (implication/consistency)</div>
+      <div><b>procedure_proxy</b>: given a written scenario, what is or is not true</div>
+    </div>
+  </div>
 
-  <label>Stem</label>
-  <textarea name="stem" rows="3" required>{{ item.stem if item else '' }}</textarea>
+  <div class="card" style="padding:12px;margin-top:12px">
+    <h2 style="margin-top:0">2) Anchor + helpers</h2>
+
+    <div id="helpers-fact" style="display:none">
+      <label>Target fact (optional, for you)</label>
+      {% set meta = (item.meta_json if item else '{}') %}
+      <input name="target_fact" value="" placeholder="e.g. exact limit / definition you want to test" />
+      <div class="muted" style="margin-top:6px">This is not shown to learners; it’s an authoring note.</div>
+    </div>
+
+    <div id="helpers-concept" style="display:none">
+      <label>Relation verb (optional)</label>
+      <select name="relation_verb">
+        <option value="">(none)</option>
+        <option value="implies">implies</option>
+        <option value="contradicts">contradicts</option>
+        <option value="explains">explains</option>
+        <option value="distinguishes">distinguishes</option>
+      </select>
+      <div class="muted" style="margin-top:6px">Keeps concept questions from turning into “best practice” mush.</div>
+    </div>
+
+    <div id="helpers-scenario" style="display:none">
+      <label>Truth test (optional)</label>
+      <select name="scenario_truth">
+        <option value="">(none)</option>
+        <option value="true">Which is true?</option>
+        <option value="not_true">Which is NOT true?</option>
+        <option value="cannot_determine">Which cannot be determined from the scenario?</option>
+      </select>
+      <div class="muted" style="margin-top:6px">This sets the intended polarity of the scenario question.</div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:12px;margin-top:12px">
+    <h2 style="margin-top:0">3) Write the item</h2>
+    <label>Stem</label>
+    <textarea name="stem" rows="4" required>{{ item.stem if item else '' }}</textarea>
+  </div>
 
   <label>Options</label>
   <div class="card" style="padding:12px">
@@ -129,6 +173,20 @@
 
   <script>
     (function(){
+      const claimEl = document.getElementById('claim');
+      const helpersFact = document.getElementById('helpers-fact');
+      const helpersConcept = document.getElementById('helpers-concept');
+      const helpersScenario = document.getElementById('helpers-scenario');
+
+      function syncHelpers(){
+        const c = (claimEl && claimEl.value) || 'fact_probe';
+        if(helpersFact) helpersFact.style.display = (c === 'fact_probe') ? 'block' : 'none';
+        if(helpersConcept) helpersConcept.style.display = (c === 'concept_probe') ? 'block' : 'none';
+        if(helpersScenario) helpersScenario.style.display = (c === 'procedure_proxy') ? 'block' : 'none';
+      }
+      if(claimEl) claimEl.addEventListener('change', syncHelpers);
+      syncHelpers();
+
       const kindEl = document.getElementById('ref-kind');
       const qEl = document.getElementById('ref-q');
       const btn = document.getElementById('ref-search');

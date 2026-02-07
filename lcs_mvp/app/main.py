@@ -4137,6 +4137,10 @@ def assessment_create(
     option_d: str = Form(""),
     rationale: str = Form(""),
     change_note: str = Form(""),
+    # authoring helpers (stored in meta_json)
+    target_fact: str = Form(""),
+    relation_verb: str = Form(""),
+    scenario_truth: str = Form(""),
     ref_type: list[str] = Form([]),
     ref_record_id: list[str] = Form([]),
     ref_version: list[int] = Form([]),
@@ -4170,6 +4174,12 @@ def assessment_create(
         domains = _assessment_domains(conn, refs)
         lint = _assessment_lint(stem, options, correct_key, claim)
 
+        meta_obj = {
+            "target_fact": (target_fact or "").strip(),
+            "relation_verb": (relation_verb or "").strip(),
+            "scenario_truth": (scenario_truth or "").strip(),
+        }
+
         conn.execute(
             """
             INSERT INTO assessment_items(
@@ -4195,7 +4205,7 @@ def assessment_create(
                 _json_dump(lint),
                 _json_dump(refs),
                 _json_dump([]),
-                _json_dump({}),
+                _json_dump(meta_obj),
                 now,
                 now,
                 actor,
@@ -4291,6 +4301,10 @@ def assessment_save(
     option_d: str = Form(""),
     rationale: str = Form(""),
     change_note: str = Form(""),
+    # authoring helpers (stored in meta_json)
+    target_fact: str = Form(""),
+    relation_verb: str = Form(""),
+    scenario_truth: str = Form(""),
     ref_type: list[str] = Form([]),
     ref_record_id: list[str] = Form([]),
     ref_version: list[int] = Form([]),
@@ -4345,6 +4359,15 @@ def assessment_save(
         domains = _assessment_domains(conn, refs)
         lint = _assessment_lint(stem, options, correct_key, claim)
 
+        meta_prev = _json_load((src["meta_json"] if "meta_json" in src.keys() else "{}") or "{}") or {}
+        meta_prev.update(
+            {
+                "target_fact": (target_fact or "").strip(),
+                "relation_verb": (relation_verb or "").strip(),
+                "scenario_truth": (scenario_truth or "").strip(),
+            }
+        )
+
         conn.execute(
             """
             INSERT INTO assessment_items(
@@ -4370,7 +4393,7 @@ def assessment_save(
                 _json_dump(lint),
                 _json_dump(refs),
                 (src["tags_json"] if "tags_json" in src.keys() else "[]"),
-                (src["meta_json"] if "meta_json" in src.keys() else "{}"),
+                _json_dump(meta_prev),
                 now,
                 now,
                 actor,
