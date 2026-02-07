@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>{% if mode=='new' %}New Assessment{% else %}Revise from Assessment v{{ item.version }} (creates new version){% endif %}</h1>
+<div class="callout warn" style="margin-top:10px">
+  <b>Under construction</b>
+  <div class="muted" style="margin-top:6px">This assessment module is in active development. Use for experimentation; expect UX changes.</div>
+</div>
 
 {% if lint %}
   {% set lint_errors = lint|selectattr('level','equalto','error')|list %}
