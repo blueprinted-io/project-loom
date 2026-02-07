@@ -3870,6 +3870,54 @@ def _assessment_export_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]
     }
 
 
+@app.get("/_refs/search")
+def refs_search(request: Request, kind: str = "task", q: str = "", limit: int = 20):
+    """Lightweight ref search for the assessment ref selector UI."""
+    require(request.state.role, "assessment:create")
+
+    kind = (kind or "task").strip().lower()
+    q_norm = (q or "").strip().lower()
+    limit = max(1, min(int(limit or 20), 50))
+
+    with db() as conn:
+        if kind == "workflow":
+            rows = conn.execute("SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id").fetchall()
+            items: list[dict[str, Any]] = []
+            for r in rows:
+                rid = r["record_id"]
+                v = int(r["latest_version"])
+                w = conn.execute(
+                    "SELECT record_id, version, title, status, domains_json FROM workflows WHERE record_id=? AND version=?",
+                    (rid, v),
+                ).fetchone()
+                if not w:
+                    continue
+                if q_norm and q_norm not in (w["title"] or "").lower():
+                    continue
+                doms = [str(x).strip().lower() for x in (_json_load(w["domains_json"]) or []) if str(x).strip()]
+                items.append({"ref_type": "workflow", "record_id": w["record_id"], "version": int(w["version"]), "title": w["title"], "status": w["status"], "domains": doms})
+            items.sort(key=lambda it: (it.get("title") or ""))
+            return {"items": items[:limit]}
+
+        # default tasks
+        rows = conn.execute("SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id").fetchall()
+        items = []
+        for r in rows:
+            rid = r["record_id"]
+            v = int(r["latest_version"])
+            t = conn.execute(
+                "SELECT record_id, version, title, status, domain FROM tasks WHERE record_id=? AND version=?",
+                (rid, v),
+            ).fetchone()
+            if not t:
+                continue
+            if q_norm and q_norm not in (t["title"] or "").lower():
+                continue
+            items.append({"ref_type": "task", "record_id": t["record_id"], "version": int(t["version"]), "title": t["title"], "status": t["status"], "domain": t["domain"]})
+        items.sort(key=lambda it: (it.get("title") or ""))
+        return {"items": items[:limit]}
+
+
 @app.get("/assessments", response_class=HTMLResponse)
 def assessments_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, claim: str | None = None):
     q_norm = (q or "").strip().lower()

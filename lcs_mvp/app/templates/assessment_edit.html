@@ -75,11 +75,33 @@
     <b>Attached refs</b>
     <div class="muted" style="margin-top:6px">Composite scenario proxy: add multiple tasks/workflows as references.</div>
 
+    <div class="card" style="margin-top:10px;padding:10px">
+      <div class="row">
+        <div style="width:200px">
+          <label>Search type</label>
+          <select id="ref-kind">
+            <option value="task">task</option>
+            <option value="workflow">workflow</option>
+          </select>
+        </div>
+        <div style="flex:1">
+          <label>Search title</label>
+          <input id="ref-q" placeholder="type to search…" />
+        </div>
+        <div style="width:160px">
+          <label>&nbsp;</label>
+          <button class="btn secondary" type="button" id="ref-search">Search</button>
+        </div>
+      </div>
+
+      <div id="ref-results" class="muted" style="margin-top:10px">Search to add refs.</div>
+    </div>
+
     <table class="table" style="margin-top:10px">
       <thead>
-        <tr><th>Type</th><th>Record ID</th><th>Version</th></tr>
+        <tr><th>Type</th><th>Record ID</th><th>Version</th><th></th></tr>
       </thead>
-      <tbody>
+      <tbody id="refs-body">
         {% for r in refs %}
           <tr>
             <td>
@@ -90,27 +112,74 @@
             </td>
             <td><input name="ref_record_id" value="{{ r.ref_record_id }}" /></td>
             <td><input name="ref_version" value="{{ r.ref_version }}" /></td>
-          </tr>
-        {% endfor %}
-
-        {# blank rows for adding more refs #}
-        {% for i in range(0,3) %}
-          <tr>
-            <td>
-              <select name="ref_type">
-                <option value="task">task</option>
-                <option value="workflow">workflow</option>
-              </select>
-            </td>
-            <td><input name="ref_record_id" placeholder="uuid" /></td>
-            <td><input name="ref_version" placeholder="1" /></td>
+            <td><button class="btn secondary" type="button" onclick="this.closest('tr').remove()">Remove</button></td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
 
-    <div class="muted">Tip: use the picker at <a href="/assessments/new">/assessments/new</a> to prefill the first attachment.</div>
+    <div class="muted">Tip: you can also start from <a href="/assessments/new">/assessments/new</a> to prefill the first attachment.</div>
   </div>
+
+  <script>
+    (function(){
+      const kindEl = document.getElementById('ref-kind');
+      const qEl = document.getElementById('ref-q');
+      const btn = document.getElementById('ref-search');
+      const resultsEl = document.getElementById('ref-results');
+      const body = document.getElementById('refs-body');
+
+      function esc(s){
+        return (s||'').replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+      }
+
+      function addRef(ref){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>
+            <select name="ref_type">
+              <option value="task" ${ref.ref_type==='task'?'selected':''}>task</option>
+              <option value="workflow" ${ref.ref_type==='workflow'?'selected':''}>workflow</option>
+            </select>
+          </td>
+          <td><input name="ref_record_id" value="${esc(ref.record_id)}" /></td>
+          <td><input name="ref_version" value="${esc(String(ref.version))}" /></td>
+          <td><button class="btn secondary" type="button">Remove</button></td>
+        `;
+        tr.querySelector('button').addEventListener('click', () => tr.remove());
+        body.appendChild(tr);
+      }
+
+      async function search(){
+        const kind = kindEl.value;
+        const q = qEl.value || '';
+        resultsEl.textContent = 'Searching…';
+        try{
+          const r = await fetch(`/_refs/search?kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(q)}&limit=20`, {headers:{'Accept':'application/json'}});
+          if(!r.ok){ resultsEl.textContent = `Search failed (${r.status})`; return; }
+          const data = await r.json();
+          const items = data.items || [];
+          if(!items.length){ resultsEl.textContent = 'No matches.'; return; }
+          const lines = items.map(it => {
+            const domains = it.domains ? it.domains.join(', ') : (it.domain||'');
+            const label = `${it.title} (v${it.version}, ${it.status}${domains?`, ${domains}`:''})`;
+            return `<div style="display:flex;gap:10px;align-items:center;margin-top:6px"><button class="btn secondary" type="button" data-rid="${esc(it.record_id)}" data-ver="${esc(String(it.version))}" data-kind="${esc(it.ref_type)}">Add</button><div>${esc(label)}</div></div>`;
+          }).join('');
+          resultsEl.innerHTML = lines;
+          resultsEl.querySelectorAll('button[data-rid]').forEach(b => {
+            b.addEventListener('click', () => {
+              addRef({ref_type: b.getAttribute('data-kind'), record_id: b.getAttribute('data-rid'), version: b.getAttribute('data-ver')});
+            });
+          });
+        } catch(e){
+          resultsEl.textContent = 'Search failed.';
+        }
+      }
+
+      btn.addEventListener('click', search);
+      qEl.addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); search(); } });
+    })();
+  </script>
 
   <div class="row" style="margin-top:14px">
     <button class="btn" type="submit">Save (new version)</button>
