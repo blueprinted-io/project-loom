@@ -136,7 +136,7 @@ a:hover{text-decoration:underline}
 
 .pulse{
   border-top:1px solid rgba(255,255,255,.18);
-  background:linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.10));
+  background:var(--brand);
 }
 .pulse-inner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0}
 .pulse-left,.pulse-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -148,7 +148,7 @@ a:hover{text-decoration:underline}
   padding:5px 10px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,.24);
-  background:rgba(255,255,255,.07);
+  background:rgba(255,255,255,.10);
   box-shadow:0 1px 0 rgba(0,0,0,.25) inset;
 }
 .pulse-item.muted{color:rgba(255,255,255,.92)}
