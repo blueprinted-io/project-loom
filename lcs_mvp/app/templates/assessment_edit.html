@@ -3,15 +3,35 @@
 <h1>{% if mode=='new' %}New Assessment{% else %}Revise from Assessment v{{ item.version }} (creates new version){% endif %}</h1>
 
 {% if lint %}
-  <div class="callout {% if lint|selectattr('level','equalto','error')|list|length > 0 %}bad{% else %}warn{% endif %}">
-    <b>Lint findings:</b>
-    <ul>
-      {% for f in lint %}
-        <li><code>{{ f.level }}</code> <span class="muted">{{ f.code }}</span> — {{ f.msg }}</li>
-      {% endfor %}
-    </ul>
-    <div class="muted">Errors block submission. Warnings do not.</div>
-  </div>
+  {% set lint_errors = lint|selectattr('level','equalto','error')|list %}
+  {% set lint_warns = lint|selectattr('level','equalto','warn')|list %}
+  <details class="card" style="padding:12px;margin-top:10px" {% if lint_errors|length > 0 %}open{% endif %}>
+    <summary style="cursor:pointer">
+      <b>Quality checks</b>
+      <span class="muted">·</span>
+      <span class="badge">{{ lint_errors|length }} errors</span>
+      <span class="badge">{{ lint_warns|length }} warnings</span>
+      <span class="muted">(errors block submission)</span>
+    </summary>
+    <div style="margin-top:10px">
+      {% if lint_errors %}
+        <div class="callout bad"><b>Errors</b></div>
+        <ul>
+          {% for f in lint_errors %}
+            <li><code>{{ f.code }}</code> — {{ f.msg }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if lint_warns %}
+        <div class="callout warn"><b>Warnings</b></div>
+        <ul>
+          {% for f in lint_warns %}
+            <li><code>{{ f.code }}</code> — {{ f.msg }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  </details>
 {% endif %}
 
 <form method="post" action="{% if mode=='new' %}/assessments/new{% else %}/assessments/{{ item.record_id }}/{{ item.version }}/save{% endif %}">
@@ -69,8 +89,19 @@
 
   <div class="card" style="padding:12px;margin-top:12px">
     <h2 style="margin-top:0">3) Write the item</h2>
+
+    <div class="card" style="padding:10px;margin-top:8px">
+      <b>Stem template</b>
+      <div class="muted" style="margin-top:6px">Insert a scaffold to reduce author load. Edit freely after.</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn secondary" type="button" id="tpl-fact">Fact probe</button>
+        <button class="btn secondary" type="button" id="tpl-concept">Concept probe</button>
+        <button class="btn secondary" type="button" id="tpl-scenario">Proxy scenario</button>
+      </div>
+    </div>
+
     <label>Stem</label>
-    <textarea name="stem" rows="4" required>{{ item.stem if item else '' }}</textarea>
+    <textarea name="stem" id="stem" rows="5" required>{{ item.stem if item else '' }}</textarea>
   </div>
 
   <label>Options</label>
@@ -289,6 +320,25 @@
       btn.addEventListener('click', search);
       qEl.addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); search(); } });
       if(peekBtn) peekBtn.addEventListener('click', peekAnchor);
+
+      // Stem templates
+      const stemEl = document.getElementById('stem');
+      function insertIfEmpty(t){
+        if(!stemEl) return;
+        const cur = (stemEl.value || '').trim();
+        if(cur){
+          if(!confirm('Replace existing stem text with a template?')) return;
+        }
+        stemEl.value = t;
+        try{ stemEl.focus(); }catch(e){}
+      }
+
+      const tf = document.getElementById('tpl-fact');
+      const tc = document.getElementById('tpl-concept');
+      const ts = document.getElementById('tpl-scenario');
+      if(tf) tf.addEventListener('click', () => insertIfEmpty('What is true about ____?'));
+      if(tc) tc.addEventListener('click', () => insertIfEmpty('Which statement is consistent with ____?'));
+      if(ts) ts.addEventListener('click', () => insertIfEmpty('Scenario:\n____\n\nWhat is true?'));
     })();
   </script>
 
