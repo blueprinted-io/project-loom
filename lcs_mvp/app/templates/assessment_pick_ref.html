@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>New Assessment</h1>
+<div class="muted">Select a Task or Workflow to attach this assessment to. Draft attachments are allowed.</div>
+
+<form method="get" action="/assessments/new" class="card" style="padding:12px;margin-top:12px">
+  <label>Search</label>
+  <input name="q" value="{{ q or '' }}" placeholder="title contains…" />
+  <div style="margin-top:10px">
+    <button class="btn" type="submit">Search</button>
+  </div>
+</form>
+
+<div class="row" style="margin-top:14px">
+  <div style="flex:1">
+    <h2>Tasks (latest version)</h2>
+    <table class="table">
+      <thead><tr><th>Title</th><th>Ver</th><th>Status</th><th>Domain</th></tr></thead>
+      <tbody>
+      {% for t in tasks %}
+        <tr>
+          <td><a href="/assessments/new?ref_type=task&ref_record_id={{ t.record_id }}&ref_version={{ t.version }}">{{ t.title }}</a></td>
+          <td><code>{{ t.version }}</code></td>
+          <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
+          <td><code>{{ t.domain }}</code></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if not tasks %}<div class="muted">No tasks found.</div>{% endif %}
+  </div>
+</div>
+
+<div class="row" style="margin-top:14px">
+  <div style="flex:1">
+    <h2>Workflows (latest version)</h2>
+    <table class="table">
+      <thead><tr><th>Title</th><th>Ver</th><th>Status</th><th>Domains</th></tr></thead>
+      <tbody>
+      {% for w in workflows %}
+        <tr>
+          <td><a href="/assessments/new?ref_type=workflow&ref_record_id={{ w.record_id }}&ref_version={{ w.version }}">{{ w.title }}</a></td>
+          <td><code>{{ w.version }}</code></td>
+          <td><span class="badge badge-{{ w.status }}">{{ w.status }}</span></td>
+          <td>
+            {% for d in w.domains %}
+              <span class="badge">{{ d }}</span>
+            {% endfor %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if not workflows %}<div class="muted">No workflows found.</div>{% endif %}
+  </div>
+</div>
+
+{% endblock %}

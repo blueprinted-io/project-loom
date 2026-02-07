@@ -698,7 +698,7 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     demo = [
         ("jhendrix", "reviewer", "password1"),
         ("jjoplin", "author", "password2"),
-        ("mcarey", "assessment_author", "password5"),
+        ("wcarlos", "assessment_author", "password5"),
         ("fmercury", "viewer", "password3"),
         ("bspringsteen", "audit", "password4"),
         ("kcobain", "admin", "admin"),
@@ -715,6 +715,7 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     _rename("mcury", "fmercury")
     _rename("dspringsteen", "bspringsteen")
     _rename("admin", "kcobain")
+    _rename("mcarey", "wcarlos")
 
     import secrets
 
@@ -3920,12 +3921,60 @@ def assessments_list(request: Request, status: str | None = None, q: str | None 
 
 
 @app.get("/assessments/new", response_class=HTMLResponse)
-def assessment_new_form(request: Request, task_record_id: str | None = None, task_version: int | None = None):
+def assessment_new_form(
+    request: Request,
+    q: str | None = None,
+    task_record_id: str | None = None,
+    task_version: int | None = None,
+    ref_type: str | None = None,
+    ref_record_id: str | None = None,
+    ref_version: int | None = None,
+):
     require(request.state.role, "assessment:create")
 
-    ref = None
-    if task_record_id and task_version:
-        ref = {"ref_type": "task", "ref_record_id": task_record_id, "ref_version": int(task_version)}
+    # Support older task_* params, and newer generic ref_* params.
+    if task_record_id and task_version and not (ref_type and ref_record_id and ref_version):
+        ref_type = "task"
+        ref_record_id = task_record_id
+        ref_version = int(task_version)
+
+    if not (ref_type and ref_record_id and ref_version):
+        # Picker UI
+        q_norm = (q or "").strip().lower()
+        with db() as conn:
+            # Tasks (latest versions)
+            t_rows = conn.execute("SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id ORDER BY record_id").fetchall()
+            tasks: list[dict[str, Any]] = []
+            for r in t_rows:
+                rid = r["record_id"]
+                v = int(r["latest_version"])
+                t = conn.execute("SELECT record_id, version, title, status, domain FROM tasks WHERE record_id=? AND version=?", (rid, v)).fetchone()
+                if not t:
+                    continue
+                if q_norm and q_norm not in (t["title"] or "").lower():
+                    continue
+                tasks.append(dict(t))
+            tasks = tasks[:30]
+
+            # Workflows (latest versions)
+            w_rows = conn.execute("SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id ORDER BY record_id").fetchall()
+            workflows: list[dict[str, Any]] = []
+            for r in w_rows:
+                rid = r["record_id"]
+                v = int(r["latest_version"])
+                w = conn.execute("SELECT record_id, version, title, status, domains_json FROM workflows WHERE record_id=? AND version=?", (rid, v)).fetchone()
+                if not w:
+                    continue
+                if q_norm and q_norm not in (w["title"] or "").lower():
+                    continue
+                wd = dict(w)
+                wd["domains"] = [str(x).strip().lower() for x in (_json_load(w["domains_json"]) or []) if str(x).strip()]
+                workflows.append(wd)
+            workflows = workflows[:30]
+
+        return templates.TemplateResponse(request, "assessment_pick_ref.html", {"q": q, "tasks": tasks, "workflows": workflows})
+
+    ref = {"ref_type": (ref_type or "").strip().lower(), "ref_record_id": (ref_record_id or "").strip(), "ref_version": int(ref_version)}
 
     return templates.TemplateResponse(
         request,
@@ -3933,7 +3982,7 @@ def assessment_new_form(request: Request, task_record_id: str | None = None, tas
         {
             "mode": "new",
             "item": None,
-            "refs": [ref] if ref else [],
+            "refs": [ref],
             "lint": [],
         },
     )

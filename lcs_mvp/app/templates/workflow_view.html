@@ -17,6 +17,11 @@
     {% endif %}
 
     <a class="btn" href="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/export.md">Export Markdown</a>
+
+    {% if can(request.state.role, 'assessment:create') %}
+      <a class="btn secondary" href="/assessments/new?ref_type=workflow&ref_record_id={{ workflow.record_id }}&ref_version={{ workflow.version }}">New assessment</a>
+    {% endif %}
+
     {% if can(request.state.role, 'workflow:revise') %}
       <a class="btn" href="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/revise">Revise</a>
     {% endif %}

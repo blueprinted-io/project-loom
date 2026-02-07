@@ -71,23 +71,46 @@
     <input name="change_note" placeholder="Optional note for v1" />
   {% endif %}
 
-  {% for r in refs %}
-    <input type="hidden" name="ref_type" value="{{ r.ref_type }}" />
-    <input type="hidden" name="ref_record_id" value="{{ r.ref_record_id }}" />
-    <input type="hidden" name="ref_version" value="{{ r.ref_version }}" />
-  {% endfor %}
+  <div class="card" style="margin-top:12px">
+    <b>Attached refs</b>
+    <div class="muted" style="margin-top:6px">Composite scenario proxy: add multiple tasks/workflows as references.</div>
 
-  {% if refs %}
-    <div class="card" style="margin-top:12px">
-      <b>Attached refs</b>
-      <ul>
-      {% for r in refs %}
-        <li><code>{{ r.ref_type }}</code> {{ r.ref_record_id }} v{{ r.ref_version }}</li>
-      {% endfor %}
-      </ul>
-      <div class="muted">Attachment editing UI is minimal in MVP; create a new assessment from a Task/Workflow to pre-attach.</div>
-    </div>
-  {% endif %}
+    <table class="table" style="margin-top:10px">
+      <thead>
+        <tr><th>Type</th><th>Record ID</th><th>Version</th></tr>
+      </thead>
+      <tbody>
+        {% for r in refs %}
+          <tr>
+            <td>
+              <select name="ref_type">
+                <option value="task" {% if r.ref_type=='task' %}selected{% endif %}>task</option>
+                <option value="workflow" {% if r.ref_type=='workflow' %}selected{% endif %}>workflow</option>
+              </select>
+            </td>
+            <td><input name="ref_record_id" value="{{ r.ref_record_id }}" /></td>
+            <td><input name="ref_version" value="{{ r.ref_version }}" /></td>
+          </tr>
+        {% endfor %}
+
+        {# blank rows for adding more refs #}
+        {% for i in range(0,3) %}
+          <tr>
+            <td>
+              <select name="ref_type">
+                <option value="task">task</option>
+                <option value="workflow">workflow</option>
+              </select>
+            </td>
+            <td><input name="ref_record_id" placeholder="uuid" /></td>
+            <td><input name="ref_version" placeholder="1" /></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="muted">Tip: use the picker at <a href="/assessments/new">/assessments/new</a> to prefill the first attachment.</div>
+  </div>
 
   <div class="row" style="margin-top:14px">
     <button class="btn" type="submit">Save (new version)</button>
