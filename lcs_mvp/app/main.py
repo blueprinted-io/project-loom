@@ -3922,17 +3922,22 @@ def refs_search(request: Request, kind: str = "task", q: str = "", limit: int = 
 def refs_peek(request: Request, ref_type: str, record_id: str, version: int, component: str = "facts"):
     """Open a small window for assessment authors to view underlying task/workflow data.
 
+    Intentional constraint: we do not surface dependencies as an assessable target.
+    Dependencies tend to produce low-quality "prereq chain" questions.
+
     This is intentionally a separate page (not inline) to avoid spamming the assessment form.
     """
     require(request.state.role, "assessment:create")
 
     ref_type = (ref_type or "").strip().lower()
     component = (component or "facts").strip().lower()
+    if component not in ("facts", "concepts", "procedure"):
+        component = "facts"
 
     with db() as conn:
         if ref_type == "task":
             row = conn.execute(
-                "SELECT record_id, version, title, status, domain, procedure_name, facts_json, concepts_json, dependencies_json, steps_json FROM tasks WHERE record_id=? AND version=?",
+                "SELECT record_id, version, title, status, domain, outcome, procedure_name, facts_json, concepts_json, steps_json FROM tasks WHERE record_id=? AND version=?",
                 (record_id, int(version)),
             ).fetchone()
             if not row:
@@ -3948,11 +3953,11 @@ def refs_peek(request: Request, ref_type: str, record_id: str, version: int, com
                     "title": row["title"],
                     "status": row["status"],
                     "domain": row["domain"],
+                    "outcome": row["outcome"],
                     "procedure_name": row["procedure_name"],
                     "component": component,
                     "facts": _json_load(row["facts_json"]) or [],
                     "concepts": _json_load(row["concepts_json"]) or [],
-                    "dependencies": _json_load(row["dependencies_json"]) or [],
                     "steps": _normalize_steps(_json_load(row["steps_json"]) or []),
                     "tasks": [],
                 },

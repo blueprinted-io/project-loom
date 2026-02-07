@@ -22,12 +22,13 @@
       <ul>
       {% for x in concepts %}<li>{{ x }}</li>{% endfor %}
       </ul>
-    {% elif component == 'dependencies' %}
-      <ul>
-      {% for x in dependencies %}<li>{{ x }}</li>{% endfor %}
-      </ul>
     {% else %}
-      <div class="muted">Procedure: {{ procedure_name }}</div>
+      <div class="card" style="margin-top:10px">
+        <b>Outcome</b>
+        <div style="margin-top:6px">{{ outcome }}</div>
+      </div>
+
+      <div class="muted" style="margin-top:10px">Procedure: {{ procedure_name }}</div>
       <ol style="margin-top:10px">
         {% for st in steps %}
           <li style="margin-bottom:10px">
