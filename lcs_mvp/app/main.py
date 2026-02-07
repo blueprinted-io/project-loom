@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated"]
-Role = Literal["viewer", "author", "reviewer", "audit", "admin"]
+Role = Literal["viewer", "author", "assessment_author", "reviewer", "audit", "admin"]
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -118,9 +118,10 @@ DEFAULT_META: dict[str, str] = {}
 ROLE_ORDER: dict[Role, int] = {
     "viewer": 0,
     "author": 1,
-    "reviewer": 2,
-    "audit": 3,
-    "admin": 4,
+    "assessment_author": 2,
+    "reviewer": 3,
+    "audit": 4,
+    "admin": 5,
 }
 
 
@@ -134,6 +135,7 @@ def can(role: Role, action: str) -> bool:
     Actions:
       - task:create, task:revise, task:submit, task:confirm
       - workflow:create, workflow:revise, workflow:submit, workflow:confirm
+      - assessment:create, assessment:revise, assessment:submit, assessment:confirm
       - import:pdf
       - import:json
       - db:switch
@@ -151,7 +153,16 @@ def can(role: Role, action: str) -> bool:
         return role in ("admin",)
 
     if action.endswith(":confirm"):
+        # Review firewall: reviewers can review/confirm *everything*.
         return role in ("reviewer",)
+
+    if action.startswith("assessment:"):
+        # Content/assessment firewall: assessment authors create/revise/submit assessments,
+        # but do not author tasks/workflows.
+        if action.endswith(":submit"):
+            return role in ("assessment_author",)
+        if action.endswith(":create") or action.endswith(":revise"):
+            return role in ("assessment_author",)
 
     if action.endswith(":submit"):
         return role in ("author",)
@@ -160,6 +171,7 @@ def can(role: Role, action: str) -> bool:
         return role in ("author",)
 
     if action in ("import:pdf", "import:json"):
+        # Keep ingestion with content authoring, not assessment.
         return role in ("author",)
 
     if action == "db:switch":
@@ -679,6 +691,7 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     demo = [
         ("jhendrix", "reviewer", "password1"),
         ("jjoplin", "author", "password2"),
+        ("mcarey", "assessment_author", "password5"),
         ("fmercury", "viewer", "password3"),
         ("bspringsteen", "audit", "password4"),
         ("kcobain", "admin", "admin"),
