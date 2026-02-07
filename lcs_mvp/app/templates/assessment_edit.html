@@ -34,6 +34,7 @@
 
   <div class="card" style="padding:12px;margin-top:12px">
     <h2 style="margin-top:0">2) Anchor + helpers</h2>
+    <div class="muted">Use the ref search below to attach an anchor record. You can peek the anchor data in a separate window.</div>
 
     <div id="helpers-fact" style="display:none">
       <label>Target fact (optional, for you)</label>
@@ -136,6 +137,10 @@
           <label>&nbsp;</label>
           <button class="btn secondary" type="button" id="ref-search">Search</button>
         </div>
+        <div style="width:160px">
+          <label>&nbsp;</label>
+          <button class="btn" type="button" id="ref-peek-primary">Peek anchor</button>
+        </div>
       </div>
 
       <div id="ref-results" class="muted" style="margin-top:10px">Search to add refs.</div>
@@ -190,6 +195,7 @@
       const kindEl = document.getElementById('ref-kind');
       const qEl = document.getElementById('ref-q');
       const btn = document.getElementById('ref-search');
+      const peekBtn = document.getElementById('ref-peek-primary');
       const resultsEl = document.getElementById('ref-results');
       const body = document.getElementById('refs-body');
 
@@ -228,6 +234,32 @@
         body.appendChild(tr);
       }
 
+      function claimToComponent(){
+        const claim = document.querySelector('select[name=claim]')?.value || 'fact_probe';
+        if(claim === 'concept_probe') return 'concepts';
+        if(claim === 'procedure_proxy') return 'procedure';
+        return 'facts';
+      }
+
+      function peekAnchor(){
+        // use first attached ref row as the anchor
+        const first = body && body.querySelector('tr');
+        if(!first){
+          alert('No refs attached yet. Add a task/workflow ref first.');
+          return;
+        }
+        const rt = first.querySelector('select[name=ref_type]')?.value || 'task';
+        const rid = first.querySelector('input[name=ref_record_id]')?.value || '';
+        const ver = first.querySelector('input[name=ref_version]')?.value || '';
+        if(!rid || !ver){
+          alert('Anchor ref is incomplete.');
+          return;
+        }
+        const component = claimToComponent();
+        const url = `/_refs/peek?ref_type=${encodeURIComponent(rt)}&record_id=${encodeURIComponent(rid)}&version=${encodeURIComponent(ver)}&component=${encodeURIComponent(component)}`;
+        window.open(url, '_blank', 'noopener,noreferrer,width=920,height=720');
+      }
+
       async function search(){
         const kind = kindEl.value;
         const q = qEl.value || '';
@@ -256,6 +288,7 @@
 
       btn.addEventListener('click', search);
       qEl.addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); search(); } });
+      if(peekBtn) peekBtn.addEventListener('click', peekAnchor);
     })();
   </script>
 
