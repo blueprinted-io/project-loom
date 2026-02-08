@@ -8,14 +8,16 @@ import uuid
 import contextvars
 import hashlib
 import shutil
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
 import httpx
 from pypdf import PdfReader
+from docx import Document
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -28,6 +30,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_DEMO_PATH = os.path.join(DATA_DIR, "lcs_demo.db")
 DB_BLANK_PATH = os.path.join(DATA_DIR, "lcs_blank.db")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+EXPORTS_DIR = os.path.join(DATA_DIR, "exports")
 
 # Per-request DB selection (MVP): use a cookie. Default to demo.
 DB_KEY_COOKIE = "lcs_db"
@@ -459,6 +462,7 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
 def init_db_path(db_path: str) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOADS_DIR, exist_ok=True)
+    os.makedirs(EXPORTS_DIR, exist_ok=True)
 
     # Temporarily point context to this path for schema/migrations.
     DB_PATH_CTX.set(db_path)
@@ -600,6 +604,25 @@ def init_db_path(db_path: str) -> None:
               at TEXT NOT NULL,
               note TEXT
             );
+
+            -- ---- Export artifacts (v0) ----
+            CREATE TABLE IF NOT EXISTS export_artifacts (
+              id TEXT PRIMARY KEY,
+              kind TEXT NOT NULL,
+              filename TEXT NOT NULL,
+              path TEXT NOT NULL,
+              sha256 TEXT NOT NULL,
+
+              workflow_record_id TEXT NOT NULL,
+              workflow_version INTEGER NOT NULL,
+              task_refs_json TEXT NOT NULL,
+
+              exported_at TEXT NOT NULL,
+              exported_by TEXT NOT NULL,
+              retention_days INTEGER NOT NULL DEFAULT 30
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_export_artifacts_workflow ON export_artifacts(workflow_record_id, workflow_version);
 
             -- Local auth (demo-friendly; real auth may be added later)
             CREATE TABLE IF NOT EXISTS users (
@@ -1120,6 +1143,12 @@ def _sha256_bytes(b: bytes) -> str:
     h = hashlib.sha256()
     h.update(b)
     return h.hexdigest()
+
+
+def _short_code(prefix: str, record_id: str) -> str:
+    """Deterministic short display id (for human-visible trace tags)."""
+    h = hashlib.sha256((record_id or "").encode("utf-8", errors="ignore")).hexdigest().upper()
+    return f"{prefix}-{h[:6]}"
 
 
 def _norm_text(s: str) -> str:
@@ -4629,6 +4658,9 @@ def export_task_json(record_id: str, version: int):
     if not row:
         raise HTTPException(404)
 
+    if row["status"] != "confirmed":
+        raise HTTPException(status_code=409, detail="Export is allowed for confirmed tasks only")
+
     payload = _task_export_dict(row)
     filename = f"task__{record_id}__v{version}.json"
     return JSONResponse(
@@ -4645,6 +4677,10 @@ def export_workflow_json(record_id: str, version: int):
         ).fetchone()
         if not wf:
             raise HTTPException(404)
+
+        if wf["status"] != "confirmed":
+            raise HTTPException(status_code=409, detail="Export is allowed for confirmed workflows only")
+
         refs = conn.execute(
             """
             SELECT order_index, task_record_id, task_version
@@ -4655,11 +4691,135 @@ def export_workflow_json(record_id: str, version: int):
             (record_id, version),
         ).fetchall()
 
+        readiness = workflow_readiness(conn, [(r["task_record_id"], int(r["task_version"])) for r in refs])
+        if readiness != "ready":
+            raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
+
     payload = _workflow_export_dict(wf, refs)
     filename = f"workflow__{record_id}__v{version}.json"
     return JSONResponse(
         content=payload,
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/workflows/{record_id}/{version}/export.docx")
+def workflow_export_docx(request: Request, record_id: str, version: int):
+    """Export a confirmed workflow to DOCX (v0 ILT handout).
+
+    Governance rule: exports are allowed for confirmed workflows only, and only when
+    all referenced Task versions are confirmed.
+    """
+    actor = request.state.user
+
+    with db() as conn:
+        wf = conn.execute(
+            "SELECT * FROM workflows WHERE record_id=? AND version=?",
+            (record_id, version),
+        ).fetchone()
+        if not wf:
+            raise HTTPException(404)
+
+        if wf["status"] != "confirmed":
+            raise HTTPException(status_code=409, detail="Export is allowed for confirmed workflows only")
+
+        ref_rows = conn.execute(
+            """
+            SELECT order_index, task_record_id, task_version
+            FROM workflow_task_refs
+            WHERE workflow_record_id=? AND workflow_version=?
+            ORDER BY order_index
+            """,
+            (record_id, version),
+        ).fetchall()
+
+        readiness = workflow_readiness(conn, [(r["task_record_id"], int(r["task_version"])) for r in ref_rows])
+        if readiness != "ready":
+            raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
+
+        tasks: list[dict[str, Any]] = []
+        for r in ref_rows:
+            t = conn.execute(
+                "SELECT * FROM tasks WHERE record_id=? AND version=?",
+                (r["task_record_id"], int(r["task_version"])),
+            ).fetchone()
+            if not t:
+                raise HTTPException(status_code=409, detail="Export failed: referenced task not found")
+            if t["status"] != "confirmed":
+                raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
+            tasks.append({"order_index": int(r["order_index"]), "row": dict(t)})
+
+        # Build doc
+        doc = Document()
+
+        trace = f"Trace: {_short_code('WF', record_id)} v{version} · {utc_now_iso().split('T')[0]}"
+
+        # Footer trace on each section
+        for s in doc.sections:
+            fp = s.footer.paragraphs[0] if s.footer.paragraphs else s.footer.add_paragraph()
+            fp.text = trace
+
+        doc.add_heading(str(wf["title"]), level=1)
+        doc.add_paragraph(str(wf["objective"])).style = doc.styles["Normal"]
+
+        doc.add_heading("Tasks", level=2)
+        for t in tasks:
+            r = t["row"]
+            doc.add_paragraph(f"{t['order_index']}. {r['title']}")
+
+        for t in tasks:
+            r = t["row"]
+            doc.add_page_break()
+            doc.add_heading(f"Task {t['order_index']}: {r['title']}", level=2)
+            doc.add_paragraph(f"Outcome: {r['outcome']}")
+
+            steps = _normalize_steps(_json_load(r["steps_json"]) or [])
+            doc.add_paragraph(f"Procedure: {r['procedure_name']}")
+            for i, st in enumerate(steps, start=1):
+                doc.add_paragraph(f"{i}. {st.get('text','')}" , style="List Number")
+                comp = (st.get("completion") or "").strip()
+                if comp:
+                    doc.add_paragraph(f"Completion: {comp}", style="List Bullet")
+
+        # Provenance (full UUIDs)
+        doc.add_page_break()
+        doc.add_heading("Provenance (internal)", level=2)
+        doc.add_paragraph(f"Workflow: {record_id} v{version}")
+        for r in ref_rows:
+            doc.add_paragraph(f"Task: {r['task_record_id']} v{int(r['task_version'])}")
+
+        # Write artifact
+        export_id = str(uuid.uuid4())
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        filename = f"workflow__{_short_code('WF', record_id)}__v{version}__{ts}.docx"
+        out_path = os.path.join(EXPORTS_DIR, filename)
+
+        doc.save(out_path)
+        file_bytes = Path(out_path).read_bytes()
+        sha = _sha256_bytes(file_bytes)
+
+        conn.execute(
+            "INSERT INTO export_artifacts(id, kind, filename, path, sha256, workflow_record_id, workflow_version, task_refs_json, exported_at, exported_by, retention_days) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                export_id,
+                "docx",
+                filename,
+                out_path,
+                sha,
+                record_id,
+                int(version),
+                _json_dump([{ "record_id": r["task_record_id"], "version": int(r["task_version"])} for r in ref_rows]),
+                utc_now_iso(),
+                actor,
+                30,
+            ),
+        )
+        audit("export", export_id, 1, "create", actor, note=f"kind=docx workflow={record_id}@{version}", conn=conn)
+
+    return FileResponse(
+        out_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=filename,
     )
 
 
@@ -4671,6 +4831,10 @@ def workflow_export_md(record_id: str, version: int):
         ).fetchone()
         if not wf:
             raise HTTPException(404)
+
+        if wf["status"] != "confirmed":
+            raise HTTPException(status_code=409, detail="Export is allowed for confirmed workflows only")
+
         refs = conn.execute(
             """
             SELECT r.order_index, t.*
@@ -4686,15 +4850,12 @@ def workflow_export_md(record_id: str, version: int):
             conn,
             [(r["record_id"], int(r["version"])) for r in refs],
         )
+        if readiness != "ready":
+            raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
 
     lines: list[str] = []
     lines.append(f"# {wf['title']}")
     lines.append("")
-
-    if readiness != "ready":
-        lines.append("> **DRAFT EXPORT** — This workflow contains Task versions that are not confirmed.")
-        lines.append(f"> Derived readiness: `{readiness}`")
-        lines.append("")
 
     lines.append(f"**Objective:** {wf['objective']}")
     lines.append("")
@@ -4742,4 +4903,9 @@ def workflow_export_md(record_id: str, version: int):
         lines.append("")
 
     md = "\n".join(lines)
-    return HTMLResponse(content=md, media_type="text/markdown")
+    filename = f"workflow__{record_id}__v{version}.md"
+    return HTMLResponse(
+        content=md,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
