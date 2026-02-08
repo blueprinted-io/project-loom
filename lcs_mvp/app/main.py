@@ -871,7 +871,7 @@ STATE_CHANGE_VERBS = {
 
 
 def _normalize_steps(raw: Any) -> list[dict[str, Any]]:
-    """Return steps as list of {text, completion, actions?}.
+    """Return steps as list of {text, completion, actions?, notes?}.
 
     Canonical meaning:
       - text: what you are doing (intent)
@@ -888,7 +888,7 @@ def _normalize_steps(raw: Any) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for item in raw:
             if isinstance(item, str):
-                out.append({"text": item, "completion": "", "actions": []})
+                out.append({"text": item, "completion": "", "actions": [], "notes": ""})
             elif isinstance(item, dict):
                 actions_raw = item.get("actions")
                 actions: list[str] = []
@@ -898,11 +898,13 @@ def _normalize_steps(raw: Any) -> list[dict[str, Any]]:
                     # allow a single multi-line string
                     actions = [ln.strip() for ln in actions_raw.splitlines() if ln.strip()]
 
+                notes = str(item.get("notes", "") or "").strip()
                 out.append(
                     {
                         "text": str(item.get("text", "")),
                         "completion": str(item.get("completion", "")),
                         "actions": actions,
+                        "notes": notes,
                     }
                 )
         # Drop empty rows
@@ -918,6 +920,14 @@ def lint_steps(steps: Any) -> list[str]:
     for i, step in enumerate(normalized, start=1):
         s = step.get("text", "")
         low = s.strip().lower()
+
+        notes = (step.get("notes") or "").strip()
+        if notes:
+            # Guardrail: notes are allowed but should not become shadow procedure.
+            if len(notes) > 300 or re.search(r"\n\s*\d+\.", notes) or re.search(r"\b(step|run|then|next)\b", notes.lower()):
+                warnings.append(
+                    f"Step {i}: notes look instruction-heavy. Notes are for rare caveats/alternatives; move procedural content into Step/Actions."
+                )
 
         # Abstract/bundling verbs
         for v in ABSTRACT_VERBS:
@@ -977,24 +987,53 @@ def lint_steps(steps: Any) -> list[str]:
     return warnings
 
 
-def _zip_steps(step_text: list[str], step_completion: list[str], step_actions: list[str]) -> list[dict[str, Any]]:
+def _zip_steps(
+    step_text: list[str],
+    step_completion: list[str],
+    step_actions: list[str],
+    step_notes: list[str] | None = None,
+) -> list[dict[str, Any]]:
     # Keep ordering.
     out: list[dict[str, Any]] = []
-    for t, c, a in zip(step_text, step_completion, step_actions, strict=False):
+    step_notes = step_notes or []
+
+    for t, c, a, n in zip(step_text, step_completion, step_actions, step_notes, strict=False):
         actions = [ln.strip() for ln in (a or "").splitlines() if ln.strip()]
-        out.append({"text": (t or "").strip(), "completion": (c or "").strip(), "actions": actions})
+        out.append(
+            {
+                "text": (t or "").strip(),
+                "completion": (c or "").strip(),
+                "actions": actions,
+                "notes": (n or "").strip(),
+            }
+        )
 
     # If lists are mismatched, extend with remaining text.
-    longest = max(len(step_text), len(step_completion), len(step_actions))
+    longest = max(len(step_text), len(step_completion), len(step_actions), len(step_notes))
     for i in range(len(out), longest):
         t = step_text[i] if i < len(step_text) else ""
         c = step_completion[i] if i < len(step_completion) else ""
         a = step_actions[i] if i < len(step_actions) else ""
+        n = step_notes[i] if i < len(step_notes) else ""
         actions = [ln.strip() for ln in (a or "").splitlines() if ln.strip()]
-        out.append({"text": (t or "").strip(), "completion": (c or "").strip(), "actions": actions})
+        out.append(
+            {
+                "text": (t or "").strip(),
+                "completion": (c or "").strip(),
+                "actions": actions,
+                "notes": (n or "").strip(),
+            }
+        )
 
     # Drop empty rows
-    return [s for s in out if (s.get("text") or "").strip() or (s.get("completion") or "").strip()]
+    return [
+        s
+        for s in out
+        if (s.get("text") or "").strip()
+        or (s.get("completion") or "").strip()
+        or (s.get("actions") or [])
+        or (s.get("notes") or "").strip()
+    ]
 
 
 def _validate_steps_required(steps: list[dict[str, Any]]) -> None:
@@ -2781,6 +2820,7 @@ def task_create(
     step_text: list[str] = Form([]),
     step_completion: list[str] = Form([]),
     step_actions: list[str] = Form([]),
+    step_notes: list[str] = Form([]),
     irreversible_flag: bool = Form(False),
 ):
     require(request.state.role, "task:create")
@@ -2793,7 +2833,7 @@ def task_create(
     deps_list = parse_lines(dependencies)
     tags_list = parse_tags(tags)
     meta_obj = parse_meta(meta)
-    steps_list = _zip_steps(step_text, step_completion, step_actions)
+    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes)
     _validate_steps_required(steps_list)
 
     warnings = lint_steps(steps_list)
@@ -2941,6 +2981,7 @@ def task_save(
     step_text: list[str] = Form([]),
     step_completion: list[str] = Form([]),
     step_actions: list[str] = Form([]),
+    step_notes: list[str] = Form([]),
     irreversible_flag: bool = Form(False),
     change_note: str = Form(""),
 ):
@@ -2956,7 +2997,7 @@ def task_save(
     deps_list = parse_lines(dependencies)
     tags_list = parse_tags(tags)
     meta_obj = parse_meta(meta)
-    steps_list = _zip_steps(step_text, step_completion, step_actions)
+    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes)
     _validate_steps_required(steps_list)
 
     note = change_note.strip()
@@ -4880,7 +4921,9 @@ def workflow_export_docx(request: Request, record_id: str, version: int):
 
             for st in steps:
                 row = table.add_row().cells
-                row[0].text = str(st.get("text", "") or "")
+                step_txt = str(st.get("text", "") or "")
+                notes = str(st.get("notes", "") or "").strip()
+                row[0].text = step_txt + (f"\nNote: {notes}" if notes else "")
                 actions = st.get("actions") or []
                 row[1].text = "\n".join([str(a) for a in actions if str(a).strip()]) if actions else ""
                 row[2].text = str(st.get("completion", "") or "")
@@ -5007,6 +5050,9 @@ def workflow_export_md(record_id: str, version: int):
         lines.append("| --- | --- | --- |")
         for st in steps:
             txt = _md_cell(str(st.get("text", "") or ""))
+            notes = _md_cell(str(st.get("notes", "") or "").strip())
+            if notes:
+                txt = txt + "<br><i>Note:</i> " + notes
             actions = st.get("actions") or []
             actions_txt = _md_cell("<br>".join([str(a) for a in actions if str(a).strip()])) if actions else "—"
             comp = _md_cell(str(st.get("completion", "") or "")) or "—"

@@ -54,10 +54,11 @@
     <table class="table" id="steps-table">
       <thead>
         <tr>
-          <th style="width:40%">Step</th>
-          <th style="width:30%">Actions (optional)</th>
-          <th style="width:25%">Completion</th>
-          <th style="width:5%"></th>
+          <th style="width:34%">Step</th>
+          <th style="width:24%">Actions (optional)</th>
+          <th style="width:24%">Notes (rare)</th>
+          <th style="width:14%">Completion</th>
+          <th style="width:4%"></th>
         </tr>
       </thead>
       <tbody id="steps-body">
@@ -66,6 +67,7 @@
             <tr>
               <td><textarea name="step_text" rows="2" placeholder="What you are doing (intent)">{{ st.text }}</textarea></td>
               <td><textarea name="step_actions" rows="2" placeholder="How to do it (optional, tool-specific)">{% if st.actions %}{{ st.actions|join('\n') }}{% endif %}</textarea></td>
+              <td><textarea name="step_notes" rows="2" placeholder="Rare: caveats/alternatives (not instructions)">{{ st.notes if st.notes else '' }}</textarea></td>
               <td><textarea name="step_completion" rows="2" required placeholder="How you prove it's done (required)">{{ st.completion }}</textarea></td>
               <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
             </tr>
@@ -74,6 +76,7 @@
           <tr>
             <td><textarea name="step_text" rows="2" placeholder="What you are doing (intent)"></textarea></td>
             <td><textarea name="step_actions" rows="2" placeholder="How to do it (optional, tool-specific)"></textarea></td>
+            <td><textarea name="step_notes" rows="2" placeholder="Rare: caveats/alternatives (not instructions)"></textarea></td>
             <td><textarea name="step_completion" rows="2" required placeholder="How you prove it's done (required)"></textarea></td>
             <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
           </tr>
