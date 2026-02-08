@@ -4913,20 +4913,20 @@ def workflow_export_docx(request: Request, record_id: str, version: int):
             steps = _normalize_steps(_json_load(r["steps_json"]) or [])
             doc.add_paragraph(f"Procedure: {r['procedure_name']}")
 
-            table = doc.add_table(rows=1, cols=3)
+            table = doc.add_table(rows=1, cols=4)
             hdr = table.rows[0].cells
             hdr[0].text = "Step"
             hdr[1].text = "Actions"
-            hdr[2].text = "Completion"
+            hdr[2].text = "Notes"
+            hdr[3].text = "Completion"
 
             for st in steps:
                 row = table.add_row().cells
-                step_txt = str(st.get("text", "") or "")
-                notes = str(st.get("notes", "") or "").strip()
-                row[0].text = step_txt + (f"\nNote: {notes}" if notes else "")
+                row[0].text = str(st.get("text", "") or "")
                 actions = st.get("actions") or []
                 row[1].text = "\n".join([str(a) for a in actions if str(a).strip()]) if actions else ""
-                row[2].text = str(st.get("completion", "") or "")
+                row[2].text = str(st.get("notes", "") or "")
+                row[3].text = str(st.get("completion", "") or "")
 
         # Provenance (full UUIDs)
         doc.add_page_break()
@@ -5046,17 +5046,15 @@ def workflow_export_md(record_id: str, version: int):
             s = s.replace("|", "\\|")
             return s
 
-        lines.append("| Step | Actions | Completion |")
-        lines.append("| --- | --- | --- |")
+        lines.append("| Step | Actions | Notes | Completion |")
+        lines.append("| --- | --- | --- | --- |")
         for st in steps:
             txt = _md_cell(str(st.get("text", "") or ""))
-            notes = _md_cell(str(st.get("notes", "") or "").strip())
-            if notes:
-                txt = txt + "<br><i>Note:</i> " + notes
+            notes = _md_cell(str(st.get("notes", "") or "").strip()) or "—"
             actions = st.get("actions") or []
             actions_txt = _md_cell("<br>".join([str(a) for a in actions if str(a).strip()])) if actions else "—"
             comp = _md_cell(str(st.get("completion", "") or "")) or "—"
-            lines.append(f"| {txt} | {actions_txt} | {comp} |")
+            lines.append(f"| {txt} | {actions_txt} | {notes} | {comp} |")
         lines.append("")
 
     md = "\n".join(lines)

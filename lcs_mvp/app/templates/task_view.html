@@ -60,20 +60,16 @@
   <table class="table">
     <thead>
       <tr>
-        <th style="width:40%">Step</th>
-        <th style="width:30%">Actions</th>
-        <th style="width:30%">Completion</th>
+        <th style="width:34%">Step</th>
+        <th style="width:22%">Actions</th>
+        <th style="width:22%">Notes</th>
+        <th style="width:22%">Completion</th>
       </tr>
     </thead>
     <tbody>
       {% for st in task.steps %}
         <tr>
-          <td>
-            {{ st.text }}
-            {% if st.notes %}
-              <div class="muted" style="margin-top:6px"><b>Note:</b> {{ st.notes }}</div>
-            {% endif %}
-          </td>
+          <td>{{ st.text }}</td>
           <td>
             {% if st.actions %}
               <ul style="margin:0;padding-left:18px">
@@ -82,6 +78,9 @@
             {% else %}
               <span class="muted">—</span>
             {% endif %}
+          </td>
+          <td>
+            {% if st.notes %}{{ st.notes }}{% else %}<span class="muted">—</span>{% endif %}
           </td>
           <td>
             {% if st.completion %}{{ st.completion }}{% else %}<span class="muted">—</span>{% endif %}
