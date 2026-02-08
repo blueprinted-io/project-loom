@@ -45,15 +45,32 @@
   </div>
 {% else %}
   <div class="card" style="margin-top:12px">
-    <div class="muted">Showing: tasks referenced by this workflow (for writing composite scenario proxies)</div>
-    <ol style="margin-top:10px">
-      {% for t in tasks %}
-        <li style="margin-bottom:10px">
-          <div><b>{{ t.title }}</b> <span class="muted">({{ t.record_id }} v{{ t.version }})</span></div>
-          <div class="muted">Domain: <code>{{ t.domain }}</code></div>
-        </li>
-      {% endfor %}
-    </ol>
+    {% if objective %}
+      <div class="muted">Objective</div>
+      <div style="margin-top:6px">{{ objective }}</div>
+    {% endif %}
+
+    <div class="muted" style="margin-top:12px">Showing: <code>{{ component }}</code> aggregated across tasks in this workflow</div>
+
+    {% if component in ['facts','concepts'] %}
+      <ul style="margin-top:10px">
+        {% for x in agg %}<li>{{ x }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <ol style="margin-top:10px">
+        {% for t in tasks %}
+          <li style="margin-bottom:14px">
+            <div><b>{{ t.title }}</b> <span class="muted">({{ t.record_id }} v{{ t.version }})</span></div>
+            <div class="muted">Outcome: {{ t.outcome }}</div>
+            <div class="muted">Procedure: {{ t.procedure_name }}</div>
+            {% if t.steps and t.steps|length > 0 %}
+              <div class="muted" style="margin-top:6px">First step:</div>
+              <div>{{ t.steps[0].text }}</div>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+    {% endif %}
   </div>
 {% endif %}
 

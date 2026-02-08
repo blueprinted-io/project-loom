@@ -3965,23 +3965,57 @@ def refs_peek(request: Request, ref_type: str, record_id: str, version: int, com
 
         if ref_type == "workflow":
             row = conn.execute(
-                "SELECT record_id, version, title, status FROM workflows WHERE record_id=? AND version=?",
+                "SELECT record_id, version, title, status, objective FROM workflows WHERE record_id=? AND version=?",
                 (record_id, int(version)),
             ).fetchone()
             if not row:
                 raise HTTPException(404)
+
             refs = conn.execute(
                 "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
                 (record_id, int(version)),
             ).fetchall()
+
             tasks: list[dict[str, Any]] = []
+            agg: list[str] = []
+            seen: dict[str, str] = {}
+
+            def _norm_key(s: str) -> str:
+                return re.sub(r"\s+", " ", (s or "").strip().lower())
+
             for r in refs:
                 t = conn.execute(
-                    "SELECT record_id, version, title, domain FROM tasks WHERE record_id=? AND version=?",
+                    "SELECT record_id, version, title, domain, outcome, procedure_name, facts_json, concepts_json, steps_json FROM tasks WHERE record_id=? AND version=?",
                     (r["task_record_id"], int(r["task_version"])),
                 ).fetchone()
-                if t:
-                    tasks.append({"record_id": t["record_id"], "version": int(t["version"]), "title": t["title"], "domain": t["domain"]})
+                if not t:
+                    continue
+
+                tasks.append(
+                    {
+                        "record_id": t["record_id"],
+                        "version": int(t["version"]),
+                        "title": t["title"],
+                        "domain": t["domain"],
+                        "outcome": t["outcome"],
+                        "procedure_name": t["procedure_name"],
+                        "steps": _normalize_steps(_json_load(t["steps_json"]) or []),
+                    }
+                )
+
+                if component == "facts":
+                    for x in (_json_load(t["facts_json"]) or []):
+                        k = _norm_key(str(x))
+                        if k and k not in seen:
+                            seen[k] = str(x)
+                elif component == "concepts":
+                    for x in (_json_load(t["concepts_json"]) or []):
+                        k = _norm_key(str(x))
+                        if k and k not in seen:
+                            seen[k] = str(x)
+
+            if component in ("facts", "concepts"):
+                agg = sorted(seen.values(), key=lambda s: _norm_key(s))
 
             return templates.TemplateResponse(
                 request,
@@ -3993,14 +4027,17 @@ def refs_peek(request: Request, ref_type: str, record_id: str, version: int, com
                     "version": int(row["version"]),
                     "title": row["title"],
                     "status": row["status"],
+                    "objective": row["objective"],
+                    "component": component,
+                    "agg": agg,
+                    "tasks": tasks,
+                    # unused for workflow branch but template expects keys
                     "domain": "",
+                    "outcome": "",
                     "procedure_name": "",
-                    "component": "",
                     "facts": [],
                     "concepts": [],
-                    "dependencies": [],
                     "steps": [],
-                    "tasks": tasks,
                 },
             )
 
