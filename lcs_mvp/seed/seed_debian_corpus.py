@@ -105,8 +105,73 @@ def _derive_actions(step_text: str) -> list[str]:
     return out
 
 
-def step(text: str, completion: str, actions: list[str] | None = None) -> dict[str, object]:
-    return {"text": text, "completion": completion, "actions": actions if actions is not None else _derive_actions(text)}
+def _maybe_note_for_step(step_text: str) -> str:
+    low = (step_text or "").lower()
+
+    if "/etc/" in low and any(k in low for k in ("edit", "open")):
+        return "If nano is not available, use another editor (e.g., vim) and preserve file formatting."
+
+    if any(k in low for k in ("apt-get", "apt ", "apt.")):
+        return "If you are on a minimal system without sudo, run the commands as root."
+
+    if "ssh" in low and any(k in low for k in ("reload", "restart")):
+        return "Keep an existing SSH session open until you confirm the new settings work."
+
+    return ""
+
+
+def step(
+    text: str,
+    completion: str,
+    actions: list[str] | None = None,
+    notes: str | None = None,
+) -> dict[str, object]:
+    """Create a step dict.
+
+    notes is intentionally rare; when omitted we add a small number of pragmatic
+    caveat notes heuristically to make the corpus feel realistic.
+    """
+    note_out = (notes or "").strip() if notes is not None else _maybe_note_for_step(text)
+    return {
+        "text": text,
+        "completion": completion,
+        "actions": actions if actions is not None else _derive_actions(text),
+        "notes": note_out,
+    }
+
+
+def _default_fact_concept(title: str, outcome: str) -> tuple[list[str], list[str]]:
+    low = f"{title} {outcome}".lower()
+
+    facts: list[str] = []
+    concepts: list[str] = []
+
+    if any(k in low for k in ("fstab", "/etc/fstab")):
+        facts += ["/etc/fstab controls persistent mounts.", "Invalid fstab entries can prevent a system from booting cleanly."]
+        concepts += ["Validate mount configuration before reboot."]
+
+    if any(k in low for k in ("mount", "findmnt")):
+        facts += ["A mount attaches a filesystem to a directory in the tree."]
+        concepts += ["Persistence (boot-time) and current-session mounts are separate concerns."]
+
+    if any(k in low for k in ("apt", "package", "upgrade", "install")):
+        facts += ["APT installs and upgrades packages using configured repositories.", "Upgrades can change service behavior and should be validated."]
+        concepts += ["Prefer explicit confirmation checks (version/status) after package changes."]
+
+    if any(k in low for k in ("ssh", "openssh")):
+        facts += ["SSH configuration changes can lock you out if applied incorrectly."]
+        concepts += ["Make changes in a way that preserves rollback access."]
+
+    if any(k in low for k in ("systemd", "service")):
+        facts += ["systemd unit files control how services start and run."]
+        concepts += ["Use `systemctl status` and logs to confirm service health."]
+
+    if not facts:
+        facts = ["This task should include explicit completion checks."]
+    if not concepts:
+        concepts = ["Separate intent (step) from how (actions) and proof (completion) to keep procedures repeatable."]
+
+    return facts[:3], concepts[:2]
 
 
 def task(
@@ -122,11 +187,20 @@ def task(
     irreversible: int = 0,
     domain: str = "linux",
 ) -> dict:
+    facts_out = facts or []
+    concepts_out = concepts or []
+    if not facts_out or not concepts_out:
+        df, dc = _default_fact_concept(title, outcome)
+        if not facts_out:
+            facts_out = df
+        if not concepts_out:
+            concepts_out = dc
+
     return {
         "title": title,
         "outcome": outcome,
-        "facts": facts or [],
-        "concepts": concepts or [],
+        "facts": facts_out,
+        "concepts": concepts_out,
         "procedure_name": procedure_name,
         "steps": steps,
         "deps": deps,
