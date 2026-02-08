@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated"]
-Role = Literal["viewer", "author", "assessment_author", "reviewer", "audit", "admin"]
+Role = Literal["viewer", "author", "assessment_author", "content_publisher", "reviewer", "audit", "admin"]
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -122,9 +122,10 @@ ROLE_ORDER: dict[Role, int] = {
     "viewer": 0,
     "author": 1,
     "assessment_author": 2,
-    "reviewer": 3,
-    "audit": 4,
-    "admin": 5,
+    "content_publisher": 3,
+    "reviewer": 4,
+    "audit": 5,
+    "admin": 6,
 }
 
 
@@ -139,6 +140,7 @@ def can(role: Role, action: str) -> bool:
       - task:create, task:revise, task:submit, task:confirm
       - workflow:create, workflow:revise, workflow:submit, workflow:confirm
       - assessment:create, assessment:revise, assessment:submit, assessment:confirm
+      - delivery:view, delivery:export
       - import:pdf
       - import:json
       - db:switch
@@ -151,6 +153,12 @@ def can(role: Role, action: str) -> bool:
 
     if action == "audit:view":
         return role in ("audit",)
+
+    if action == "delivery:view":
+        return role in ("viewer", "author", "assessment_author", "content_publisher", "reviewer")
+
+    if action == "delivery:export":
+        return role in ("content_publisher",)
 
     if action.endswith(":force_confirm") or action.endswith(":force_submit"):
         return role in ("admin",)
@@ -721,7 +729,8 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     demo = [
         ("jhendrix", "reviewer", "password1"),
         ("jjoplin", "author", "password2"),
-        ("wcarlos", "assessment_author", "password5"),
+        ("wcarlos", "content_publisher", "password5"),
+        ("tpratchett", "assessment_author", "password6"),
         ("fmercury", "viewer", "password3"),
         ("bspringsteen", "audit", "password4"),
         ("kcobain", "admin", "admin"),
@@ -739,6 +748,9 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     _rename("dspringsteen", "bspringsteen")
     _rename("admin", "kcobain")
     _rename("mcarey", "wcarlos")
+
+    # NOTE: we intentionally do NOT auto-migrate roles.
+    # assessment_author and content_publisher are separate roles.
 
     import secrets
 
@@ -4132,9 +4144,7 @@ def assessments_list(request: Request, status: str | None = None, q: str | None 
 
 @app.get("/delivery", response_class=HTMLResponse)
 def delivery_page(request: Request, q: str | None = None, domain: str | None = None, tag: str | None = None):
-    # Keep it simple for now: authenticated users except viewers.
-    if request.state.role in ("viewer",):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    require(request.state.role, "delivery:view")
 
     q_norm = (q or "").strip().lower()
     domain_norm = (domain or "").strip().lower() or None
@@ -4189,8 +4199,7 @@ def delivery_page(request: Request, q: str | None = None, domain: str | None = N
 
 @app.post("/delivery/export")
 def delivery_export(request: Request, workflow_key: str = Form(""), modality: str = Form("docx")):
-    if request.state.role in ("viewer",):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    require(request.state.role, "delivery:export")
 
     wk = (workflow_key or "").strip()
     if "@" not in wk:
