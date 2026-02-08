@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+  <div>
+    <h1>Delivery</h1>
+    <div class="muted">Export confirmed workflows into delivery formats (ILT-friendly). SCORM/xAPI/cmi5 are stubbed for now.</div>
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" action="/delivery">
+    <div class="row" style="align-items:flex-end">
+      <div style="flex:1">
+        <label>Search (workflow title contains)</label>
+        <input name="q" value="{{ q or '' }}" placeholder="e.g. debian, backup, kubernetes" />
+      </div>
+      <div style="width:220px">
+        <label>Domain</label>
+        <select name="domain">
+          <option value="" {% if not domain %}selected{% endif %}>(any)</option>
+          {% for d in domains %}
+            <option value="{{ d }}" {% if domain==d %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="width:220px">
+        <label>Tag</label>
+        <select name="tag">
+          <option value="" {% if not tag %}selected{% endif %}>(any)</option>
+          {% for t in tags %}
+            <option value="{{ t }}" {% if tag==t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="width:160px">
+        <button class="btn secondary" type="submit">Filter</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <form method="post" action="/delivery/export">
+    <label>Workflow (confirmed only)</label>
+    <select name="workflow_key" required>
+      <option value="" selected disabled>Select a workflow…</option>
+      {% for w in workflows %}
+        <option value="{{ w.record_id }}@{{ w.version }}">{{ w.title }} (v{{ w.version }})</option>
+      {% endfor %}
+    </select>
+    <div class="muted" style="margin-top:6px">Only confirmed workflows are listed. Export will fail if referenced tasks are not confirmed.</div>
+
+    <label style="margin-top:14px">Output modality</label>
+    <select name="modality" required>
+      <option value="docx">Word (DOCX)</option>
+      <option value="pptx" disabled>PowerPoint (PPTX) — dev</option>
+      <option value="md">Markdown</option>
+      <option value="html" disabled>HTML — dev</option>
+      <option value="pdf" disabled>PDF — dev</option>
+      <option value="scorm" disabled>SCORM — dev (stub)</option>
+      <option value="xapi" disabled>xAPI — dev (stub)</option>
+      <option value="cmi5" disabled>cmi5 — dev (stub)</option>
+    </select>
+
+    <div class="row" style="margin-top:14px">
+      <button class="btn" type="submit">Generate</button>
+      <a class="btn secondary" href="/workflows">Browse workflows</a>
+    </div>
+  </form>
+</div>
+
+{% if not workflows %}
+  <div class="card"><b>No confirmed workflows match your filters.</b></div>
+{% endif %}
+
+{% endblock %}

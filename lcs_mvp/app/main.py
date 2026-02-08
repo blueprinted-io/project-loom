@@ -4130,6 +4130,86 @@ def assessments_list(request: Request, status: str | None = None, q: str | None 
     )
 
 
+@app.get("/delivery", response_class=HTMLResponse)
+def delivery_page(request: Request, q: str | None = None, domain: str | None = None, tag: str | None = None):
+    # Keep it simple for now: authenticated users except viewers.
+    if request.state.role in ("viewer",):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    q_norm = (q or "").strip().lower()
+    domain_norm = (domain or "").strip().lower() or None
+    tag_norm = (tag or "").strip().lower() or None
+
+    with db() as conn:
+        domains = _active_domains(conn)
+
+        # Latest confirmed version per workflow
+        rows = conn.execute(
+            "SELECT record_id, MAX(version) AS v FROM workflows WHERE status='confirmed' GROUP BY record_id ORDER BY record_id"
+        ).fetchall()
+
+        workflows: list[dict[str, Any]] = []
+        all_tags: set[str] = set()
+
+        for r in rows:
+            rid = r["record_id"]
+            v = int(r["v"])
+            wf = conn.execute(
+                "SELECT record_id, version, title, tags_json, domains_json FROM workflows WHERE record_id=? AND version=?",
+                (rid, v),
+            ).fetchone()
+            if not wf:
+                continue
+
+            title = str(wf["title"] or "")
+            if q_norm and q_norm not in title.lower():
+                continue
+
+            wf_tags = [str(x).strip().lower() for x in (_json_load(wf["tags_json"]) or []) if str(x).strip()]
+            for t in wf_tags:
+                all_tags.add(t)
+
+            if tag_norm and tag_norm not in set(wf_tags):
+                continue
+
+            wf_domains = [str(x).strip().lower() for x in (_json_load(wf["domains_json"]) or []) if str(x).strip()]
+            if domain_norm and domain_norm not in set(wf_domains):
+                continue
+
+            workflows.append({"record_id": wf["record_id"], "version": v, "title": title})
+
+    workflows.sort(key=lambda w: (w.get("title") or ""))
+
+    return templates.TemplateResponse(
+        request,
+        "delivery.html",
+        {"workflows": workflows, "q": q, "domain": domain_norm or "", "tag": tag_norm or "", "domains": domains, "tags": sorted(all_tags)},
+    )
+
+
+@app.post("/delivery/export")
+def delivery_export(request: Request, workflow_key: str = Form(""), modality: str = Form("docx")):
+    if request.state.role in ("viewer",):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    wk = (workflow_key or "").strip()
+    if "@" not in wk:
+        raise HTTPException(status_code=400, detail="workflow_key is required")
+    rid, ver_s = wk.split("@", 1)
+    try:
+        ver = int(ver_s)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid workflow version")
+
+    mod = (modality or "docx").strip().lower()
+    if mod == "docx":
+        return RedirectResponse(url=f"/workflows/{rid}/{ver}/export.docx", status_code=303)
+    if mod == "md":
+        return RedirectResponse(url=f"/workflows/{rid}/{ver}/export.md", status_code=303)
+
+    raise HTTPException(status_code=409, detail=f"Modality '{mod}' is not operational yet")
+
+
 @app.get("/assessments/new", response_class=HTMLResponse)
 def assessment_new_form(
     request: Request,
