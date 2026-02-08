@@ -53,14 +53,18 @@
     <label style="margin-top:14px">Output modality</label>
     <select name="modality" required>
       <option value="docx">Word (DOCX)</option>
-      <option value="pptx" disabled>PowerPoint (PPTX) — dev</option>
+      <option value="pptx">PowerPoint (PPTX) — DEV (not operational)</option>
       <option value="md">Markdown</option>
-      <option value="html" disabled>HTML — dev</option>
-      <option value="pdf" disabled>PDF — dev</option>
-      <option value="scorm" disabled>SCORM — dev (stub)</option>
-      <option value="xapi" disabled>xAPI — dev (stub)</option>
-      <option value="cmi5" disabled>cmi5 — dev (stub)</option>
+      <option value="html">HTML — DEV (not operational)</option>
+      <option value="pdf">PDF — DEV (not operational)</option>
+      <option value="scorm">SCORM — DEV (stub)</option>
+      <option value="xapi">xAPI — DEV (stub)</option>
+      <option value="cmi5">cmi5 — DEV (stub)</option>
     </select>
+    <div class="callout warn" style="margin-top:10px">
+      <b>Note</b>
+      <div class="muted" style="margin-top:6px">DEV modalities are visible for roadmap clarity, but will return an error if selected.</div>
+    </div>
 
     <div class="row" style="margin-top:14px">
       <button class="btn" type="submit">Generate</button>
