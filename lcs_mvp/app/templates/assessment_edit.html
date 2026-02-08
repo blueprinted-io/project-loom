@@ -41,30 +41,17 @@
 <form method="post" action="{% if mode=='new' %}/assessments/new{% else %}/assessments/{{ item.record_id }}/{{ item.version }}/save{% endif %}">
 
   <div class="card" style="padding:12px">
-    <h2 style="margin-top:0">1) Choose claim</h2>
-    <label>Claim</label>
-    <select name="claim" id="claim">
-      {% set cur = (item.claim if item else 'fact_probe') %}
-      {% for c in ['fact_probe','concept_probe','procedure_proxy'] %}
-        <option value="{{ c }}" {% if cur==c %}selected{% endif %}>{{ c }}</option>
-      {% endfor %}
-    </select>
-    <div class="muted" style="margin-top:6px">
-      <div><b>fact_probe</b>: can you remember X</div>
-      <div><b>concept_probe</b>: how does this relate to reality (implication/consistency)</div>
-      <div><b>procedure_proxy</b>: given a written scenario, what is or is not true</div>
-    </div>
+    <h2 style="margin-top:0">1) Draft the item</h2>
+    <div class="muted">Write the question first. Classification is optional.</div>
   </div>
 
-  <div class="card" style="padding:12px;margin-top:12px">
-    <h2 style="margin-top:0">2) Anchor + helpers</h2>
-    <div class="muted">Use the ref search below to attach an anchor record. You can peek the anchor data in a separate window.</div>
+  <details class="card" style="padding:12px;margin-top:12px">
+    <summary style="cursor:pointer"><b>Advanced (optional)</b> <span class="muted">· anchor helpers</span></summary>
+    <div style="margin-top:10px" class="muted">Optional authoring notes. Safe to ignore.</div>
 
     <div id="helpers-fact" style="display:none">
       <label>Target fact (optional, for you)</label>
-      {% set meta = (item.meta_json if item else '{}') %}
       <input name="target_fact" value="" placeholder="e.g. exact limit / definition you want to test" />
-      <div class="muted" style="margin-top:6px">This is not shown to learners; it’s an authoring note.</div>
     </div>
 
     <div id="helpers-concept" style="display:none">
@@ -76,7 +63,6 @@
         <option value="explains">explains</option>
         <option value="distinguishes">distinguishes</option>
       </select>
-      <div class="muted" style="margin-top:6px">Keeps concept questions from turning into “best practice” mush.</div>
     </div>
 
     <div id="helpers-scenario" style="display:none">
@@ -87,9 +73,8 @@
         <option value="not_true">Which is NOT true?</option>
         <option value="cannot_determine">Which cannot be determined from the scenario?</option>
       </select>
-      <div class="muted" style="margin-top:6px">This sets the intended polarity of the scenario question.</div>
     </div>
-  </div>
+  </details>
 
   <div class="card" style="padding:12px;margin-top:12px">
     <h2 style="margin-top:0">3) Write the item</h2>
@@ -98,14 +83,31 @@
       <b>Stem template</b>
       <div class="muted" style="margin-top:6px">Insert a scaffold to reduce author load. Edit freely after.</div>
       <div class="row" style="margin-top:8px">
-        <button class="btn secondary" type="button" id="tpl-fact">Fact probe</button>
-        <button class="btn secondary" type="button" id="tpl-concept">Concept probe</button>
-        <button class="btn secondary" type="button" id="tpl-scenario">Proxy scenario</button>
+        <button class="btn secondary" type="button" id="tpl-fact">Fact</button>
+        <button class="btn secondary" type="button" id="tpl-concept">Concept</button>
+        <button class="btn secondary" type="button" id="tpl-scenario">Procedure</button>
       </div>
     </div>
 
     <label>Stem</label>
     <textarea name="stem" id="stem" rows="5" required>{{ item.stem if item else '' }}</textarea>
+
+    <div class="row" style="margin-top:12px;align-items:flex-end">
+      <div style="flex:1">
+        <label>Probe type (optional)</label>
+        {% set cur = (item.claim if item else 'auto') %}
+        <select name="claim" id="claim">
+          {% for c in ['auto','fact_probe','concept_probe','procedure_proxy'] %}
+            <option value="{{ c }}" {% if cur==c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+        <div class="muted" style="margin-top:6px">Used for peek + review. Safe to leave on <code>auto</code>.</div>
+      </div>
+      <div style="width:180px">
+        <label>&nbsp;</label>
+        <button class="btn secondary" type="button" id="peek-source">Peek source</button>
+      </div>
+    </div>
   </div>
 
   <label>Options</label>
@@ -219,7 +221,7 @@
       const helpersScenario = document.getElementById('helpers-scenario');
 
       function syncHelpers(){
-        const c = (claimEl && claimEl.value) || 'fact_probe';
+        const c = (claimEl && claimEl.value) || 'auto';
         if(helpersFact) helpersFact.style.display = (c === 'fact_probe') ? 'block' : 'none';
         if(helpersConcept) helpersConcept.style.display = (c === 'concept_probe') ? 'block' : 'none';
         if(helpersScenario) helpersScenario.style.display = (c === 'procedure_proxy') ? 'block' : 'none';
@@ -340,9 +342,29 @@
       const tf = document.getElementById('tpl-fact');
       const tc = document.getElementById('tpl-concept');
       const ts = document.getElementById('tpl-scenario');
-      if(tf) tf.addEventListener('click', () => insertIfEmpty('What is true about ____?'));
-      if(tc) tc.addEventListener('click', () => insertIfEmpty('Which statement is consistent with ____?'));
-      if(ts) ts.addEventListener('click', () => insertIfEmpty('Scenario:\n____\n\nWhat is true?'));
+      if(tf) tf.addEventListener('click', () => insertIfEmpty('What is the ____?'));
+      if(tc) tc.addEventListener('click', () => insertIfEmpty('Why does ____?'));
+      if(ts) ts.addEventListener('click', () => insertIfEmpty('Given the following scenario, why does ____?\n\nScenario:\n____'));
+
+      // Peek source: open first workflow ref if present, otherwise first ref.
+      const peekSourceBtn = document.getElementById('peek-source');
+      function peekSource(){
+        const rows = body ? Array.from(body.querySelectorAll('tr')) : [];
+        if(!rows.length){ alert('No refs attached yet. Add a workflow ref first.'); return; }
+        // prefer workflow
+        let row = rows.find(r => (r.querySelector('select[name=ref_type]')?.value === 'workflow')) || rows[0];
+        const rt = row.querySelector('select[name=ref_type]')?.value || 'workflow';
+        const rid = row.querySelector('input[name=ref_record_id]')?.value || '';
+        const ver = row.querySelector('input[name=ref_version]')?.value || '';
+        if(!rid || !ver){ alert('Ref is incomplete.'); return; }
+        const claim = (claimEl && claimEl.value) || 'auto';
+        let component = 'facts';
+        if(claim === 'concept_probe') component = 'concepts';
+        if(claim === 'procedure_proxy') component = 'procedure';
+        const url = `/_refs/peek?ref_type=${encodeURIComponent(rt)}&record_id=${encodeURIComponent(rid)}&version=${encodeURIComponent(ver)}&component=${encodeURIComponent(component)}`;
+        window.open(url, '_blank', 'noopener,noreferrer,width=980,height=760');
+      }
+      if(peekSourceBtn) peekSourceBtn.addEventListener('click', peekSource);
     })();
   </script>
 

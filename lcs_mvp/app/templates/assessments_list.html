@@ -35,7 +35,7 @@
       <label>Claim</label>
       <select name="claim">
         <option value="" {% if not claim %}selected{% endif %}>(any)</option>
-        {% for c in ['fact_probe','concept_probe','procedure_proxy'] %}
+        {% for c in ['auto','fact_probe','concept_probe','procedure_proxy'] %}
           <option value="{{ c }}" {% if claim==c %}selected{% endif %}>{{ c }}</option>
         {% endfor %}
       </select>

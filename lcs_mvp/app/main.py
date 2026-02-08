@@ -3749,7 +3749,7 @@ def workflow_force_confirm(request: Request, record_id: str, version: int):
 
 # ---- Assessments (MVP) ----
 
-AssessmentClaim = Literal["fact_probe", "concept_probe", "procedure_proxy"]
+AssessmentClaim = Literal["auto", "fact_probe", "concept_probe", "procedure_proxy"]
 
 
 def _assessment_domains(conn: sqlite3.Connection, refs: list[dict[str, Any]]) -> list[str]:
@@ -3830,10 +3830,16 @@ def _assessment_lint(stem: str, options: list[dict[str, str]], correct_key: str,
             findings.append({"level": "warn", "code": "options.length_band", "msg": "Options vary widely in length; this can create visual clues"})
 
     claim_norm = (claim or "").strip()
-    if claim_norm not in ("fact_probe", "concept_probe", "procedure_proxy"):
-        findings.append({"level": "error", "code": "claim.invalid", "msg": "Invalid claim (fact_probe|concept_probe|procedure_proxy)"})
+    if claim_norm not in ("auto", "fact_probe", "concept_probe", "procedure_proxy"):
+        findings.append({"level": "error", "code": "claim.invalid", "msg": "Invalid claim (auto|fact_probe|concept_probe|procedure_proxy)"})
 
+    # Auto is allowed and intentionally does not apply claim-specific linting.
+    if claim_norm == "auto":
+        return findings
+
+    # Only apply scenario hinting when explicitly in procedure_proxy.
     if claim_norm == "procedure_proxy":
+
         # Soft check: require some scenario signal.
         if not any(x in stem_norm.lower() for x in ("scenario", "you", "environment", "given", "after")):
             findings.append({"level": "warn", "code": "procedure_proxy.weak_scenario", "msg": "Procedure proxy items should usually be scenario-framed"})
@@ -4166,7 +4172,7 @@ def assessment_new_form(
 def assessment_create(
     request: Request,
     stem: str = Form(""),
-    claim: str = Form("fact_probe"),
+    claim: str = Form("auto"),
     correct_key: str = Form("A"),
     option_a: str = Form(""),
     option_b: str = Form(""),
@@ -4237,7 +4243,7 @@ def assessment_create(
                 _json_dump(options),
                 (correct_key or "A").strip().upper(),
                 (rationale or "").strip(),
-                (claim or "fact_probe").strip().lower(),
+                (claim or "auto").strip().lower(),
                 _json_dump(domains),
                 _json_dump(lint),
                 _json_dump(refs),
@@ -4330,7 +4336,7 @@ def assessment_save(
     record_id: str,
     version: int,
     stem: str = Form(""),
-    claim: str = Form("fact_probe"),
+    claim: str = Form("auto"),
     correct_key: str = Form("A"),
     option_a: str = Form(""),
     option_b: str = Form(""),
@@ -4425,7 +4431,7 @@ def assessment_save(
                 _json_dump(options),
                 (correct_key or "A").strip().upper(),
                 (rationale or "").strip(),
-                (claim or "fact_probe").strip().lower(),
+                (claim or "auto").strip().lower(),
                 _json_dump(domains),
                 _json_dump(lint),
                 _json_dump(refs),
