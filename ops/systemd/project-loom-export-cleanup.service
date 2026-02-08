@@ -1,0 +1,7 @@
+[Unit]
+Description=Project Loom export retention cleanup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/claw/work/project-loom/lcs_mvp
+ExecStart=/home/claw/work/project-loom/lcs_mvp/.venv/bin/python -m ops.cleanup_exports --db data/lcs_demo.db --exports-dir data/exports

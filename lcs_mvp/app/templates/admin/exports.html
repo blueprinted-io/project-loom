@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Exports</h1>
+<p class="muted">Admin-only. Export artifacts are stored on disk under <code>lcs_mvp/data/exports/</code> and tracked in <code>export_artifacts</code>.</p>
+
+{% if msg %}
+  <div class="callout" style="border-left:4px solid #14532d">
+    <b>Cleanup result</b>
+    <div class="muted" style="margin-top:6px">{{ msg }}</div>
+  </div>
+{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Retention cleanup</h2>
+  <p class="muted">Deletes artifacts whose <code>exported_at + retention_days</code> is in the past. Only files inside the exports directory are deleted.</p>
+  <form method="post" action="/admin/exports/cleanup" onsubmit="return confirm('Run export retention cleanup now?')">
+    <button class="btn" type="submit">Run cleanup now</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Recent artifacts</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>exported_at</th>
+        <th>kind</th>
+        <th>workflow</th>
+        <th>filename</th>
+        <th>retention_days</th>
+        <th>exported_by</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in artifacts %}
+      <tr>
+        <td class="muted">{{ a.exported_at }}</td>
+        <td><span class="badge">{{ a.kind }}</span></td>
+        <td class="muted"><code>{{ a.workflow_record_id }}</code> v{{ a.workflow_version }}</td>
+        <td><code>{{ a.filename }}</code></td>
+        <td class="muted">{{ a.retention_days }}</td>
+        <td class="muted">{{ a.exported_by }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

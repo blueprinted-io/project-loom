@@ -147,6 +147,7 @@ def can(role: Role, action: str) -> bool:
       - workflow:create, workflow:revise, workflow:submit, workflow:confirm
       - assessment:create, assessment:revise, assessment:submit, assessment:confirm
       - delivery:view, delivery:export
+      - export:cleanup
       - import:pdf
       - import:json
       - db:switch
@@ -1828,6 +1829,121 @@ def admin_domains_delete(request: Request, name: str = Form("")):
         audit("domain", name_norm, 1, "delete", request.state.user, conn=conn)
 
     return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+def _parse_iso_dt(s: str) -> datetime | None:
+    s = (s or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _cleanup_export_artifacts(conn: sqlite3.Connection) -> dict[str, int]:
+    """Delete expired export artifacts (files + DB rows).
+
+    Safety: only deletes files inside EXPORTS_DIR.
+    """
+    now = datetime.now(timezone.utc)
+    exports_root = Path(EXPORTS_DIR).resolve()
+
+    scanned = 0
+    expired = 0
+    deleted_files = 0
+    missing_files = 0
+    deleted_rows = 0
+
+    rows = conn.execute(
+        "SELECT id, path, exported_at, retention_days FROM export_artifacts ORDER BY exported_at ASC"
+    ).fetchall()
+
+    for r in rows:
+        scanned += 1
+        exported_at = _parse_iso_dt(str(r["exported_at"] or ""))
+        if not exported_at:
+            continue
+
+        retention_days = int(r["retention_days"]) if r["retention_days"] is not None else 30
+        if now <= (exported_at + timedelta(days=retention_days)):
+            continue
+
+        expired += 1
+
+        p = Path(str(r["path"] or ""))
+        try:
+            p_abs = p.resolve()
+        except Exception:
+            continue
+
+        if exports_root not in p_abs.parents and p_abs != exports_root:
+            # refuse to delete outside exports dir
+            continue
+
+        if p_abs.exists():
+            try:
+                p_abs.unlink()
+                deleted_files += 1
+            except Exception:
+                continue
+        else:
+            missing_files += 1
+
+        conn.execute("DELETE FROM export_artifacts WHERE id=?", (str(r["id"]),))
+        deleted_rows += 1
+
+    return {
+        "scanned": scanned,
+        "expired": expired,
+        "deleted_files": deleted_files,
+        "missing_files": missing_files,
+        "deleted_rows": deleted_rows,
+    }
+
+
+@app.get("/admin/exports", response_class=HTMLResponse)
+def admin_exports(request: Request, msg: str | None = None):
+    require(request.state.role, "export:cleanup")
+    with db() as conn:
+        artifacts = conn.execute(
+            "SELECT kind, filename, path, workflow_record_id, workflow_version, exported_at, exported_by, retention_days "
+            "FROM export_artifacts ORDER BY exported_at DESC LIMIT 80"
+        ).fetchall()
+    return templates.TemplateResponse(
+        request,
+        "admin/exports.html",
+        {"artifacts": [dict(a) for a in artifacts], "msg": msg},
+    )
+
+
+@app.post("/admin/exports/cleanup")
+def admin_exports_cleanup(request: Request):
+    require(request.state.role, "export:cleanup")
+    actor = request.state.user
+    with db() as conn:
+        stats = _cleanup_export_artifacts(conn)
+        conn.commit()
+        audit(
+            "export_artifacts",
+            "retention",
+            1,
+            "cleanup",
+            actor,
+            note=f"expired={stats['expired']} deleted_rows={stats['deleted_rows']} deleted_files={stats['deleted_files']} missing_files={stats['missing_files']}",
+            conn=conn,
+        )
+
+    msg = (
+        f"scanned={stats['scanned']} expired={stats['expired']} deleted_rows={stats['deleted_rows']} "
+        f"deleted_files={stats['deleted_files']} missing_files={stats['missing_files']}"
+    )
+    return RedirectResponse(url=f"/admin/exports?msg={msg}", status_code=303)
 
 
 @app.get("/review", response_class=HTMLResponse)
