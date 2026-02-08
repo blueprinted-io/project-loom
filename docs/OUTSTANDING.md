@@ -13,6 +13,11 @@ Keep this short and curated.
 ## Future-state (planned)
 
 - Output & Delivery module (renderer + provenance + “no new steps” enforcement) — docs: [Output_and_Delivery_Vision](Output_and_Delivery_Vision.md).
+  - Export artifact retention cleanup is implemented as a repo script + **OS-level systemd timer**.
+    - Script: `lcs_mvp/ops/cleanup_exports.py`
+    - Unit files: `ops/systemd/project-loom-export-cleanup.{service,timer}`
+    - Each environment must install/enable the timer (or schedule the script) to enforce age-out.
+    - Admin-only on-demand run: `POST /admin/exports/cleanup`
 
 - Achievements/gamification engine (event-sourced, auditable, no leaderboards by default) — docs: [Gamification_Achievements_Draft](Gamification_Achievements_Draft.md).
 
