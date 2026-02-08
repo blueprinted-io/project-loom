@@ -4,6 +4,14 @@
 
 **Option A: CSS-only modernization.**
 
+### Governance pulse (status strip)
+
+Current (v1 MVP): global counts for Tasks/Workflows/Assessments, plus a reviewer pending count.
+
+Target (post-v1): make pulse **user-context aware**:
+- **Reviewer** sees only *their* actionable queue (domain-scoped), ideally broken down by entity type.
+- **Admin** sees global operational totals (as today).
+
 - Keep FastAPI + Jinja templates.
 - Modernize the "app shell" look and feel via design tokens + CSS components.
 - Prioritize clarity and speed for authoring/review workflows.
