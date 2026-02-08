@@ -729,8 +729,8 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     demo = [
         ("jhendrix", "reviewer", "password1"),
         ("jjoplin", "author", "password2"),
-        ("wcarlos", "content_publisher", "password5"),
-        ("tpratchett", "assessment_author", "password6"),
+        ("wcarlos", "assessment_author", "password5"),
+        ("publisher", "content_publisher", "password6"),
         ("fmercury", "viewer", "password3"),
         ("bspringsteen", "audit", "password4"),
         ("kcobain", "admin", "admin"),
