@@ -4078,7 +4078,7 @@ def assessments_list(request: Request, status: str | None = None, q: str | None 
             if claim_norm and (str(latest["claim"] or "").strip().lower() != claim_norm):
                 continue
 
-            doms = [str(d).strip().lower() for d in (_json_load(latest.get("domains_json") or "[]") or [])]
+            doms = [str(d).strip().lower() for d in (_json_load(latest["domains_json"] or "[]") or [])]
             if domain_norm and domain_norm not in set(doms):
                 continue
 
