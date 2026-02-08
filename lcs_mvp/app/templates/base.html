@@ -84,7 +84,7 @@
 
           const t = data.tasks || {};
           const w = data.workflows || {};
-          const a = data.assessments || {};
+          const asmt = data.assessments || {};
 
           const tasksEl = document.getElementById('pulse-tasks');
           if(tasksEl) tasksEl.textContent = `Tasks: ${t.draft||0} draft · ${t.submitted||0} submitted · ${t.confirmed||0} confirmed`;
@@ -93,7 +93,7 @@
           if(wfEl) wfEl.textContent = `Workflows: ${w.draft||0} draft · ${w.submitted||0} submitted · ${w.confirmed||0} confirmed`;
 
           const asEl = document.getElementById('pulse-assessments');
-          if(asEl) asEl.textContent = `Assessments: ${a.draft||0} draft · ${a.submitted||0} submitted · ${a.confirmed||0} confirmed`;
+          if(asEl) asEl.textContent = `Assessments: ${asmt.draft||0} draft · ${asmt.submitted||0} submitted · ${asmt.confirmed||0} confirmed`;
 
           const rev = (data.review||{});
           const revEl = document.getElementById('pulse-review');
@@ -102,11 +102,11 @@
             revEl.textContent = `Review: ${rev.pending} pending`;
           }
 
-          const a = (data.audit||{}).last;
+          const lastAudit = (data.audit||{}).last;
           const auditEl = document.getElementById('pulse-audit');
           if(auditEl){
-            if(a && a.at){
-              auditEl.textContent = `Last audit: ${a.action} by ${a.actor} at ${a.at}`;
+            if(lastAudit && lastAudit.at){
+              auditEl.textContent = `Last audit: ${lastAudit.action} by ${lastAudit.actor} at ${lastAudit.at}`;
             } else {
               auditEl.textContent = 'Last audit: none';
             }
