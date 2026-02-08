@@ -136,6 +136,12 @@ def _is_public_path(path: str) -> bool:
 def can(role: Role, action: str) -> bool:
     """Very small RBAC matrix.
 
+    Design rule (important):
+    - Domain entitlements are used to gate *authoring* and *review/confirm* operations.
+    - Domain entitlements must NOT gate read-only viewing/browsing. Any authenticated user
+      may view records across domains.
+    - Delivery/publishing is confirmed-only. Export authorization is role-based, not domain-based.
+
     Actions:
       - task:create, task:revise, task:submit, task:confirm
       - workflow:create, workflow:revise, workflow:submit, workflow:confirm
