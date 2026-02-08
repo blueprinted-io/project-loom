@@ -10,7 +10,7 @@ import hashlib
 import shutil
 from pathlib import Path
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Literal
 
 import httpx
@@ -147,7 +147,7 @@ def can(role: Role, action: str) -> bool:
       - workflow:create, workflow:revise, workflow:submit, workflow:confirm
       - assessment:create, assessment:revise, assessment:submit, assessment:confirm
       - delivery:view, delivery:export
-      - export:cleanup
+      - export:library, export:cleanup
       - import:pdf
       - import:json
       - db:switch
@@ -159,13 +159,19 @@ def can(role: Role, action: str) -> bool:
         return True
 
     if action == "audit:view":
-        return role in ("audit",)
+        return role in ("audit", "admin")
 
     if action == "delivery:view":
         return role in ("viewer", "author", "assessment_author", "content_publisher", "reviewer")
 
     if action == "delivery:export":
         return role in ("content_publisher",)
+
+    if action == "export:library":
+        return role in ("audit", "admin")
+
+    if action == "export:cleanup":
+        return role in ("admin",)
 
     if action.endswith(":force_confirm") or action.endswith(":force_submit"):
         return role in ("admin",)
@@ -1907,19 +1913,67 @@ def _cleanup_export_artifacts(conn: sqlite3.Connection) -> dict[str, int]:
     }
 
 
-@app.get("/admin/exports", response_class=HTMLResponse)
-def admin_exports(request: Request, msg: str | None = None):
-    require(request.state.role, "export:cleanup")
+@app.get("/exports", response_class=HTMLResponse)
+def exports_library(request: Request, workflow: str = "", kind: str = "", by: str = "", msg: str | None = None):
+    require(request.state.role, "export:library")
+
+    wf = (workflow or "").strip()
+    kind = (kind or "").strip().lower()
+    by = (by or "").strip()
+
+    where: list[str] = []
+    params: list[object] = []
+
+    if wf:
+        where.append("workflow_record_id=?")
+        params.append(wf)
+    if kind:
+        where.append("kind=?")
+        params.append(kind)
+    if by:
+        where.append("exported_by=?")
+        params.append(by)
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
     with db() as conn:
         artifacts = conn.execute(
-            "SELECT kind, filename, path, workflow_record_id, workflow_version, exported_at, exported_by, retention_days "
-            "FROM export_artifacts ORDER BY exported_at DESC LIMIT 80"
+            f"SELECT id, kind, filename, path, workflow_record_id, workflow_version, exported_at, exported_by, retention_days "
+            f"FROM export_artifacts {where_sql} ORDER BY exported_at DESC LIMIT 200",
+            params,
         ).fetchall()
+
+    now = datetime.now(timezone.utc)
+    out: list[dict[str, Any]] = []
+    for a in artifacts:
+        d = dict(a)
+        exported_at = _parse_iso_dt(str(d.get("exported_at") or ""))
+        retention_days = int(d.get("retention_days") or 30)
+        if exported_at:
+            expires_at = exported_at + timedelta(days=retention_days)
+            d["expires_at"] = expires_at.replace(microsecond=0).isoformat()
+            d["is_expired"] = now > expires_at
+        else:
+            d["expires_at"] = None
+            d["is_expired"] = False
+        out.append(d)
+
     return templates.TemplateResponse(
         request,
         "admin/exports.html",
-        {"artifacts": [dict(a) for a in artifacts], "msg": msg},
+        {
+            "artifacts": out,
+            "msg": msg,
+            "filters": {"workflow": wf, "kind": kind, "by": by},
+        },
     )
+
+
+@app.get("/admin/exports", response_class=HTMLResponse)
+def admin_exports_redirect(request: Request):
+    # Backward-compatible URL for admins.
+    require(request.state.role, "export:cleanup")
+    return RedirectResponse(url="/exports", status_code=303)
 
 
 @app.post("/admin/exports/cleanup")
@@ -1943,7 +1997,38 @@ def admin_exports_cleanup(request: Request):
         f"scanned={stats['scanned']} expired={stats['expired']} deleted_rows={stats['deleted_rows']} "
         f"deleted_files={stats['deleted_files']} missing_files={stats['missing_files']}"
     )
-    return RedirectResponse(url=f"/admin/exports?msg={msg}", status_code=303)
+    return RedirectResponse(url=f"/exports?msg={msg}", status_code=303)
+
+
+@app.get("/exports/{export_id}/download")
+def export_download(request: Request, export_id: str):
+    require(request.state.role, "export:library")
+    with db() as conn:
+        row = conn.execute(
+            "SELECT filename, path FROM export_artifacts WHERE id=?",
+            (export_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+
+    p = Path(str(row["path"] or ""))
+    try:
+        p_abs = p.resolve()
+        exports_root = Path(EXPORTS_DIR).resolve()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+
+    if exports_root not in p_abs.parents and p_abs != exports_root:
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+
+    if not p_abs.exists():
+        raise HTTPException(status_code=404, detail="Artifact file missing")
+
+    return FileResponse(
+        str(p_abs),
+        filename=str(row["filename"]),
+        media_type="application/octet-stream",
+    )
 
 
 @app.get("/review", response_class=HTMLResponse)

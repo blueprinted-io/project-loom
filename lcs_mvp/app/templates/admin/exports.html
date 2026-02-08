@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Exports</h1>
-<p class="muted">Admin-only. Export artifacts are stored on disk under <code>lcs_mvp/data/exports/</code> and tracked in <code>export_artifacts</code>.</p>
+<h1>Exports library</h1>
+<p class="muted">Admin + audit. Export artifacts are stored on disk under <code>lcs_mvp/data/exports/</code> and tracked in <code>export_artifacts</code>.</p>
 
 {% if msg %}
   <div class="callout" style="border-left:4px solid #14532d">
@@ -11,12 +11,38 @@
 {% endif %}
 
 <div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Filters</h2>
+  <form method="get" action="/exports" class="grid" style="grid-template-columns: 1fr 160px 180px 140px; gap: 12px; align-items:end">
+    <div>
+      <label>Workflow record_id (optional)</label>
+      <input name="workflow" value="{{ filters.workflow }}" placeholder="9a6d36ec-..." />
+    </div>
+    <div>
+      <label>Kind</label>
+      <select name="kind">
+        <option value="" {% if not filters.kind %}selected{% endif %}>(any)</option>
+        <option value="docx" {% if filters.kind=='docx' %}selected{% endif %}>docx</option>
+      </select>
+    </div>
+    <div>
+      <label>Exported by (optional)</label>
+      <input name="by" value="{{ filters.by }}" placeholder="awinehouse" />
+    </div>
+    <div>
+      <button class="btn secondary" type="submit">Apply</button>
+    </div>
+  </form>
+</div>
+
+{% if can(request.state.role, 'export:cleanup') %}
+<div class="card" style="margin-bottom:16px">
   <h2 style="margin-top:0">Retention cleanup</h2>
   <p class="muted">Deletes artifacts whose <code>exported_at + retention_days</code> is in the past. Only files inside the exports directory are deleted.</p>
   <form method="post" action="/admin/exports/cleanup" onsubmit="return confirm('Run export retention cleanup now?')">
     <button class="btn" type="submit">Run cleanup now</button>
   </form>
 </div>
+{% endif %}
 
 <div class="card">
   <h2 style="margin-top:0">Recent artifacts</h2>
@@ -27,8 +53,9 @@
         <th>kind</th>
         <th>workflow</th>
         <th>filename</th>
-        <th>retention_days</th>
+        <th>expires_at</th>
         <th>exported_by</th>
+        <th>download</th>
       </tr>
     </thead>
     <tbody>
@@ -38,8 +65,12 @@
         <td><span class="badge">{{ a.kind }}</span></td>
         <td class="muted"><code>{{ a.workflow_record_id }}</code> v{{ a.workflow_version }}</td>
         <td><code>{{ a.filename }}</code></td>
-        <td class="muted">{{ a.retention_days }}</td>
+        <td class="muted">
+          {% if a.expires_at %}{{ a.expires_at }}{% else %}—{% endif %}
+          {% if a.is_expired %}<span class="badge badge-warn" style="margin-left:6px">expired</span>{% endif %}
+        </td>
         <td class="muted">{{ a.exported_by }}</td>
+        <td><a class="btn secondary" href="/exports/{{ a.id }}/download">Download</a></td>
       </tr>
       {% endfor %}
     </tbody>

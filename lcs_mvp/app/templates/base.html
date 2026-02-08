@@ -134,10 +134,15 @@
         {% endif %}
       </div>
 
-      {% if can(request.state.role, 'audit:view') %}
+      {% if can(request.state.role, 'audit:view') or can(request.state.role, 'export:library') %}
       <div class="sidebar-section">
         <div class="sidebar-title">Assurance</div>
-        <a class="navlink" href="/audit">Audit Log</a>
+        {% if can(request.state.role, 'audit:view') %}
+          <a class="navlink" href="/audit">Audit Log</a>
+        {% endif %}
+        {% if can(request.state.role, 'export:library') %}
+          <a class="navlink" href="/exports">Exports library</a>
+        {% endif %}
       </div>
       {% endif %}
 
@@ -158,7 +163,6 @@
         <div class="sidebar-title">Admin</div>
         <a class="navlink" href="/admin/users">Users</a>
         <a class="navlink" href="/admin/domains">Domains</a>
-        <a class="navlink" href="/admin/exports">Exports</a>
         <a class="navlink" href="/db">Switch database</a>
       </div>
       {% endif %}
