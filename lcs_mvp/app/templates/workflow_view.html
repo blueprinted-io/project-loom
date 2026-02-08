@@ -18,6 +18,12 @@
 
     <a class="btn" href="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/export.md">Export Markdown</a>
 
+    {% if workflow.status == 'confirmed' and readiness == 'ready' %}
+      <a class="btn" href="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/export.docx">Export DOCX</a>
+    {% else %}
+      <span class="muted">DOCX export requires confirmed workflow + confirmed tasks.</span>
+    {% endif %}
+
     {% if can(request.state.role, 'assessment:create') %}
       <a class="btn secondary" href="/assessments/new?ref_type=workflow&ref_record_id={{ workflow.record_id }}&ref_version={{ workflow.version }}">New assessment</a>
     {% endif %}
