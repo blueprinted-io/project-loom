@@ -56,23 +56,35 @@
     {% for d in task.dependencies %}<li>{{ d }}</li>{% endfor %}
   </ul>
 
-  <h3>Steps</h3>
-  <ol>
-    {% for st in task.steps %}
-      <li>
-        <div>{{ st.text }}</div>
-        {% if st.actions %}
-          <div class="muted" style="margin-top:6px">Actions (optional):</div>
-          <ul>
-            {% for a in st.actions %}<li class="muted">{{ a }}</li>{% endfor %}
-          </ul>
-        {% endif %}
-        {% if st.completion %}
-          <div class="muted">Completion: {{ st.completion }}</div>
-        {% endif %}
-      </li>
-    {% endfor %}
-  </ol>
+  <h3>Procedure</h3>
+  <table class="table">
+    <thead>
+      <tr>
+        <th style="width:40%">Step</th>
+        <th style="width:30%">Actions</th>
+        <th style="width:30%">Completion</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for st in task.steps %}
+        <tr>
+          <td>{{ st.text }}</td>
+          <td>
+            {% if st.actions %}
+              <ul style="margin:0;padding-left:18px">
+                {% for a in st.actions %}<li class="muted">{{ a }}</li>{% endfor %}
+              </ul>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if st.completion %}{{ st.completion }}{% else %}<span class="muted">—</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   {% if request.state.role == 'admin' %}
     <details class="card" style="margin-top:14px">
       <summary><b>Record metadata</b> <span class="muted">(admin only)</span></summary>
