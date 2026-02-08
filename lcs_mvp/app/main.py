@@ -730,7 +730,7 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
         ("jhendrix", "reviewer", "password1"),
         ("jjoplin", "author", "password2"),
         ("wcarlos", "assessment_author", "password5"),
-        ("publisher", "content_publisher", "password6"),
+        ("awinehouse", "content_publisher", "password6"),
         ("fmercury", "viewer", "password3"),
         ("bspringsteen", "audit", "password4"),
         ("kcobain", "admin", "admin"),
@@ -748,6 +748,7 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     _rename("dspringsteen", "bspringsteen")
     _rename("admin", "kcobain")
     _rename("mcarey", "wcarlos")
+    _rename("publisher", "awinehouse")
 
     # NOTE: we intentionally do NOT auto-migrate roles.
     # assessment_author and content_publisher are separate roles.
