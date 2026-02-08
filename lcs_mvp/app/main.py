@@ -4074,7 +4074,8 @@ def assessments_list(request: Request, status: str | None = None, q: str | None 
                 continue
             if q_norm and q_norm not in (latest["stem"] or "").lower():
                 continue
-            if claim_norm and (str(latest.get("claim") or "").strip().lower() != claim_norm):
+            # sqlite3.Row doesn't implement .get
+            if claim_norm and (str(latest["claim"] or "").strip().lower() != claim_norm):
                 continue
 
             doms = [str(d).strip().lower() for d in (_json_load(latest.get("domains_json") or "[]") or [])]
@@ -4087,9 +4088,9 @@ def assessments_list(request: Request, status: str | None = None, q: str | None 
                     "latest_version": latest_v,
                     "stem": latest["stem"],
                     "status": latest["status"],
-                    "claim": latest.get("claim") or "fact_probe",
+                    "claim": (latest["claim"] or "auto"),
                     "domains": doms,
-                    "needs_review_flag": bool(latest.get("needs_review_flag")),
+                    "needs_review_flag": bool(latest["needs_review_flag"]),
                 }
             )
 
