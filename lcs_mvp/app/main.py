@@ -130,7 +130,7 @@ ROLE_ORDER: dict[Role, int] = {
 
 
 def _is_public_path(path: str) -> bool:
-    return path.startswith("/static/") or path in ("/login", "/logout")
+    return path.startswith("/static/") or path in ("/login", "/logout", "/db/pick")
 
 
 def can(role: Role, action: str) -> bool:
@@ -1365,7 +1365,12 @@ def login_form(request: Request):
             "SELECT username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
         ).fetchall()
 
-    return templates.TemplateResponse(request, "login.html", {"users": [dict(u) for u in users]})
+    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + _list_custom_db_keys()]
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {"users": [dict(u) for u in users], "profiles": profiles, "db_key": request.state.db_key},
+    )
 
 
 @app.post("/login")
@@ -1409,6 +1414,21 @@ def logout(request: Request):
 
     resp = RedirectResponse(url="/login", status_code=303)
     resp.delete_cookie(SESSION_COOKIE)
+    return resp
+
+
+@app.post("/db/pick")
+def db_pick(request: Request, db_key: str = Form(DB_KEY_DEMO)):
+    """Unauthenticated DB profile picker for demo convenience.
+
+    This is intentionally only a cookie setter; it does not create profiles.
+    """
+    key = (db_key or DB_KEY_DEMO).strip().lower()
+    if key not in _available_db_keys():
+        raise HTTPException(status_code=400, detail="Invalid db_key")
+
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
     return resp
 
 

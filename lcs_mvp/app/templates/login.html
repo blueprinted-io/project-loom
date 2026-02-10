@@ -20,8 +20,25 @@
     </div>
 
     <div class="card" style="margin-bottom:16px">
-      <h1 style="margin-top:0">Login</h1>
-      <p class="muted">Pick a demo user below and log in. Passwords are shown for convenience in this MVP demo.</p>
+      <div class="row" style="align-items:flex-start">
+        <div>
+          <h1 style="margin-top:0">Login</h1>
+          <p class="muted">Pick a demo user below and log in. Passwords are shown for convenience in this MVP demo.</p>
+        </div>
+        <div class="row-right">
+          <form method="post" action="/db/pick" style="display:flex; gap:8px; align-items:end">
+            <div>
+              <label style="margin-top:0">Database</label>
+              <select name="db_key">
+                {% for p in profiles %}
+                  <option value="{{ p.key }}" {% if db_key==p.key %}selected{% endif %}>{{ p.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button class="btn secondary" type="submit">Switch</button>
+          </form>
+        </div>
+      </div>
 
       <table class="table">
         <thead>
