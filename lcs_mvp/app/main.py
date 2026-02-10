@@ -730,6 +730,14 @@ def init_db_path(db_path: str) -> None:
         if not _column_exists(conn, "tasks", "domain"):
             conn.execute("ALTER TABLE tasks ADD COLUMN domain TEXT NOT NULL DEFAULT ''")
 
+        # User profile fields (demo-friendly; optional)
+        if not _column_exists(conn, "users", "display_name"):
+            conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
+        if not _column_exists(conn, "users", "bio"):
+            conn.execute("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''")
+        if not _column_exists(conn, "users", "avatar_path"):
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''")
+
         # Backfill derived workflow domains when the column is introduced.
         _backfill_workflow_domains(conn)
 
@@ -1438,6 +1446,141 @@ def db_pick(request: Request, db_key: str = Form(DB_KEY_DEMO)):
     resp = RedirectResponse(url="/login", status_code=303)
     resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
     return resp
+
+
+@app.get("/profile", response_class=HTMLResponse)
+def profile_view(request: Request, msg: str | None = None):
+    actor = request.state.user
+    with db() as conn:
+        u = conn.execute(
+            "SELECT username, COALESCE(display_name,'') AS display_name, COALESCE(bio,'') AS bio, COALESCE(avatar_path,'') AS avatar_path FROM users WHERE username=? AND disabled_at IS NULL",
+            (actor,),
+        ).fetchone()
+        if not u:
+            raise HTTPException(404)
+
+        domains = _active_domains(conn)
+        uid = _user_id(conn, actor)
+        selected_rows = conn.execute("SELECT domain FROM user_domains WHERE user_id=?", (uid,)).fetchall() if uid else []
+        selected = {str(r["domain"]) for r in selected_rows}
+
+    return templates.TemplateResponse(
+        request,
+        "profile.html",
+        {"user": dict(u), "domains": domains, "selected": selected, "msg": msg},
+    )
+
+
+@app.get("/profile/avatar")
+def profile_avatar(request: Request):
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute("SELECT COALESCE(avatar_path,'') AS avatar_path FROM users WHERE username=? AND disabled_at IS NULL", (actor,)).fetchone()
+        if not row:
+            raise HTTPException(404)
+        p = str(row["avatar_path"] or "").strip()
+
+    if not p:
+        raise HTTPException(status_code=404, detail="No avatar")
+
+    base = Path(UPLOADS_DIR).resolve()
+    f = Path(p)
+    try:
+        f_abs = f.resolve()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid avatar path")
+
+    if base not in f_abs.parents:
+        raise HTTPException(status_code=400, detail="Invalid avatar path")
+    if not f_abs.exists():
+        raise HTTPException(status_code=404, detail="Avatar missing")
+
+    # best-effort mime
+    mt = "application/octet-stream"
+    low = f_abs.name.lower()
+    if low.endswith(".png"):
+        mt = "image/png"
+    elif low.endswith(".jpg") or low.endswith(".jpeg"):
+        mt = "image/jpeg"
+    elif low.endswith(".webp"):
+        mt = "image/webp"
+
+    return FileResponse(str(f_abs), media_type=mt)
+
+
+@app.post("/profile/save")
+def profile_save(
+    request: Request,
+    display_name: str = Form(""),
+    bio: str = Form(""),
+    avatar: UploadFile | None = File(None),
+):
+    actor = request.state.user
+    dn = (display_name or "").strip()
+    b = (bio or "").strip()
+
+    avatar_path = None
+    if avatar is not None and avatar.filename:
+        # Accept small set of image types
+        ct = (avatar.content_type or "").lower()
+        if ct not in ("image/png", "image/jpeg", "image/webp"):
+            raise HTTPException(status_code=400, detail="Avatar must be PNG, JPG, or WebP")
+
+        ext = ".png" if ct == "image/png" else (".webp" if ct == "image/webp" else ".jpg")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        safe_user = re.sub(r"[^a-zA-Z0-9_-]+", "_", actor)[:48]
+        out_dir = Path(UPLOADS_DIR) / "avatars"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = (out_dir / f"avatar__{safe_user}__{ts}{ext}").resolve()
+
+        data = avatar.file.read()
+        if len(data) > 2_000_000:
+            raise HTTPException(status_code=400, detail="Avatar too large (max 2MB)")
+        out_path.write_bytes(data)
+        avatar_path = str(out_path)
+
+    with db() as conn:
+        if avatar_path is None:
+            conn.execute(
+                "UPDATE users SET display_name=?, bio=? WHERE username=? AND disabled_at IS NULL",
+                (dn, b, actor),
+            )
+        else:
+            conn.execute(
+                "UPDATE users SET display_name=?, bio=?, avatar_path=? WHERE username=? AND disabled_at IS NULL",
+                (dn, b, avatar_path, actor),
+            )
+        audit("user", actor, 1, "profile_update", actor, note="profile fields updated", conn=conn)
+
+    return RedirectResponse(url="/profile?msg=saved", status_code=303)
+
+
+@app.post("/profile/domains/save")
+def profile_domains_save(request: Request, domain: list[str] = Form([])):
+    actor = request.state.user
+    selected = sorted({(d or "").strip().lower() for d in (domain or []) if (d or "").strip()})
+
+    with db() as conn:
+        allowed = set(_active_domains(conn))
+        for d in selected:
+            if d not in allowed:
+                raise HTTPException(status_code=400, detail=f"Invalid domain '{d}'")
+
+        uid = _user_id(conn, actor)
+        if uid is None:
+            raise HTTPException(404)
+
+        conn.execute("DELETE FROM user_domains WHERE user_id=?", (uid,))
+        now = utc_now_iso()
+        for d in selected:
+            conn.execute(
+                "INSERT INTO user_domains(user_id, domain, created_at, created_by) VALUES (?,?,?,?)",
+                (uid, d, now, actor),
+            )
+
+        audit("user", actor, 1, "self_set_domains", actor, note=",".join(selected), conn=conn)
+
+    return RedirectResponse(url="/profile?msg=domains_saved", status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)

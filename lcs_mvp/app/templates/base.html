@@ -16,7 +16,12 @@
       </div>
       <div class="topbar-right">
         <div class="userchip">
-          <div><span class="userchip-label">User</span> <b>{{ request.state.user }}</b> <span class="muted">·</span> <span class="role">{{ request.state.role }}</span></div>
+          <div>
+            <span class="userchip-label">User</span>
+            <b><a href="/profile" style="color:inherit; text-decoration:none">{{ request.state.user }}</a></b>
+            <span class="muted">·</span>
+            <span class="role">{{ request.state.role }}</span>
+          </div>
         </div>
         <button class="btn secondary" type="button" id="theme-toggle" title="Theme">Theme</button>
         <form method="post" action="/logout" style="display:inline">
