@@ -487,6 +487,20 @@ def main() -> None:
             tags=["cleaning"],
         ), "confirmed"),
         (task(
+            "Wipe bathroom sink surface",
+            "Bathroom sink area is wiped and visibly clean.",
+            "Wipe surface",[
+                step("Clear items from the sink and counter.", "Sink area is clear.", actions=["Move items"], notes="Set items aside in a single group to simplify reset."),
+                step("Wipe sink and surrounding surfaces with appropriate cleaner.", "Sink area wiped evenly.", actions=["Spray cleaner", "Wipe"], notes="Follow product safety guidance; do not mix chemicals."),
+                step("Return items and dispose of used wipes/cloths.", "Items returned; waste disposed.", actions=["Return", "Dispose"]),
+            ],
+            deps=["Cloth/paper towel", "Cleaner"],
+            facts=["Some cleaners require dwell time to disinfect; follow label if needed."],
+            concepts=["Clear → clean → reset keeps work repeatable."],
+            domain="cleaning",
+            tags=["cleaning"],
+        ), "confirmed"),
+        (task(
             "Dust surfaces (room)",
             "Visible dust is removed from common surfaces.",
             "Dust room",[
@@ -586,6 +600,106 @@ def main() -> None:
             domain="laundry",
             tags=["laundry"],
         ), "confirmed"),
+
+        # Additional household SOP tasks (expand corpus)
+        (task(
+            "Sweep hard floor",
+            "Loose debris is removed from hard floors.",
+            "Sweep floor",[
+                step("Clear small items from the floor.", "Floor is clear of obstacles.", actions=["Pick up items"]),
+                step("Sweep debris into a pile and collect.", "Debris collected and disposed.", actions=["Sweep", "Use dustpan"], notes="Sweep corners/edges where debris accumulates."),
+                step("Return items and store broom/dustpan.", "Tools stored and area reset.", actions=["Store tools"]),
+            ],
+            deps=["Broom", "Dustpan"],
+            facts=["Sweeping reduces the amount of debris that becomes airborne later."],
+            concepts=["Edges-first reduces rework."],
+            domain="cleaning",
+            tags=["cleaning"],
+        ), "confirmed"),
+        (task(
+            "Clean bathroom mirror",
+            "Mirror is clean and streak-free.",
+            "Clean mirror",[
+                step("Spray cleaner onto cloth (not directly onto mirror edges).", "Cleaner applied to cloth.", actions=["Spray cloth"], notes="Avoid overspray into seams to reduce damage risk."),
+                step("Wipe mirror using overlapping strokes.", "Mirror wiped evenly.", actions=["Wipe"]),
+                step("Inspect for streaks and touch up.", "Mirror is streak-free.", actions=["Inspect", "Touch up"]),
+            ],
+            deps=["Glass cleaner", "Microfiber cloth"],
+            facts=["Microfiber reduces lint and streaking."],
+            concepts=["Inspect step confirms completion."],
+            domain="cleaning",
+            tags=["cleaning"],
+        ), "confirmed"),
+        (task(
+            "Clean toilet (standard)",
+            "Toilet is cleaned and the area is sanitized.",
+            "Clean toilet",[
+                step("Put on gloves and ensure ventilation.", "Gloves on; ventilation set.", actions=["Gloves", "Open window/fan"], notes="Do not mix cleaning chemicals."),
+                step("Apply toilet cleaner and scrub bowl.", "Bowl scrubbed; cleaner applied.", actions=["Apply", "Scrub"], notes="Follow product dwell time guidance if required."),
+                step("Wipe exterior touch points.", "Exterior wiped; area reset.", actions=["Wipe seat/handle"], notes="Dispose of wipes/cloths appropriately."),
+            ],
+            deps=["Toilet cleaner", "Brush", "Gloves"],
+            facts=["Some disinfectants require dwell time to be effective."],
+            concepts=["Containment: clean from less soiled to more soiled areas."],
+            domain="cleaning",
+            tags=["cleaning"],
+        ), "submitted"),
+        (task(
+            "Change bed sheets",
+            "Bed has clean sheets fitted correctly.",
+            "Change sheets",[
+                step("Remove used sheets and place into laundry.", "Used sheets removed.", actions=["Remove", "Laundry basket"]),
+                step("Fit clean sheet(s) and align corners.", "Clean sheets fitted.", actions=["Fit", "Align"]),
+                step("Make bed and store spare bedding.", "Bed made; spares stored.", actions=["Make bed", "Store"]),
+            ],
+            deps=["Clean sheets", "Laundry basket"],
+            facts=["Regular sheet changes reduce odor and allergens."],
+            concepts=["Reset tasks reduce future friction."],
+            domain="household",
+            tags=["routine"],
+        ), "confirmed"),
+        (task(
+            "Prepare sandwich (simple)",
+            "A simple sandwich is prepared and served.",
+            "Prepare sandwich",[
+                step("Wash hands and clear prep area.", "Hands clean; area clear.", actions=["Wash hands", "Clear counter"]),
+                step("Assemble sandwich to specification.", "Sandwich assembled.", actions=["Bread", "Filling", "Close"], notes="Keep allergen separation if applicable."),
+                step("Clean prep area and store ingredients.", "Area wiped; ingredients stored.", actions=["Wipe counter", "Refrigerate"]),
+            ],
+            deps=["Ingredients", "Knife", "Plate"],
+            facts=["Cross-contamination risk is reduced by cleaning surfaces and tools."],
+            concepts=["Prep → assemble → reset is repeatable."],
+            domain="kitchen",
+            tags=["meal"],
+        ), "confirmed"),
+        (task(
+            "Store leftovers safely",
+            "Leftovers are stored in appropriate containers and refrigerated.",
+            "Store leftovers",[
+                step("Allow hot food to cool briefly before sealing.", "Food not steaming heavily when sealed.", actions=["Cool briefly"], notes="Do not leave food out for extended periods; follow local food safety guidance."),
+                step("Place leftovers into labeled containers.", "Containers filled and labeled.", actions=["Container", "Label"]),
+                step("Refrigerate promptly.", "Containers placed in refrigerator.", actions=["Refrigerate"]),
+            ],
+            deps=["Containers", "Labels"],
+            facts=["Labeling reduces waste and prevents confusion."],
+            concepts=["Standardization improves compliance."],
+            domain="kitchen",
+            tags=["meal"],
+        ), "confirmed"),
+        (task(
+            "Check smoke alarm (monthly)",
+            "Smoke alarm is tested and confirmed operational.",
+            "Test smoke alarm",[
+                step("Notify occupants the alarm will be tested.", "People are aware of test.", actions=["Notify"]),
+                step("Press test button and confirm audible alarm.", "Alarm sounds during test.", actions=["Press test"], notes="If it fails, replace battery and retest."),
+                step("Record the check date.", "Check date recorded.", actions=["Record"]),
+            ],
+            deps=["Smoke alarm"],
+            facts=["Regular testing detects dead batteries or failed units."],
+            concepts=["Safety checks are periodic controls."],
+            domain="household",
+            tags=["safety"],
+        ), "returned"),
 
     ]
 
@@ -768,6 +882,38 @@ def main() -> None:
             "Mop hard floors and allow to dry.",
             [inserted["Mop hard floor"]],
             "draft",
+        ),
+
+        # Additional workflows (expand corpus)
+        (
+            "Bathroom deep clean (submitted)",
+            "Clean mirror and toilet and reset bathroom surfaces.",
+            [inserted["Clean bathroom mirror"], inserted["Clean toilet (standard)"], inserted["Wipe bathroom sink surface"]],
+            "submitted",
+        ),
+        (
+            "Meal prep + reset (sandwich)",
+            "Prepare a simple meal and reset the kitchen.",
+            [inserted["Prepare sandwich (simple)"], inserted["Store leftovers safely"], inserted["Wipe kitchen counter surface"]],
+            "confirmed",
+        ),
+        (
+            "Bedroom refresh (sheets)",
+            "Change sheets and make the bed.",
+            [inserted["Change bed sheets"], inserted["Make the bed"]],
+            "confirmed",
+        ),
+        (
+            "Hard floor quick clean",
+            "Sweep then mop hard floors.",
+            [inserted["Sweep hard floor"], inserted["Mop hard floor"]],
+            "draft",
+        ),
+        (
+            "Monthly safety check (submitted)",
+            "Run a basic household safety check.",
+            [inserted["Check smoke alarm (monthly)"]],
+            "submitted",
         ),
     ]
 
