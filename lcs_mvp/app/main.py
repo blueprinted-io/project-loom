@@ -1365,11 +1365,19 @@ def login_form(request: Request):
             "SELECT username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
         ).fetchall()
 
-    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + _list_custom_db_keys()]
+    custom = _list_custom_db_keys()
+    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + custom]
+    diag = {
+        "host": os.uname().nodename,
+        "db_key": request.state.db_key,
+        "db_path": request.state.db_path,
+        "custom_keys": custom,
+        "data_dir": DATA_DIR,
+    }
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"users": [dict(u) for u in users], "profiles": profiles, "db_key": request.state.db_key},
+        {"users": [dict(u) for u in users], "profiles": profiles, "db_key": request.state.db_key, "diag": diag},
     )
 
 
