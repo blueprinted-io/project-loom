@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Login · blueprinted.io</title>
-  <link rel="stylesheet" href="/static/style.css?v=7" />
+  <link rel="stylesheet" href="/static/style.css?v=21" />
 </head>
 <body>
   <div class="wrap" style="padding: 24px 0">
@@ -29,6 +29,7 @@
             <th>username</th>
             <th>role</th>
             <th>password</th>
+            <th style="width:140px">quick login</th>
           </tr>
         </thead>
         <tbody>
@@ -37,13 +38,21 @@
             <td><code>{{ u.username }}</code></td>
             <td><span class="badge">{{ u.role }}</span></td>
             <td><code>{{ u.demo_password }}</code></td>
+            <td>
+              <button
+                class="btn secondary js-quick-login"
+                type="button"
+                data-username="{{ u.username }}"
+                data-password="{{ u.demo_password }}"
+              >Login</button>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
 
-    <form method="post" action="/login" class="card">
+    <form method="post" action="/login" class="card" id="login-form">
       <label>Username</label>
       <input name="username" placeholder="jhendrix" required />
 
@@ -84,7 +93,26 @@
         }
       }
 
+      function initQuickLogin(){
+        const form = document.getElementById('login-form');
+        if(!form) return;
+        const userEl = form.querySelector('input[name=username]');
+        const passEl = form.querySelector('input[name=password]');
+        if(!userEl || !passEl) return;
+
+        document.querySelectorAll('.js-quick-login').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const u = btn.getAttribute('data-username') || '';
+            const p = btn.getAttribute('data-password') || '';
+            userEl.value = u;
+            passEl.value = p;
+            form.requestSubmit();
+          });
+        });
+      }
+
       initTheme();
+      initQuickLogin();
     })();
   </script>
 </body>
