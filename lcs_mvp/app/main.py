@@ -745,7 +745,7 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
         ("wcarlos", "assessment_author", "password5"),
         ("awinehouse", "content_publisher", "password6"),
         ("fmercury", "viewer", "password3"),
-        ("bspringsteen", "audit", "password4"),
+        ("rjohnson", "audit", "password4"),
         ("kcobain", "admin", "admin"),
     ]
 
@@ -759,6 +759,7 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
 
     _rename("mcury", "fmercury")
     _rename("dspringsteen", "bspringsteen")
+    _rename("bspringsteen", "rjohnson")
     _rename("admin", "kcobain")
     _rename("mcarey", "wcarlos")
     _rename("publisher", "awinehouse")
