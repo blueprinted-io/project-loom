@@ -20,6 +20,10 @@ Learning is still built like waterfall software: big launches, slow review cycle
 
 (Full article: [docs/LearningOps.md](docs/LearningOps.md))
 
+## Live Demo
+
+https://blueprinted-io-mvp.blueprinted.io/login
+
 ## Quickstart (Run Locally)
 
 The runnable MVP lives in `lcs_mvp/`.
