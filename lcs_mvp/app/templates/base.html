@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "LCS MVP" }}</title>
-  <link rel="stylesheet" href="/static/style.css?v=20" />
+  <link rel="stylesheet" href="/static/style.css?v=24" />
 </head>
 <body>
   <header class="topbar">
@@ -130,12 +130,12 @@
     <aside class="sidebar">
       <div class="sidebar-section">
         <div class="sidebar-title">Records</div>
-        <a class="navlink" href="/tasks">Tasks</a>
-        <a class="navlink" href="/workflows">Workflows</a>
-        <a class="navlink" href="/assessments">Assessments</a>
-        <a class="navlink" href="/delivery">Delivery</a>
+        <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
+        <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
+        <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+        <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Delivery</a>
         {% if request.state.role in ['reviewer','admin'] %}
-          <a class="navlink" href="/review">Review queue</a>
+          <a class="navlink {% if request.url.path.startswith('/review') %}active{% endif %}" href="/review">Review queue</a>
         {% endif %}
       </div>
 
@@ -143,10 +143,10 @@
       <div class="sidebar-section">
         <div class="sidebar-title">Assurance</div>
         {% if can(request.state.role, 'audit:view') %}
-          <a class="navlink" href="/audit">Audit Log</a>
+          <a class="navlink {% if request.url.path.startswith('/audit') %}active{% endif %}" href="/audit">Audit Log</a>
         {% endif %}
         {% if can(request.state.role, 'export:library') %}
-          <a class="navlink" href="/exports">Exports library</a>
+          <a class="navlink {% if request.url.path.startswith('/exports') %}active{% endif %}" href="/exports">Exports library</a>
         {% endif %}
       </div>
       {% endif %}
@@ -155,10 +155,10 @@
       <div class="sidebar-section">
         <div class="sidebar-title">Ingestion</div>
         {% if can(request.state.role, 'import:pdf') %}
-          <a class="navlink" href="/import/pdf">Import PDF</a>
+          <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
         {% endif %}
         {% if can(request.state.role, 'import:json') %}
-          <a class="navlink" href="/import/json">Import JSON</a>
+          <a class="navlink {% if request.url.path.startswith('/import/json') %}active{% endif %}" href="/import/json">Import JSON</a>
         {% endif %}
       </div>
       {% endif %}
@@ -166,15 +166,15 @@
       {% if request.state.role == 'admin' %}
       <div class="sidebar-section">
         <div class="sidebar-title">Admin</div>
-        <a class="navlink" href="/admin/users">Users</a>
-        <a class="navlink" href="/admin/domains">Domains</a>
-        <a class="navlink" href="/db">Switch database</a>
+        <a class="navlink {% if request.url.path.startswith('/admin/users') %}active{% endif %}" href="/admin/users">Users</a>
+        <a class="navlink {% if request.url.path.startswith('/admin/domains') %}active{% endif %}" href="/admin/domains">Domains</a>
+        <a class="navlink {% if request.url.path.startswith('/db') %}active{% endif %}" href="/db">Switch database</a>
       </div>
       {% endif %}
 
       <div class="sidebar-section">
         <div class="sidebar-title">Help</div>
-        <a class="navlink" href="/explainer">Explainer</a>
+        <a class="navlink {% if request.url.path.startswith('/explainer') %}active{% endif %}" href="/explainer">Explainer</a>
       </div>
 
       <div class="sidebar-foot muted">

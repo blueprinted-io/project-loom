@@ -1,61 +1,67 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
+<div class="page-header">
   <div>
     <h1>Records</h1>
-    <p class="muted">Draft, submit, confirm. Everything is versioned and auditable.</p>
+    <p class="muted">Draft, submit, confirm. Every change is versioned and auditable.</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/tasks?status=confirmed">Browse confirmed</a>
+    {% if request.state.role == 'author' %}
+      <a class="btn" href="/tasks/new">New Task</a>
+    {% endif %}
   </div>
 </div>
 
 <div class="grid">
   {% if request.state.role in ['viewer','author','reviewer'] %}
-  <div class="card">
+  <section class="card stack-sm">
     <h2>Start here</h2>
     {% if request.state.role == 'author' %}
-      <p class="muted"><b>Your objective:</b> produce draft Tasks with strong completion checks, then submit within your entitled domains.</p>
-      <div class="muted" style="margin-top:10px">Suggested first actions:</div>
-      <ul>
-        <li><a href="/tasks?status=draft">Review your draft Tasks</a></li>
+      <p class="muted"><b>Goal:</b> produce strong draft Tasks and submit inside entitled domains.</p>
+      <div class="section-header muted">Suggested actions</div>
+      <ul class="link-list">
+        <li><a href="/tasks?status=draft">Review draft Tasks</a></li>
         <li><a href="/tasks/new">Create a new Task</a></li>
         <li><a href="/import/pdf">Import source material (PDF → draft)</a></li>
       </ul>
     {% elif request.state.role == 'reviewer' %}
-      <p class="muted"><b>Your objective:</b> reduce submitted backlog and confirm only what is verifiably complete.</p>
-      <div class="muted" style="margin-top:10px">Suggested first actions:</div>
-      <ul>
+      <p class="muted"><b>Goal:</b> reduce submitted backlog and confirm only verifiable records.</p>
+      <div class="section-header muted">Suggested actions</div>
+      <ul class="link-list">
         <li><a href="/review">Open review queue</a></li>
-        <li><a href="/tasks?status=submitted">Browse all submitted Tasks</a></li>
+        <li><a href="/tasks?status=submitted">Browse submitted Tasks</a></li>
         <li><a href="/workflows?status=submitted">Browse submitted Workflows</a></li>
       </ul>
     {% else %}
       <p class="muted">Read-only access. Browse confirmed content.</p>
-      <div class="muted" style="margin-top:10px">Start here:</div>
-      <ul>
+      <div class="section-header muted">Start here</div>
+      <ul class="link-list">
         <li><a href="/tasks?status=confirmed">Browse confirmed Tasks</a></li>
         <li><a href="/workflows?status=confirmed">Browse confirmed Workflows</a></li>
       </ul>
     {% endif %}
-  </div>
+  </section>
   {% endif %}
 
-  <div class="card">
+  <section class="card stack-sm">
     <h2>Tasks</h2>
     <p class="muted">Atomic, verifiable outcomes with governed procedure steps.</p>
     <p><a class="btn" href="/tasks">Open Tasks</a></p>
-  </div>
+  </section>
 
-  <div class="card">
+  <section class="card stack-sm">
     <h2>Workflows</h2>
-    <p class="muted">Ordered compositions of Tasks that roll up to one objective.</p>
+    <p class="muted">Ordered compositions of Tasks that roll up to a single objective.</p>
     <p><a class="btn" href="/workflows">Open Workflows</a></p>
-  </div>
+  </section>
 
   {% if can(request.state.role, 'audit:view') %}
-  <div class="card">
+  <section class="card stack-sm">
     <h2>Audit</h2>
-    <p class="muted">Change traceability across records and versions.</p>
+    <p class="muted">Traceability across records, versions, and governance actions.</p>
     <p><a class="btn" href="/audit">Open Audit Log</a></p>
-  </div>
+  </section>
   {% endif %}
 </div>
 {% endblock %}

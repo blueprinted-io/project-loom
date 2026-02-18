@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
-  <div style="flex:1">
-    <h1>Assessment v{{ item.version }}</h1>
-    <div class="callout warn" style="margin-top:10px">
-      <b>Under construction</b>
-      <div class="muted" style="margin-top:6px">Assessment workflows are in active development. Behavior and UI may change.</div>
-    </div>
-    <div class="muted"><code>{{ item.record_id }}</code></div>
+<div class="page-header">
+  <div>
+    <h1>Assessment</h1>
+    <p class="muted">Version <code>{{ item.version }}</code> · Record <code>{{ item.record_id }}</code></p>
   </div>
-  {% if can(request.state.role, 'assessment:revise') %}
-    <div>
+  <div class="row-right">
+    <span class="badge badge-{{ item.status }}">{{ item.status }}</span>
+    {% if can(request.state.role, 'assessment:revise') %}
       <a class="btn secondary" href="/assessments/{{ item.record_id }}/{{ item.version }}/edit">Revise</a>
-    </div>
-  {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="callout warn">
+  <b>Under construction</b>
+  <div class="muted" style="margin-top:6px">Assessment workflows are in active development. Behavior and UI may change.</div>
 </div>
 
 {% if return_note %}
@@ -24,9 +26,9 @@
   </div>
 {% endif %}
 
-<div class="card">
+<div class="card stack-sm">
   <div class="row" style="align-items:flex-start">
-    <div style="flex:1">
+    <div style="flex:1;min-width:0">
       <div class="muted">Claim: <code>{{ item.claim }}</code></div>
       <h2 style="margin-top:6px">{{ item.stem }}</h2>
       {% if item.rationale %}
@@ -47,7 +49,7 @@
 
       {% if item.refs %}
         <div style="margin-top:12px">
-          <div class="muted"><b>Attached refs</b></div>
+          <div class="section-header muted"><b>Attached refs</b></div>
           <ul>
             {% for r in item.refs %}
               <li><code>{{ r.ref_type }}</code> {{ r.ref_record_id }} v{{ r.ref_version }}</li>
@@ -58,7 +60,7 @@
 
       {% if item.lint %}
         <div style="margin-top:12px">
-          <div class="muted"><b>Lint</b></div>
+          <div class="section-header muted"><b>Lint</b></div>
           <ul>
             {% for f in item.lint %}
               <li><code>{{ f.level }}</code> <span class="muted">{{ f.code }}</span> — {{ f.msg }}</li>
@@ -68,21 +70,22 @@
       {% endif %}
     </div>
 
-    <div style="min-width:220px">
-      <div>Status: <span class="badge badge-{{ item.status }}">{{ item.status }}</span></div>
+    <aside class="card" style="min-width:220px;margin:0;padding:14px">
+      <div class="section-header">Status</div>
+      <div><span class="badge badge-{{ item.status }}">{{ item.status }}</span></div>
       {% if item.domains %}
-        <div class="muted" style="margin-top:8px">Domains:</div>
+        <div class="section-header" style="margin-top:10px">Domains</div>
         <div>
           {% for d in item.domains %}
             <span class="badge">{{ d }}</span>
           {% endfor %}
         </div>
       {% endif %}
-    </div>
+    </aside>
   </div>
 </div>
 
-<div class="row" style="margin-top:14px">
+<div class="actions-bar" style="margin-top:14px">
   {% if item.status == 'draft' and can(request.state.role, 'assessment:submit') %}
   <form method="post" action="/assessments/{{ item.record_id }}/{{ item.version }}/submit">
     <button class="btn" type="submit">Submit for review</button>
@@ -94,7 +97,7 @@
     <button class="btn" type="submit">Confirm (reviewer)</button>
   </form>
 
-  <form method="post" action="/assessments/{{ item.record_id }}/{{ item.version }}/return" class="card" style="padding:10px;margin-top:0">
+  <form method="post" action="/assessments/{{ item.record_id }}/{{ item.version }}/return" class="card" style="padding:10px;margin:0;min-width:360px">
     <div class="muted" style="margin-bottom:6px"><b>Return for changes</b> (requires a note)</div>
     <textarea name="note" rows="2" placeholder="What must change before this can be confirmed?" required></textarea>
     <div style="margin-top:8px">

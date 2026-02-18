@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
+<div class="page-header">
   <div>
     <h1>Delivery</h1>
-    <div class="muted">Export confirmed workflows into delivery formats (ILT-friendly). SCORM/xAPI/cmi5 are stubbed for now.</div>
+    <p class="muted">Export confirmed workflows into delivery formats (ILT-friendly). SCORM/xAPI/cmi5 are currently stubs.</p>
   </div>
 </div>
 
-<div class="card">
+<div class="card stack-sm">
+  <div class="section-header">Filter confirmed workflows</div>
   <form method="get" action="/delivery">
-    <div class="row" style="align-items:flex-end">
-      <div style="flex:1">
+    <div class="row" style="align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:1;min-width:260px">
         <label>Search (workflow title contains)</label>
         <input name="q" value="{{ q or '' }}" placeholder="e.g. debian, backup, kubernetes" />
       </div>
@@ -39,34 +40,40 @@
   </form>
 </div>
 
-<div class="card">
-  <form method="post" action="/delivery/export">
-    <label>Workflow (confirmed only)</label>
-    <select name="workflow_key" required>
-      <option value="" selected disabled>Select a workflow…</option>
-      {% for w in workflows %}
-        <option value="{{ w.record_id }}@{{ w.version }}">{{ w.title }} (v{{ w.version }})</option>
-      {% endfor %}
-    </select>
-    <div class="muted" style="margin-top:6px">Only confirmed workflows are listed. Export will fail if referenced tasks are not confirmed.</div>
-
-    <label style="margin-top:14px">Output modality</label>
-    <select name="modality" required>
-      <option value="docx">Word (DOCX)</option>
-      <option value="pptx">PowerPoint (PPTX) — DEV (not operational)</option>
-      <option value="md">Markdown</option>
-      <option value="html">HTML — DEV (not operational)</option>
-      <option value="pdf">PDF — DEV (not operational)</option>
-      <option value="scorm">SCORM — DEV (stub)</option>
-      <option value="xapi">xAPI — DEV (stub)</option>
-      <option value="cmi5">cmi5 — DEV (stub)</option>
-    </select>
-    <div class="callout warn" style="margin-top:10px">
-      <b>Note</b>
-      <div class="muted" style="margin-top:6px">DEV modalities are visible for roadmap clarity, but will return an error if selected.</div>
+<div class="card stack-sm">
+  <div class="section-header">Generate export</div>
+  <form method="post" action="/delivery/export" class="stack-sm">
+    <div>
+      <label>Workflow (confirmed only)</label>
+      <select name="workflow_key" required>
+        <option value="" selected disabled>Select a workflow…</option>
+        {% for w in workflows %}
+          <option value="{{ w.record_id }}@{{ w.version }}">{{ w.title }} (v{{ w.version }})</option>
+        {% endfor %}
+      </select>
+      <div class="muted" style="margin-top:6px">Only confirmed workflows are listed. Export will fail if referenced tasks are not confirmed.</div>
     </div>
 
-    <div class="row" style="margin-top:14px">
+    <div>
+      <label>Output modality</label>
+      <select name="modality" required>
+        <option value="docx">Word (DOCX)</option>
+        <option value="pptx">PowerPoint (PPTX) — DEV (not operational)</option>
+        <option value="md">Markdown</option>
+        <option value="html">HTML — DEV (not operational)</option>
+        <option value="pdf">PDF — DEV (not operational)</option>
+        <option value="scorm">SCORM — DEV (stub)</option>
+        <option value="xapi">xAPI — DEV (stub)</option>
+        <option value="cmi5">cmi5 — DEV (stub)</option>
+      </select>
+    </div>
+
+    <div class="callout warn">
+      <b>Note</b>
+      <div class="muted" style="margin-top:6px">DEV modalities are visible for roadmap clarity, but return an error if selected.</div>
+    </div>
+
+    <div class="actions-bar" style="margin-top:4px">
       <button class="btn" type="submit">Generate</button>
       <a class="btn secondary" href="/workflows">Browse workflows</a>
     </div>
@@ -74,7 +81,10 @@
 </div>
 
 {% if not workflows %}
-  <div class="card"><b>No confirmed workflows match your filters.</b></div>
+  <div class="card">
+    <h2>No confirmed workflows found</h2>
+    <p class="muted">No confirmed workflows match the current filters.</p>
+  </div>
 {% endif %}
 
 {% endblock %}

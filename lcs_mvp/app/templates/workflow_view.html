@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
+<div class="page-header">
   <div>
     <h1>Workflow</h1>
-    <div class="muted">Version <code>{{ workflow.version }}</code></div>
+    <p class="muted">Version <code>{{ workflow.version }}</code></p>
   </div>
   <div class="row-right">
     <span class="badge badge-{{ workflow.status }}">{{ workflow.status }}</span>
@@ -15,7 +15,18 @@
     {% else %}
       <span class="badge badge-deprecated">invalid</span>
     {% endif %}
+  </div>
+</div>
 
+<div class="card stack-sm">
+  <h2>{{ workflow.title }}</h2>
+  <p><b>Objective:</b> {{ workflow.objective }}</p>
+
+  {% if domains %}
+    <p class="muted">Domains (derived): {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
+  {% endif %}
+
+  <div class="actions-bar">
     <a class="btn" href="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/export.md">Export Markdown</a>
 
     {% if workflow.status == 'confirmed' and readiness == 'ready' %}
@@ -32,15 +43,6 @@
       <a class="btn" href="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/revise">Revise</a>
     {% endif %}
   </div>
-</div>
-
-<div class="card">
-  <h2>{{ workflow.title }}</h2>
-  <p><b>Objective:</b> {{ workflow.objective }}</p>
-
-  {% if domains %}
-    <p class="muted">Domains (derived): {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
-  {% endif %}
 
   {% if readiness != 'ready' %}
     <div class="callout warn">
@@ -62,8 +64,6 @@
       {% endif %}
     </div>
   {% endif %}
-
-  <!-- record metadata shown in admin-only section below -->
 
   <h3>Tasks</h3>
   <ol>
@@ -96,7 +96,7 @@
   {% endif %}
 </div>
 
-<div class="row">
+<div class="actions-bar">
   {% if workflow.status == 'draft' and can(request.state.role, 'workflow:submit') %}
   <form method="post" action="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/submit">
     <button class="btn" type="submit">Submit for review</button>

@@ -1,45 +1,51 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
-  <h1>Tasks</h1>
+<div class="page-header">
   <div>
+    <h1>Tasks</h1>
+    <p class="muted">Atomic records with lifecycle governance and domain/tag filtering.</p>
+  </div>
+  <div class="row-right">
     {% if can(request.state.role, 'task:create') %}
       <a class="btn" href="/tasks/new">New Task</a>
     {% endif %}
   </div>
 </div>
 
-<div class="filters">
-  <span>Filter:</span>
-  <a href="/tasks" class="pill {{ '' if status else 'active' }}">All</a>
-  <a href="/tasks?status=draft" class="pill {{ 'active' if status=='draft' else '' }}">Draft</a>
-  <a href="/tasks?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
-  <a href="/tasks?status=returned" class="pill {{ 'active' if status=='returned' else '' }}">Returned</a>
-  <a href="/tasks?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
-  <a href="/tasks?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
+<div class="card stack-sm">
+  <div class="section-header">Filters</div>
+  <div class="filters">
+    <a href="/tasks" class="pill {{ '' if status else 'active' }}">All</a>
+    <a href="/tasks?status=draft" class="pill {{ 'active' if status=='draft' else '' }}">Draft</a>
+    <a href="/tasks?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
+    <a href="/tasks?status=returned" class="pill {{ 'active' if status=='returned' else '' }}">Returned</a>
+    <a href="/tasks?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
+    <a href="/tasks?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
 
-  <form method="get" action="/tasks" class="search">
-    {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
+    <form method="get" action="/tasks" class="search">
+      {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
 
-    <select name="domain">
-      <option value="">All domains</option>
-      {% for d in domains or [] %}
-        <option value="{{ d }}" {% if domain == d %}selected{% endif %}>{{ d }}</option>
-      {% endfor %}
-    </select>
+      <select name="domain">
+        <option value="">All domains</option>
+        {% for d in domains or [] %}
+          <option value="{{ d }}" {% if domain == d %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
 
-    <select name="tag">
-      <option value="">All tags</option>
-      {% for t in tags or [] %}
-        <option value="{{ t }}" {% if tag == t %}selected{% endif %}>{{ t }}</option>
-      {% endfor %}
-    </select>
+      <select name="tag">
+        <option value="">All tags</option>
+        {% for t in tags or [] %}
+          <option value="{{ t }}" {% if tag == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
 
-    <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
-    <button class="btn" type="submit">Apply</button>
-  </form>
+      <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
+      <button class="btn" type="submit">Apply</button>
+    </form>
+  </div>
 </div>
 
+{% if items %}
 <table class="table">
   <thead>
     <tr>
@@ -65,16 +71,36 @@
       <td>
         {% if it.tags %}
           {% for t in it.tags %}<span class="pill">{{ t }}</span>{% endfor %}
+        {% else %}
+          <span class="muted">—</span>
         {% endif %}
       </td>
-      <td><code>{{ it.domain or '' }}</code></td>
+      <td>
+        {% if it.domain %}
+          <code>{{ it.domain }}</code>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
       <td>
         {% if it.needs_review_flag %}<span class="badge badge-warn">needs_review</span>{% endif %}
         {% if it.update_pending_confirmation %}<span class="badge badge-warn">update_pending_confirmation</span>{% endif %}
         {% if it.has_return_note %}<span class="badge badge-warn">review_note</span>{% endif %}
+        {% if (not it.needs_review_flag) and (not it.update_pending_confirmation) and (not it.has_return_note) %}
+          <span class="muted">—</span>
+        {% endif %}
       </td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<div class="card">
+  <h2>No tasks found</h2>
+  <p class="muted">Try broadening filters or create a new task.</p>
+  {% if can(request.state.role, 'task:create') %}
+    <p><a class="btn" href="/tasks/new">Create Task</a></p>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}

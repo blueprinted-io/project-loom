@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
+<div class="page-header">
   <div>
     <h1>Task</h1>
-    <div class="muted">Version <code>{{ task.version }}</code></div>
+    <p class="muted">Version <code>{{ task.version }}</code></p>
   </div>
   <div class="row-right">
     <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
@@ -28,14 +28,14 @@
 
 {% if warnings %}
   <div class="callout warn">
-    <b>Lint warnings (warnings-only):</b>
+    <b>Lint warnings (warnings-only)</b>
     <ul>
       {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
     </ul>
   </div>
 {% endif %}
 
-<div class="card">
+<div class="card stack-sm">
   <h2>{{ task.title }}</h2>
   <p><b>Outcome:</b> {{ task.outcome }}</p>
   <p><b>Procedure name:</b> {{ task.procedure_name }}</p>
@@ -89,6 +89,7 @@
       {% endfor %}
     </tbody>
   </table>
+
   {% if request.state.role == 'admin' %}
     <details class="card" style="margin-top:14px">
       <summary><b>Record metadata</b> <span class="muted">(admin only)</span></summary>
@@ -107,7 +108,7 @@
   {% endif %}
 </div>
 
-<div class="row">
+<div class="actions-bar">
   {% if task.status == 'draft' and can(request.state.role, 'task:submit') %}
   <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/submit">
     <button class="btn" type="submit">Submit for review</button>
@@ -119,7 +120,7 @@
     <button class="btn" type="submit">Confirm (reviewer)</button>
   </form>
 
-  <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/return" class="card" style="padding:10px;margin-top:0">
+  <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/return" class="card" style="padding:10px;margin:0;min-width:360px">
     <div class="muted" style="margin-bottom:6px"><b>Return for changes</b> (requires a note)</div>
     <textarea name="note" rows="2" placeholder="What must change before this can be confirmed?" required></textarea>
     <div style="margin-top:8px">

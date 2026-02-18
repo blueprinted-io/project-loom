@@ -1,44 +1,50 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
-  <h1>Workflows</h1>
+<div class="page-header">
   <div>
+    <h1>Workflows</h1>
+    <p class="muted">Composed records with readiness checks against referenced task versions.</p>
+  </div>
+  <div class="row-right">
     {% if can(request.state.role, 'workflow:create') %}
       <a class="btn" href="/workflows/new">New Workflow</a>
     {% endif %}
   </div>
 </div>
 
-<div class="filters">
-  <span>Filter:</span>
-  <a href="/workflows" class="pill {{ '' if status else 'active' }}">All</a>
-  <a href="/workflows?status=draft" class="pill {{ 'active' if status=='draft' else '' }}">Draft</a>
-  <a href="/workflows?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
-  <a href="/workflows?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
-  <a href="/workflows?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
+<div class="card stack-sm">
+  <div class="section-header">Filters</div>
+  <div class="filters">
+    <a href="/workflows" class="pill {{ '' if status else 'active' }}">All</a>
+    <a href="/workflows?status=draft" class="pill {{ 'active' if status=='draft' else '' }}">Draft</a>
+    <a href="/workflows?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
+    <a href="/workflows?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
+    <a href="/workflows?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
 
-  <form method="get" action="/workflows" class="search">
-    {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
+    <form method="get" action="/workflows" class="search">
+      {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
 
-    <select name="domain">
-      <option value="">All domains</option>
-      {% for d in domains or [] %}
-        <option value="{{ d }}" {% if domain == d %}selected{% endif %}>{{ d }}</option>
-      {% endfor %}
-    </select>
+      <select name="domain">
+        <option value="">All domains</option>
+        {% for d in domains or [] %}
+          <option value="{{ d }}" {% if domain == d %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
 
-    <select name="tag">
-      <option value="">All tags</option>
-      {% for t in tags or [] %}
-        <option value="{{ t }}" {% if tag == t %}selected{% endif %}>{{ t }}</option>
-      {% endfor %}
-    </select>
+      <select name="tag">
+        <option value="">All tags</option>
+        {% for t in tags or [] %}
+          <option value="{{ t }}" {% if tag == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
 
-    <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
-    <button class="btn" type="submit">Apply</button>
-  </form>
+      <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
+      <button class="btn" type="submit">Apply</button>
+    </form>
+  </div>
 </div>
 
+{% if items %}
 <table class="table">
   <thead>
     <tr>
@@ -73,15 +79,28 @@
       <td>
         {% if it.domains %}
           {% for d in it.domains %}<span class="badge">{{ d }}</span> {% endfor %}
+        {% else %}
+          <span class="muted">—</span>
         {% endif %}
       </td>
       <td>
         {% if it.tags %}
           {% for t in it.tags %}<span class="pill">{{ t }}</span>{% endfor %}
+        {% else %}
+          <span class="muted">—</span>
         {% endif %}
       </td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<div class="card">
+  <h2>No workflows found</h2>
+  <p class="muted">Try broadening filters or create a new workflow.</p>
+  {% if can(request.state.role, 'workflow:create') %}
+    <p><a class="btn" href="/workflows/new">Create Workflow</a></p>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}

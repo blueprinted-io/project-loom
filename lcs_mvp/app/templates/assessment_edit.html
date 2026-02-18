@@ -1,7 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{% if mode=='new' %}New Assessment{% else %}Revise from Assessment v{{ item.version }} (creates new version){% endif %}</h1>
-<div class="callout warn" style="margin-top:10px">
+<div class="page-header">
+  <div>
+    <h1>{% if mode=='new' %}New Assessment{% else %}Revise Assessment{% endif %}</h1>
+    <p class="muted">
+      {% if mode=='new' %}
+        Create a new assessment draft.
+      {% else %}
+        From Assessment v{{ item.version }} (creates new version).
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<div class="callout warn">
   <b>Under construction</b>
   <div class="muted" style="margin-top:6px">This assessment module is in active development. Use for experimentation; expect UX changes.</div>
 </div>
@@ -19,7 +31,7 @@
     </summary>
     <div style="margin-top:10px">
       {% if lint_errors %}
-        <div class="callout bad"><b>Errors</b></div>
+        <div class="callout danger"><b>Errors</b></div>
         <ul>
           {% for f in lint_errors %}
             <li><code>{{ f.code }}</code> — {{ f.msg }}</li>
@@ -38,14 +50,14 @@
   </details>
 {% endif %}
 
-<form method="post" action="{% if mode=='new' %}/assessments/new{% else %}/assessments/{{ item.record_id }}/{{ item.version }}/save{% endif %}">
+<form method="post" action="{% if mode=='new' %}/assessments/new{% else %}/assessments/{{ item.record_id }}/{{ item.version }}/save{% endif %}" class="stack-sm">
 
-  <div class="card" style="padding:12px">
-    <h2 style="margin-top:0">1) Draft the item</h2>
+  <div class="card stack-sm" style="padding:12px">
+    <h2 style="margin-top:0">Draft the item</h2>
     <div class="muted">Write the question first. Classification is optional.</div>
   </div>
 
-  <details class="card" style="padding:12px;margin-top:12px">
+  <details class="card stack-sm" style="padding:12px;margin-top:12px">
     <summary style="cursor:pointer"><b>Advanced (optional)</b> <span class="muted">· anchor helpers</span></summary>
     <div style="margin-top:10px" class="muted">Optional authoring notes. Safe to ignore.</div>
 
@@ -76,13 +88,13 @@
     </div>
   </details>
 
-  <div class="card" style="padding:12px;margin-top:12px">
-    <h2 style="margin-top:0">3) Write the item</h2>
+  <div class="card stack-sm" style="padding:12px;margin-top:12px">
+    <h2 style="margin-top:0">Write the item</h2>
 
-    <div class="card" style="padding:10px;margin-top:8px">
+    <div class="card stack-sm" style="padding:10px;margin-top:8px">
       <b>Stem template</b>
       <div class="muted" style="margin-top:6px">Insert a scaffold to reduce author load. Edit freely after.</div>
-      <div class="row" style="margin-top:8px">
+      <div class="actions-bar" style="margin-top:8px">
         <button class="btn secondary" type="button" id="tpl-fact">Fact</button>
         <button class="btn secondary" type="button" id="tpl-concept">Concept</button>
         <button class="btn secondary" type="button" id="tpl-scenario">Procedure</button>
@@ -279,7 +291,6 @@
       }
 
       function peekAnchor(){
-        // use first attached ref row as the anchor
         const first = body && body.querySelector('tr');
         if(!first){
           alert('No refs attached yet. Add a task/workflow ref first.');
@@ -327,7 +338,6 @@
       qEl.addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); search(); } });
       if(peekBtn) peekBtn.addEventListener('click', peekAnchor);
 
-      // Stem templates
       const stemEl = document.getElementById('stem');
       function insertIfEmpty(t){
         if(!stemEl) return;
@@ -346,12 +356,10 @@
       if(tc) tc.addEventListener('click', () => insertIfEmpty('Why does ____?'));
       if(ts) ts.addEventListener('click', () => insertIfEmpty('Given the following scenario, why does ____?\n\nScenario:\n____'));
 
-      // Peek source: open first workflow ref if present, otherwise first ref.
       const peekSourceBtn = document.getElementById('peek-source');
       function peekSource(){
         const rows = body ? Array.from(body.querySelectorAll('tr')) : [];
         if(!rows.length){ alert('No refs attached yet. Add a workflow ref first.'); return; }
-        // prefer workflow
         let row = rows.find(r => (r.querySelector('select[name=ref_type]')?.value === 'workflow')) || rows[0];
         const rt = row.querySelector('select[name=ref_type]')?.value || 'workflow';
         const rid = row.querySelector('input[name=ref_record_id]')?.value || '';
@@ -368,7 +376,7 @@
     })();
   </script>
 
-  <div class="row" style="margin-top:14px">
+  <div class="actions-bar" style="margin-top:14px">
     <button class="btn" type="submit">Save (new version)</button>
     {% if mode=='edit' %}
       <a class="btn secondary" href="/assessments/{{ item.record_id }}/{{ item.version }}">Cancel</a>
