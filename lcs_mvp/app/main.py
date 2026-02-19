@@ -27,17 +27,19 @@ Role = Literal["viewer", "author", "assessment_author", "content_publisher", "re
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_DEMO_PATH = os.path.join(DATA_DIR, "lcs_demo.db")
+DB_DEBIAN_PATH = os.path.join(DATA_DIR, "lcs_debian.db")
+DB_DEMO_LEGACY_PATH = os.path.join(DATA_DIR, "lcs_demo.db")
 DB_BLANK_PATH = os.path.join(DATA_DIR, "lcs_blank.db")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
 EXPORTS_DIR = os.path.join(DATA_DIR, "exports")
 
-# Per-request DB selection (MVP): use a cookie. Default to demo.
+# Per-request DB selection (MVP): use a cookie. Default to debian.
 DB_KEY_COOKIE = "lcs_db"
-DB_KEY_DEMO = "demo"
+DB_KEY_DEBIAN = "debian"
+DB_KEY_DEMO_ALIAS = "demo"  # backward-compatible cookie/form alias
 DB_KEY_BLANK = "blank"
-DB_PATH_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_path", default=DB_DEMO_PATH)
-DB_KEY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_key", default=DB_KEY_DEMO)
+DB_PATH_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_path", default=DB_DEBIAN_PATH)
+DB_KEY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_key", default=DB_KEY_DEBIAN)
 
 DB_PROFILE_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 
@@ -381,44 +383,52 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _normalize_db_key(key: str | None) -> str:
+    k = (key or "").strip().lower()
+    if k == DB_KEY_DEMO_ALIAS:
+        return DB_KEY_DEBIAN
+    return k
+
+
 def _selected_db_key(request: Request | None = None) -> str:
     if request is None:
-        return DB_KEY_CTX.get()
-    k = (request.cookies.get(DB_KEY_COOKIE) or DB_KEY_DEMO).strip().lower()
+        return _normalize_db_key(DB_KEY_CTX.get())
+    k = _normalize_db_key(request.cookies.get(DB_KEY_COOKIE) or DB_KEY_DEBIAN)
     if k not in _available_db_keys():
-        return DB_KEY_DEMO
+        return DB_KEY_DEBIAN
     return k
 
 
 def _db_path_for_key(key: str) -> str:
-    if key == DB_KEY_DEMO:
-        return DB_DEMO_PATH
+    key = _normalize_db_key(key)
+    if key == DB_KEY_DEBIAN:
+        return DB_DEBIAN_PATH
     if key == DB_KEY_BLANK:
         return DB_BLANK_PATH
     return os.path.join(DATA_DIR, f"lcs_{key}.db")
 
 
 def _available_db_keys() -> set[str]:
-    return {DB_KEY_DEMO, DB_KEY_BLANK, *_list_custom_db_keys()}
+    return {DB_KEY_DEBIAN, DB_KEY_BLANK, *_list_custom_db_keys()}
 
 
 def _list_custom_db_keys() -> list[str]:
     """Return custom db profile keys from files in DATA_DIR.
 
     Custom DB files are named: lcs_<key>.db
-    Reserved keys demo/blank are excluded.
+    Reserved keys debian/demo/blank are excluded.
     """
     os.makedirs(DATA_DIR, exist_ok=True)
     keys: list[str] = []
     for name in os.listdir(DATA_DIR):
         if not name.startswith("lcs_") or not name.endswith(".db"):
             continue
-        if name in (os.path.basename(DB_DEMO_PATH), os.path.basename(DB_BLANK_PATH)):
+        if name in (os.path.basename(DB_DEBIAN_PATH), os.path.basename(DB_DEMO_LEGACY_PATH), os.path.basename(DB_BLANK_PATH)):
             continue
         key = name[len("lcs_") : -len(".db")].strip().lower()
         if not key:
             continue
-        if key in (DB_KEY_DEMO, DB_KEY_BLANK):
+        if key in (DB_KEY_DEBIAN, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK):
             continue
         if not DB_PROFILE_KEY_RE.match(key):
             # ignore weird files
@@ -430,7 +440,7 @@ def _list_custom_db_keys() -> list[str]:
 
 def _create_custom_db_profile(key: str) -> None:
     key = (key or "").strip().lower()
-    if key in (DB_KEY_DEMO, DB_KEY_BLANK):
+    if key in (DB_KEY_DEBIAN, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK):
         raise HTTPException(status_code=400, detail="Reserved profile key")
     if not DB_PROFILE_KEY_RE.match(key):
         raise HTTPException(status_code=400, detail="Invalid profile key (use: a-z, 0-9, _, -)")
@@ -842,12 +852,15 @@ def _seed_demo_entitlements(conn: sqlite3.Connection) -> None:
 
 
 def init_db() -> None:
-    # Ensure both demo and blank DBs exist and are migrated.
-    init_db_path(DB_DEMO_PATH)
+    # Ensure the default debian DB exists. If only the legacy demo DB exists, adopt it.
+    if os.path.exists(DB_DEMO_LEGACY_PATH) and not os.path.exists(DB_DEBIAN_PATH):
+        shutil.copy2(DB_DEMO_LEGACY_PATH, DB_DEBIAN_PATH)
+
+    init_db_path(DB_DEBIAN_PATH)
     init_db_path(DB_BLANK_PATH)
 
     # Seed demo-friendly users for both DBs (safe for MVP).
-    for p in (DB_DEMO_PATH, DB_BLANK_PATH):
+    for p in (DB_DEBIAN_PATH, DB_BLANK_PATH):
         DB_PATH_CTX.set(p)
         with db() as conn:
             _seed_demo_users(conn)
@@ -1374,7 +1387,7 @@ def login_form(request: Request):
         ).fetchall()
 
     custom = _list_custom_db_keys()
-    profiles = [{"key": k, "label": ("debian" if k == DB_KEY_DEMO else k)} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + custom]
+    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + custom]
     return templates.TemplateResponse(
         request,
         "login.html",
@@ -1427,12 +1440,12 @@ def logout(request: Request):
 
 
 @app.post("/db/pick")
-def db_pick(request: Request, db_key: str = Form(DB_KEY_DEMO)):
+def db_pick(request: Request, db_key: str = Form(DB_KEY_DEBIAN)):
     """Unauthenticated DB profile picker for demo convenience.
 
     This is intentionally only a cookie setter; it does not create profiles.
     """
-    key = (db_key or DB_KEY_DEMO).strip().lower()
+    key = _normalize_db_key(db_key or DB_KEY_DEBIAN)
     if key not in _available_db_keys():
         raise HTTPException(status_code=400, detail="Invalid db_key")
 
@@ -1707,14 +1720,14 @@ def pulse(request: Request):
 @app.get("/db", response_class=HTMLResponse)
 def db_switch_form(request: Request):
     require(request.state.role, "db:switch")
-    profiles = [{"key": k, "label": ("debian" if k == DB_KEY_DEMO else k)} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + _list_custom_db_keys()]
+    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + _list_custom_db_keys()]
     return templates.TemplateResponse(request, "db_switch.html", {"profiles": profiles})
 
 
 @app.post("/db/switch")
-def db_switch(request: Request, db_key: str = Form(DB_KEY_DEMO)):
+def db_switch(request: Request, db_key: str = Form(DB_KEY_DEBIAN)):
     require(request.state.role, "db:switch")
-    key = (db_key or DB_KEY_DEMO).strip().lower()
+    key = _normalize_db_key(db_key or DB_KEY_DEBIAN)
     if key not in _available_db_keys():
         raise HTTPException(status_code=400, detail="Invalid db_key")
 

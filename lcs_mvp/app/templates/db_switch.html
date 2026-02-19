@@ -4,7 +4,7 @@
 <p class="muted">Switch between dataset profiles (each profile is a separate SQLite file). This is an MVP convenience feature.</p>
 
 <div class="card">
-  <p><b>Current:</b> {{ "debian" if request.state.db_key == "demo" else request.state.db_key }}</p>
+  <p><b>Current:</b> {{ request.state.db_key }}</p>
 
   <form method="post" action="/db/switch" style="margin-top:10px">
     <label>Target profile</label>
