@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "LCS MVP" }}</title>
-  <link rel="stylesheet" href="/static/style.css?v=24" />
+  <link rel="stylesheet" href="/static/style.css?v=25" />
 </head>
 <body>
   <header class="topbar">
@@ -125,6 +125,13 @@
       loadPulse();
     })();
   </script>
+
+  <div class="wrap">
+    <div class="global-dev-banner" role="status" aria-live="polite">
+      <strong>Active development notice:</strong>
+      This application is an MVP in active development. Features, UI, and behavior may change without notice. Validate important outputs before operational use.
+    </div>
+  </div>
 
   <div class="layout wrap">
     <aside class="sidebar">
