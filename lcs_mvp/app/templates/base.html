@@ -135,52 +135,119 @@
 
   <div class="layout wrap">
     <aside class="sidebar">
-      <div class="sidebar-section">
-        <div class="sidebar-title">Records</div>
-        <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
-        <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
-        {% if request.state.role in ['reviewer','admin'] %}
+      {% set role = request.state.role %}
+
+      {% if role == 'admin' %}
+        <div class="sidebar-section">
+          <div class="sidebar-title">Records</div>
+          <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
+          <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
           <a class="navlink {% if request.url.path.startswith('/review') %}active{% endif %}" href="/review">Review queue</a>
-        {% endif %}
-      </div>
+        </div>
 
-      <div class="sidebar-section">
-        <div class="sidebar-title">Delivery</div>
-        <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
-        <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
-      </div>
+        <div class="sidebar-section">
+          <div class="sidebar-title">Delivery</div>
+          <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
+          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+        </div>
 
-      {% if can(request.state.role, 'audit:view') or can(request.state.role, 'export:library') %}
-      <div class="sidebar-section">
-        <div class="sidebar-title">Assurance</div>
-        {% if can(request.state.role, 'audit:view') %}
+        <div class="sidebar-section">
+          <div class="sidebar-title">Assurance</div>
           <a class="navlink {% if request.url.path.startswith('/audit') %}active{% endif %}" href="/audit">Audit Log</a>
-        {% endif %}
-        {% if can(request.state.role, 'export:library') %}
           <a class="navlink {% if request.url.path.startswith('/exports') %}active{% endif %}" href="/exports">Exports library</a>
-        {% endif %}
-      </div>
-      {% endif %}
+        </div>
 
-      {% if can(request.state.role, 'import:pdf') or can(request.state.role, 'import:json') %}
-      <div class="sidebar-section">
-        <div class="sidebar-title">Ingestion</div>
-        {% if can(request.state.role, 'import:pdf') %}
+        <div class="sidebar-section">
+          <div class="sidebar-title">Ingestion</div>
           <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
-        {% endif %}
-        {% if can(request.state.role, 'import:json') %}
           <a class="navlink {% if request.url.path.startswith('/import/json') %}active{% endif %}" href="/import/json">Import JSON</a>
-        {% endif %}
-      </div>
-      {% endif %}
+        </div>
 
-      {% if request.state.role == 'admin' %}
-      <div class="sidebar-section">
-        <div class="sidebar-title">Admin</div>
-        <a class="navlink {% if request.url.path.startswith('/admin/users') %}active{% endif %}" href="/admin/users">Users</a>
-        <a class="navlink {% if request.url.path.startswith('/admin/domains') %}active{% endif %}" href="/admin/domains">Domains</a>
-        <a class="navlink {% if request.url.path.startswith('/db') %}active{% endif %}" href="/db">Switch database</a>
-      </div>
+        <div class="sidebar-section">
+          <div class="sidebar-title">Admin</div>
+          <a class="navlink {% if request.url.path.startswith('/admin/users') %}active{% endif %}" href="/admin/users">Users</a>
+          <a class="navlink {% if request.url.path.startswith('/admin/domains') %}active{% endif %}" href="/admin/domains">Domains</a>
+          <a class="navlink {% if request.url.path.startswith('/db') %}active{% endif %}" href="/db">Switch database</a>
+        </div>
+
+      {% elif role == 'author' %}
+        {% if can(role, 'import:pdf') or can(role, 'import:json') %}
+        <div class="sidebar-section">
+          <div class="sidebar-title">Ingestion</div>
+          {% if can(role, 'import:pdf') %}
+            <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
+          {% endif %}
+          {% if can(role, 'import:json') %}
+            <a class="navlink {% if request.url.path.startswith('/import/json') %}active{% endif %}" href="/import/json">Import JSON</a>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">Records</div>
+          <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
+          <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">Delivery</div>
+          <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
+          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+        </div>
+
+      {% elif role == 'audit' %}
+        {% if can(role, 'audit:view') or can(role, 'export:library') %}
+        <div class="sidebar-section">
+          <div class="sidebar-title">Assurance</div>
+          {% if can(role, 'audit:view') %}
+            <a class="navlink {% if request.url.path.startswith('/audit') %}active{% endif %}" href="/audit">Audit Log</a>
+          {% endif %}
+          {% if can(role, 'export:library') %}
+            <a class="navlink {% if request.url.path.startswith('/exports') %}active{% endif %}" href="/exports">Exports library</a>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">Records</div>
+          <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
+          <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">Delivery</div>
+          <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
+          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+        </div>
+
+      {% elif role == 'content_publisher' %}
+        <div class="sidebar-section">
+          <div class="sidebar-title">Delivery</div>
+          <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
+          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">Records</div>
+          <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
+          <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
+        </div>
+
+      {% else %}
+        <div class="sidebar-section">
+          <div class="sidebar-title">Delivery</div>
+          <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
+          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">Records</div>
+          <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
+          <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
+          {% if role in ['reviewer'] %}
+            <a class="navlink {% if request.url.path.startswith('/review') %}active{% endif %}" href="/review">Review queue</a>
+          {% endif %}
+        </div>
       {% endif %}
 
       <div class="sidebar-section">
