@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "LCS MVP" }}</title>
-  <link rel="stylesheet" href="/static/style.css?v=28" />
+  <link rel="stylesheet" href="/static/style.css?v=29" />
 </head>
 <body>
   <header class="topbar">
@@ -146,7 +146,7 @@
         </div>
 
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery</div>
+          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>
@@ -158,7 +158,7 @@
         </div>
 
         <div class="sidebar-section">
-          <div class="sidebar-title">Ingestion</div>
+          <div class="sidebar-title">Ingestion <span class="sidebar-flag">not yet functional</span></div>
           <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
           <a class="navlink {% if request.url.path.startswith('/import/json') %}active{% endif %}" href="/import/json">Import JSON</a>
         </div>
@@ -173,7 +173,7 @@
       {% elif role == 'author' %}
         {% if can(role, 'import:pdf') or can(role, 'import:json') %}
         <div class="sidebar-section">
-          <div class="sidebar-title">Ingestion</div>
+          <div class="sidebar-title">Ingestion <span class="sidebar-flag">not yet functional</span></div>
           {% if can(role, 'import:pdf') %}
             <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
           {% endif %}
@@ -190,7 +190,7 @@
         </div>
 
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery</div>
+          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>
@@ -215,14 +215,14 @@
         </div>
 
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery</div>
+          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>
 
       {% elif role == 'content_publisher' %}
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery</div>
+          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>
@@ -235,7 +235,7 @@
 
       {% else %}
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery</div>
+          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>

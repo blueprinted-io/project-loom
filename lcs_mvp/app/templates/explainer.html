@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>What is this system</h1>
-<p class="muted">A plain-language explainer.</p>
+<p class="muted">A plain-language explainer for first-time users.</p>
 
 <div class="card">
   <img src="/static/explainer-overview.png" alt="Blueprinted.io system overview diagram" style="width:100%;height:auto;border-radius:12px;border:1px solid var(--border);display:block" />
@@ -14,27 +14,43 @@
 </div>
 
 <div class="card">
-  <h2>In one sentence</h2>
-  <p>
-    This is a governed library of small, verifiable procedures (Tasks) that can be reused and combined into bigger goals (Workflows).
-  </p>
-
-  <h2>Why it exists</h2>
+  <h2>What this does for you</h2>
   <ul>
-    <li><b>Consistency:</b> everyone follows the same approved procedure.</li>
-    <li><b>Safety:</b> changes are reviewed before they are treated as “correct”.</li>
-    <li><b>Reusability:</b> we write a good Task once and reuse it everywhere.</li>
-    <li><b>Traceability:</b> every version and decision is recorded.</li>
+    <li><b>Build trusted learning content faster:</b> convert source material into reusable, governed records.</li>
+    <li><b>Keep human control where it matters:</b> critical content is reviewed before confirmation.</li>
+    <li><b>Produce audit-ready outputs:</b> every version and approval decision is traceable.</li>
   </ul>
 
-  <h2>The two record types</h2>
+  <h2>How it works</h2>
+  <ol>
+    <li><b>Ingest source inputs</b> <span class="badge badge-warn">early development, not yet functional</span><br><span class="muted">Technical documentation, learning content, and knowledge-base material are brought into the system.</span></li>
+    <li><b>Structure and validate with humans-in-the-loop</b><br><span class="muted">Authors and reviewers create and govern Tasks and Workflows, with explicit review gates.</span></li>
+    <li><b>Deliver controlled outputs</b> <span class="badge badge-warn">early development, not yet functional</span><br><span class="muted">Confirmed records drive content output, assessments, and assurance evidence.</span></li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2>Who should use which area</h2>
+  <ul>
+    <li><b>Viewer:</b> Workflows, Content output</li>
+    <li><b>Author:</b> Ingestion, Tasks, Workflows</li>
+    <li><b>Reviewer:</b> Review queue, submitted Tasks/Workflows</li>
+    <li><b>Content publisher:</b> Content output and delivery artifacts</li>
+    <li><b>Assessment author:</b> Assessments linked to governed records</li>
+    <li><b>Audit:</b> Assurance and audit log visibility</li>
+    <li><b>Admin:</b> Full access including break-glass operations</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Core model (for authors and reviewers)</h2>
 
   <h3>Task</h3>
   <p class="muted">A Task is the smallest unit of work that changes the world in one observable way.</p>
   <ul>
     <li><b>Outcome:</b> the result you can verify.</li>
-    <li><b>Facts:</b> literal info you need before starting.</li>
-    <li><b>Concepts:</b> the mental model (why this works).</li>
+    <li><b>Facts:</b> literal information required before starting.</li>
+    <li><b>Concepts:</b> the mental model that explains why the procedure works.</li>
     <li><b>Procedure:</b> a list of Steps.</li>
     <li><b>Dependencies:</b> what must already be true.</li>
   </ul>
@@ -43,42 +59,36 @@
   <p class="muted">A Workflow is an ordered list of Tasks that achieves one objective.</p>
   <ul>
     <li>Workflows contain <b>Tasks</b>, not low-level steps.</li>
-    <li>The Workflow objective is the “why are we doing this?” for the group of Tasks.</li>
+    <li>The Workflow objective defines the business outcome for the set of Tasks.</li>
   </ul>
 
-  <h2>What is a Step</h2>
+  <h3>Step</h3>
   <p>A Step is one unit of procedure inside a Task.</p>
   <ul>
     <li><b>Step text (required):</b> what you are doing.</li>
-    <li><b>Actions (optional):</b> how to do it (tool-specific sub-steps).</li>
+    <li><b>Actions (optional):</b> tool-specific details for execution.</li>
     <li><b>Completion (required):</b> how you prove the step is done.</li>
   </ul>
-  <p class="muted">Important: confirmation lives in <b>Completion</b>. Actions do not have their own completion rules.</p>
+  <p class="muted">Important: confirmation lives in <b>Completion</b>. Actions do not have separate completion rules.</p>
+</div>
 
-  <h2>Status, in plain language</h2>
+<div class="card">
+  <h2>Status lifecycle</h2>
   <ul>
-    <li><b>Draft:</b> being written. Not trusted yet.</li>
+    <li><b>Draft:</b> being written, not trusted yet.</li>
     <li><b>Submitted:</b> waiting for review.</li>
-    <li><b>Returned:</b> reviewed, but needs changes before it can be confirmed.</li>
-    <li><b>Confirmed:</b> reviewed and approved. Safe to reuse and export.</li>
-    <li><b>Deprecated:</b> old confirmed version that has been replaced.</li>
-  </ul>
-
-  <h2>Roles</h2>
-  <ul>
-    <li><b>Viewer:</b> can browse content (read-only).</li>
-    <li><b>Author:</b> creates drafts and submits them for review (within entitled domains). Authors own document ingress.</li>
-    <li><b>Reviewer:</b> reviews submissions and confirms only what is verifiably correct (within entitled domains).</li>
-    <li><b>Audit:</b> read-only access including the audit log.</li>
-    <li><b>Admin:</b> break-glass role. Can do admin operations and force submit/confirm (these actions are logged). Admin can also perform ingress.</li>
-  </ul>
-
-  <h2>What this system is not</h2>
-  <ul>
-    <li>It is not a chat bot.</li>
-    <li>It is not a troubleshooting guide. (Troubleshooting is out of scope for canonical procedure.)</li>
-    <li>It is not a free-form wiki. Confirmed content is controlled and versioned.</li>
+    <li><b>Returned:</b> reviewed, but changes are required before confirmation.</li>
+    <li><b>Confirmed:</b> reviewed and approved, safe to reuse and export.</li>
+    <li><b>Deprecated:</b> older confirmed version replaced by a newer confirmed version.</li>
   </ul>
 </div>
 
+<div class="card">
+  <h2>What this system is not</h2>
+  <ul>
+    <li>It is not a chat bot.</li>
+    <li>It is not a free-form wiki. Confirmed content is controlled and versioned.</li>
+    <li>It is not currently designed for operational use in production environments.</li>
+  </ul>
+</div>
 {% endblock %}

@@ -182,7 +182,9 @@ a:hover{text-decoration:underline}
 .layout{display:flex;gap:16px;align-items:flex-start}
 .sidebar{width:260px;flex:0 0 260px;background:color-mix(in oklab, var(--panel) 96%, var(--bg));border:1px solid color-mix(in oklab, var(--border) 70%, transparent);border-radius:16px;padding:14px;position:sticky;top:18px;box-shadow:0 12px 30px rgba(17,24,39,.06)}
 .sidebar-section{margin-bottom:14px}
-.sidebar-title{font-size:12px;font-weight:750;color:color-mix(in oklab, var(--muted) 70%, var(--ink));text-transform:none;letter-spacing:.01em;margin:10px 8px}
+.sidebar-title{font-size:12px;font-weight:750;color:color-mix(in oklab, var(--muted) 70%, var(--ink));text-transform:none;letter-spacing:.01em;margin:10px 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sidebar-flag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid color-mix(in oklab, var(--warn) 45%, var(--border));background:color-mix(in oklab, #fff7ed 80%, var(--panel));color:color-mix(in oklab, var(--warn) 70%, var(--ink));}
+html[data-theme="dark"] .sidebar-flag{background:color-mix(in oklab, var(--warn) 14%, var(--panel));color:color-mix(in oklab, var(--warn) 85%, var(--ink));}
 .navlink{display:block;padding:10px 12px;border-radius:12px;color:var(--ink);border:1px solid transparent;transition:background .15s ease,border-color .15s ease,transform .05s ease, box-shadow .15s ease}
 .navlink:hover{background:color-mix(in oklab, var(--bg) 60%, var(--panel));text-decoration:none;border-color:color-mix(in oklab, var(--border) 55%, transparent)}
 .navlink.active{background:color-mix(in oklab, var(--accent) 9%, var(--panel));border-color:color-mix(in oklab, var(--accent) 35%, var(--border));box-shadow:0 6px 16px rgba(47,107,255,.10);font-weight:700}
