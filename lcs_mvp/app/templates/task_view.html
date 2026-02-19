@@ -56,6 +56,21 @@
     {% for d in task.dependencies %}<li>{{ d }}</li>{% endfor %}
   </ul>
 
+  <h3>Referenced by Workflows</h3>
+  {% if workflows_using %}
+    <ul>
+      {% for w in workflows_using %}
+        <li>
+          <a href="/workflows/{{ w.record_id }}/{{ w.version }}">{{ w.title }}</a>
+          <span class="muted">({{ w.record_id }}@{{ w.version }})</span>
+          <span class="badge badge-{{ w.status }}">{{ w.status }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No workflows currently reference this task version.</p>
+  {% endif %}
+
   <h3>Procedure</h3>
   <table class="table">
     <thead>

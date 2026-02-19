@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "LCS MVP" }}</title>
-  <link rel="stylesheet" href="/static/style.css?v=25" />
+  <link rel="stylesheet" href="/static/style.css?v=26" />
 </head>
 <body>
   <header class="topbar">
@@ -34,8 +34,8 @@
       <div class="wrap pulse-inner">
         <div class="pulse-left">
           <span class="pulse-title">Governance pulse</span>
-          <span class="pulse-item" id="pulse-tasks">Tasks: …</span>
           <span class="pulse-item" id="pulse-workflows">Workflows: …</span>
+          <span class="pulse-item" id="pulse-tasks">Tasks: …</span>
           <span class="pulse-item" id="pulse-assessments">Assessments: …</span>
           <span class="pulse-item" id="pulse-review" style="display:none">Review: …</span>
         </div>
@@ -137,13 +137,17 @@
     <aside class="sidebar">
       <div class="sidebar-section">
         <div class="sidebar-title">Records</div>
-        <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
         <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
-        <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
-        <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Delivery</a>
+        <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
         {% if request.state.role in ['reviewer','admin'] %}
           <a class="navlink {% if request.url.path.startswith('/review') %}active{% endif %}" href="/review">Review queue</a>
         {% endif %}
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">Delivery</div>
+        <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
+        <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
       </div>
 
       {% if can(request.state.role, 'audit:view') or can(request.state.role, 'export:library') %}

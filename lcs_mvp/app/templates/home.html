@@ -2,43 +2,51 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>Records</h1>
-    <p class="muted">Draft, submit, confirm. Every change is versioned and auditable.</p>
+    <h1>Workflows</h1>
+    <p class="muted">Workflows are the primary delivery surface. Tasks provide the governed foundation underneath.</p>
   </div>
   <div class="row-right">
-    <a class="btn secondary" href="/tasks?status=confirmed">Browse confirmed</a>
+    <a class="btn" href="/workflows">Open Workflows</a>
+    <a class="btn secondary" href="/delivery">Open Delivery</a>
     {% if request.state.role == 'author' %}
-      <a class="btn" href="/tasks/new">New Task</a>
+      <a class="btn secondary" href="/tasks/new">New Task</a>
     {% endif %}
   </div>
 </div>
 
 <div class="grid">
+  <section class="card stack-sm">
+    <h2>Workflow delivery</h2>
+    <p class="muted">Browse and deliver confirmed workflows as the user-facing product layer.</p>
+    <ul class="link-list">
+      <li><a href="/workflows?status=confirmed">Browse confirmed Workflows</a></li>
+      <li><a href="/delivery">Open Delivery exports</a></li>
+      <li><a href="/workflows?status=submitted">Review submitted Workflows</a></li>
+    </ul>
+  </section>
+
   {% if request.state.role in ['viewer','author','reviewer'] %}
   <section class="card stack-sm">
-    <h2>Start here</h2>
+    <h2>Role focus</h2>
     {% if request.state.role == 'author' %}
-      <p class="muted"><b>Goal:</b> produce strong draft Tasks and submit inside entitled domains.</p>
-      <div class="section-header muted">Suggested actions</div>
+      <p class="muted"><b>Goal:</b> produce strong Tasks that feed reliable Workflows.</p>
       <ul class="link-list">
         <li><a href="/tasks?status=draft">Review draft Tasks</a></li>
         <li><a href="/tasks/new">Create a new Task</a></li>
         <li><a href="/import/pdf">Import source material (PDF → draft)</a></li>
       </ul>
     {% elif request.state.role == 'reviewer' %}
-      <p class="muted"><b>Goal:</b> reduce submitted backlog and confirm only verifiable records.</p>
-      <div class="section-header muted">Suggested actions</div>
+      <p class="muted"><b>Goal:</b> confirm verifiable records and reduce submitted backlog.</p>
       <ul class="link-list">
         <li><a href="/review">Open review queue</a></li>
-        <li><a href="/tasks?status=submitted">Browse submitted Tasks</a></li>
         <li><a href="/workflows?status=submitted">Browse submitted Workflows</a></li>
+        <li><a href="/tasks?status=submitted">Browse submitted Tasks</a></li>
       </ul>
     {% else %}
-      <p class="muted">Read-only access. Browse confirmed content.</p>
-      <div class="section-header muted">Start here</div>
+      <p class="muted">Read-only access. Start from confirmed Workflows, then drill into Tasks as needed.</p>
       <ul class="link-list">
-        <li><a href="/tasks?status=confirmed">Browse confirmed Tasks</a></li>
         <li><a href="/workflows?status=confirmed">Browse confirmed Workflows</a></li>
+        <li><a href="/tasks?status=confirmed">Browse confirmed Tasks</a></li>
       </ul>
     {% endif %}
   </section>
@@ -46,21 +54,15 @@
 
   <section class="card stack-sm">
     <h2>Tasks</h2>
-    <p class="muted">Atomic, verifiable outcomes with governed procedure steps.</p>
-    <p><a class="btn" href="/tasks">Open Tasks</a></p>
-  </section>
-
-  <section class="card stack-sm">
-    <h2>Workflows</h2>
-    <p class="muted">Ordered compositions of Tasks that roll up to a single objective.</p>
-    <p><a class="btn" href="/workflows">Open Workflows</a></p>
+    <p class="muted">Tasks remain first-class system records and power workflow quality, governance, and traceability.</p>
+    <p><a class="btn secondary" href="/tasks">Open Tasks</a></p>
   </section>
 
   {% if can(request.state.role, 'audit:view') %}
   <section class="card stack-sm">
     <h2>Audit</h2>
     <p class="muted">Traceability across records, versions, and governance actions.</p>
-    <p><a class="btn" href="/audit">Open Audit Log</a></p>
+    <p><a class="btn secondary" href="/audit">Open Audit Log</a></p>
   </section>
   {% endif %}
 </div>

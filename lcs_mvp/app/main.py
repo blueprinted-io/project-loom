@@ -3286,6 +3286,31 @@ def task_view(request: Request, record_id: str, version: int):
 
     warnings = lint_steps(task["steps"])
 
+    # Surface workflows that reference this exact task version.
+    workflows_using: list[dict[str, Any]] = []
+    with db() as conn:
+        wf_rows = conn.execute(
+            "SELECT record_id, version, title, status, refs_json FROM workflows ORDER BY updated_at DESC"
+        ).fetchall()
+    for wf in wf_rows:
+        refs = _json_load(wf["refs_json"] or "[]") or []
+        for r in refs:
+            try:
+                rid = str(r.get("record_id") or "").strip()
+                ver = int(r.get("version"))
+            except Exception:
+                continue
+            if rid == record_id and ver == int(version):
+                workflows_using.append(
+                    {
+                        "record_id": wf["record_id"],
+                        "version": int(wf["version"]),
+                        "title": wf["title"],
+                        "status": wf["status"],
+                    }
+                )
+                break
+
     # If returned, surface the most recent return note (if any)
     return_note = None
     if task.get("status") == "returned":
@@ -3300,7 +3325,12 @@ def task_view(request: Request, record_id: str, version: int):
     return templates.TemplateResponse(
         request,
         "task_view.html",
-        {"task": task, "warnings": warnings, "return_note": return_note},
+        {
+            "task": task,
+            "warnings": warnings,
+            "return_note": return_note,
+            "workflows_using": workflows_using,
+        },
     )
 
 
