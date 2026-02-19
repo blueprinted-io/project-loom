@@ -69,19 +69,6 @@
       </table>
     </div>
 
-    {% if diag %}
-      <details class="card" style="margin-bottom:16px">
-        <summary><b>Diagnostics</b> <span class="muted">(demo-only)</span></summary>
-        <div class="muted" style="margin-top:10px">
-          host=<code>{{ diag.host }}</code><br>
-          db_key=<code>{{ diag.db_key }}</code><br>
-          db_path=<code>{{ diag.db_path }}</code><br>
-          data_dir=<code>{{ diag.data_dir }}</code><br>
-          custom_keys=<code>{{ diag.custom_keys|join(',') }}</code>
-        </div>
-      </details>
-    {% endif %}
-
     <form method="post" action="/login" class="card" id="login-form">
       <label>Username</label>
       <input name="username" placeholder="jhendrix" required />

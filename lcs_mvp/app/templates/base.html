@@ -256,7 +256,7 @@
       </div>
 
       <div class="sidebar-foot muted">
-        Active DB: <b>{{ request.state.db_key }}</b>
+        Active DB: <b>{{ "debian" if request.state.db_key == "demo" else request.state.db_key }}</b>
       </div>
     </aside>
 

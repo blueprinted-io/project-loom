@@ -1374,18 +1374,11 @@ def login_form(request: Request):
         ).fetchall()
 
     custom = _list_custom_db_keys()
-    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + custom]
-    diag = {
-        "host": os.uname().nodename,
-        "db_key": request.state.db_key,
-        "db_path": request.state.db_path,
-        "custom_keys": custom,
-        "data_dir": DATA_DIR,
-    }
+    profiles = [{"key": k, "label": ("debian" if k == DB_KEY_DEMO else k)} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + custom]
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"users": [dict(u) for u in users], "profiles": profiles, "db_key": request.state.db_key, "diag": diag},
+        {"users": [dict(u) for u in users], "profiles": profiles, "db_key": request.state.db_key},
     )
 
 
@@ -1714,7 +1707,7 @@ def pulse(request: Request):
 @app.get("/db", response_class=HTMLResponse)
 def db_switch_form(request: Request):
     require(request.state.role, "db:switch")
-    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + _list_custom_db_keys()]
+    profiles = [{"key": k, "label": ("debian" if k == DB_KEY_DEMO else k)} for k in [DB_KEY_DEMO, DB_KEY_BLANK] + _list_custom_db_keys()]
     return templates.TemplateResponse(request, "db_switch.html", {"profiles": profiles})
 
 
