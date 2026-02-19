@@ -1,27 +1,26 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1>Workflows</h1>
-    <p class="muted">Workflows are the primary delivery surface. Tasks provide the governed foundation underneath.</p>
-  </div>
-  <div class="row-right">
-    <a class="btn" href="/workflows">Open Workflows</a>
-    <a class="btn secondary" href="/delivery">Open Delivery</a>
-    {% if request.state.role == 'author' %}
-      <a class="btn secondary" href="/tasks/new">New Task</a>
-    {% endif %}
-  </div>
-</div>
-
 <div class="grid">
   <section class="card stack-sm">
     <h2>Workflow delivery</h2>
     <p class="muted">Browse and deliver confirmed workflows as the user-facing product layer.</p>
     <ul class="link-list">
       <li><a href="/workflows?status=confirmed">Browse confirmed Workflows</a></li>
-      <li><a href="/delivery">Open Delivery exports</a></li>
+      <li><a href="/delivery">Open Content output</a></li>
       <li><a href="/workflows?status=submitted">Review submitted Workflows</a></li>
+    </ul>
+  </section>
+
+  <section class="card stack-sm">
+    <h2>Navigation shortcuts</h2>
+    <p class="muted">Jump directly to the primary areas of the application.</p>
+    <ul class="link-list">
+      <li><a href="/workflows">Open Workflows</a></li>
+      <li><a href="/delivery">Open Content output</a></li>
+      <li><a href="/tasks">Open Tasks</a></li>
+      {% if request.state.role == 'author' %}
+        <li><a href="/tasks/new">Create a new Task</a></li>
+      {% endif %}
     </ul>
   </section>
 
@@ -55,14 +54,19 @@
   <section class="card stack-sm">
     <h2>Tasks</h2>
     <p class="muted">Tasks remain first-class system records and power workflow quality, governance, and traceability.</p>
-    <p><a class="btn secondary" href="/tasks">Open Tasks</a></p>
+    <ul class="link-list">
+      <li><a href="/tasks">Open Tasks</a></li>
+      <li><a href="/tasks?status=confirmed">Browse confirmed Tasks</a></li>
+    </ul>
   </section>
 
   {% if can(request.state.role, 'audit:view') %}
   <section class="card stack-sm">
     <h2>Audit</h2>
     <p class="muted">Traceability across records, versions, and governance actions.</p>
-    <p><a class="btn secondary" href="/audit">Open Audit Log</a></p>
+    <ul class="link-list">
+      <li><a href="/audit">Open Audit Log</a></li>
+    </ul>
   </section>
   {% endif %}
 </div>
