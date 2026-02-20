@@ -1,73 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="grid">
-  <section class="card stack-sm">
-    <h2>Workflow delivery</h2>
-    <p class="muted">Browse and deliver confirmed workflows as the user-facing product layer.</p>
-    <ul class="link-list">
-      <li><a href="/workflows?status=confirmed">Browse confirmed Workflows</a></li>
-      <li><a href="/delivery">Open Content output</a></li>
-      <li><a href="/workflows?status=submitted">Review submitted Workflows</a></li>
-    </ul>
-  </section>
+<div class="page-header">
+  <div>
+    <h1>Dashboard</h1>
+    <div class="muted">Actionable summary for your current role and domain access.</div>
+  </div>
+</div>
 
-  <section class="card stack-sm">
-    <h2>Navigation shortcuts</h2>
-    <p class="muted">Jump directly to the primary areas of the application.</p>
-    <ul class="link-list">
-      <li><a href="/workflows">Open Workflows</a></li>
-      <li><a href="/delivery">Open Content output</a></li>
-      <li><a href="/tasks">Open Tasks</a></li>
-      {% if request.state.role == 'author' %}
-        <li><a href="/tasks/new">Create a new Task</a></li>
-      {% endif %}
-    </ul>
-  </section>
+{% if domains %}
+  <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
+{% endif %}
 
-  {% if request.state.role in ['viewer','author','reviewer'] %}
-  <section class="card stack-sm">
-    <h2>Role focus</h2>
-    {% if request.state.role == 'author' %}
-      <p class="muted"><b>Goal:</b> produce strong Tasks that feed reliable Workflows.</p>
-      <ul class="link-list">
-        <li><a href="/tasks?status=draft">Review draft Tasks</a></li>
-        <li><a href="/tasks/new">Create a new Task</a></li>
-        <li><a href="/import/pdf">Import source material (PDF → draft)</a></li>
-      </ul>
-    {% elif request.state.role == 'reviewer' %}
-      <p class="muted"><b>Goal:</b> confirm verifiable records and reduce submitted backlog.</p>
-      <ul class="link-list">
-        <li><a href="/review">Open review queue</a></li>
-        <li><a href="/workflows?status=submitted">Browse submitted Workflows</a></li>
-        <li><a href="/tasks?status=submitted">Browse submitted Tasks</a></li>
-      </ul>
+<div class="dashboard-grid">
+  {% for c in cards %}
+    <a class="card dashboard-card" href="{{ c.href }}">
+      <div class="dashboard-card-title">{{ c.title }}</div>
+      <div class="dashboard-card-value">{{ c.value }}</div>
+      <div class="muted">Open</div>
+    </a>
+  {% endfor %}
+
+  <section class="card dashboard-card audit-card">
+    <div class="dashboard-card-title">Last audit</div>
+    {% if last_audit %}
+      <div class="dashboard-audit-line"><b>{{ last_audit.action }}</b></div>
+      <div class="muted">by {{ last_audit.actor }}</div>
+      <div class="muted">{{ last_audit.at }}</div>
     {% else %}
-      <p class="muted">Read-only access. Start from confirmed Workflows, then drill into Tasks as needed.</p>
-      <ul class="link-list">
-        <li><a href="/workflows?status=confirmed">Browse confirmed Workflows</a></li>
-        <li><a href="/tasks?status=confirmed">Browse confirmed Tasks</a></li>
-      </ul>
+      <div class="muted">No audit entries yet.</div>
     {% endif %}
+    <div style="margin-top:8px"><a href="/audit">Open audit log</a></div>
   </section>
-  {% endif %}
-
-  <section class="card stack-sm">
-    <h2>Tasks</h2>
-    <p class="muted">Tasks remain first-class system records and power workflow quality, governance, and traceability.</p>
-    <ul class="link-list">
-      <li><a href="/tasks">Open Tasks</a></li>
-      <li><a href="/tasks?status=confirmed">Browse confirmed Tasks</a></li>
-    </ul>
-  </section>
-
-  {% if can(request.state.role, 'audit:view') %}
-  <section class="card stack-sm">
-    <h2>Audit</h2>
-    <p class="muted">Traceability across records, versions, and governance actions.</p>
-    <ul class="link-list">
-      <li><a href="/audit">Open Audit Log</a></li>
-    </ul>
-  </section>
-  {% endif %}
 </div>
 {% endblock %}

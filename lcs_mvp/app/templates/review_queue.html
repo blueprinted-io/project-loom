@@ -1,52 +1,52 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
+<div class="page-header">
   <div>
     <h1>Review queue</h1>
-    <div class="muted">Submitted records (Tasks, Workflows, Assessments) in domains you are authorized for.</div>
+    <div class="muted">Submitted records in your authorized domains.</div>
   </div>
+</div>
+
+<div class="filters" style="margin-top:0;margin-bottom:8px">
+  <a href="/review" class="pill {{ 'active' if not item_type else '' }}">All</a>
+  <a href="/review?item_type=task" class="pill {{ 'active' if item_type=='task' else '' }}">Tasks</a>
+  <a href="/review?item_type=workflow" class="pill {{ 'active' if item_type=='workflow' else '' }}">Workflows</a>
+  <a href="/review?item_type=assessment" class="pill {{ 'active' if item_type=='assessment' else '' }}">Assessments</a>
 </div>
 
 {% if domains %}
   <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
 {% endif %}
 
-<table class="table">
-  <thead>
-    <tr>
-      <th>Type</th>
-      <th>Title / Stem</th>
-      <th>Ver</th>
-      <th>Domains</th>
-      <th>Status</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for it in items %}
-    <tr>
-      <td><span class="badge">{{ it.type }}</span></td>
-      <td>
-        {% if it.type == 'task' %}
-          <a href="/tasks/{{ it.record_id }}/{{ it.version }}">{{ it.title }}</a>
-        {% elif it.type == 'workflow' %}
-          <a href="/workflows/{{ it.record_id }}/{{ it.version }}">{{ it.title }}</a>
-        {% else %}
-          <a href="/assessments/{{ it.record_id }}/{{ it.version }}">{{ it.title }}</a>
-        {% endif %}
-      </td>
-      <td><code>{{ it.version }}</code></td>
-      <td>
-        {% for d in it.domains %}
-          <span class="badge">{{ d }}</span>
-        {% endfor %}
-      </td>
-      <td><span class="badge badge-{{ it.status }}">{{ it.status }}</span></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-
-{% if not items %}
+{% if items %}
+  <section class="card review-queue-card">
+    <div class="review-queue-list" role="list" aria-label="Review queue items">
+      {% for it in items %}
+        <article class="review-row" role="listitem">
+          <div class="review-row-main">
+            <div class="review-row-title">{{ it.title }}</div>
+            <div class="review-row-meta">
+              <span class="badge">{{ it.type }}</span>
+              {% for d in it.domains %}
+                <span class="badge">{{ d }}</span>
+              {% endfor %}
+              <span class="badge badge-{{ it.status }}">{{ it.status }}</span>
+            </div>
+          </div>
+          <div class="review-row-actions">
+            {% if it.type == 'task' %}
+              <a class="btn secondary" href="/tasks/{{ it.record_id }}/{{ it.version }}">Open</a>
+            {% elif it.type == 'workflow' %}
+              <a class="btn secondary" href="/workflows/{{ it.record_id }}/{{ it.version }}">Open</a>
+            {% else %}
+              <a class="btn secondary" href="/assessments/{{ it.record_id }}/{{ it.version }}">Open</a>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% else %}
   <div class="card">
     <b>Nothing to review</b>
     <div class="muted" style="margin-top:6px">No submitted records exist in your authorized domains.</div>
