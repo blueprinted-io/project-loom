@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Search</h1>
+    <div class="muted">Keyword search across tasks, workflows, domains, and tags.</div>
+  </div>
+</div>
+
+<div class="card stack-sm">
+  <div><b>Query:</b> <code>{{ q or '' }}</code></div>
+  <div class="muted">{{ tasks|length }} task result(s) · {{ workflows|length }} workflow result(s)</div>
+</div>
+
+{% if tasks %}
+  <section class="card stack-sm">
+    <h2>Tasks</h2>
+    <div class="review-queue-list" role="list">
+      {% for t in tasks %}
+      <article class="review-row" role="listitem">
+        <div class="review-row-main">
+          <div class="review-row-title"><a href="/tasks/{{ t.record_id }}/{{ t.version }}">{{ t.title }}</a></div>
+          <div class="review-row-meta">
+            <span class="badge">task</span>
+            <span class="badge">{{ t.domain }}</span>
+            <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+            {% for tag in t.tags %}<span class="badge">#{{ tag }}</span>{% endfor %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% if workflows %}
+  <section class="card stack-sm">
+    <h2>Workflows</h2>
+    <div class="review-queue-list" role="list">
+      {% for w in workflows %}
+      <article class="review-row" role="listitem">
+        <div class="review-row-main">
+          <div class="review-row-title"><a href="/workflows/{{ w.record_id }}/{{ w.version }}">{{ w.title }}</a></div>
+          <div class="review-row-meta">
+            <span class="badge">workflow</span>
+            <span class="badge badge-{{ w.status }}">{{ w.status }}</span>
+            {% for d in w.domains %}<span class="badge">{{ d }}</span>{% endfor %}
+            {% for tag in w.tags %}<span class="badge">#{{ tag }}</span>{% endfor %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% if not tasks and not workflows %}
+  <div class="card">
+    <b>No results</b>
+    <div class="muted" style="margin-top:6px">Try a title keyword, domain name, or tag.</div>
+  </div>
+{% endif %}
+{% endblock %}
