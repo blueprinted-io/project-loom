@@ -1591,11 +1591,79 @@ def profile_domains_save(request: Request, domain: list[str] = Form([])):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    # Reviewer default: show their work queue.
-    if request.state.role == "reviewer":
-        return RedirectResponse(url="/review", status_code=303)
+    role = request.state.role
+    user = request.state.user
 
-    return templates.TemplateResponse(request, "home.html", {})
+    cards: list[dict[str, Any]] = []
+    with db() as conn:
+        doms = _active_domains(conn) if role == "admin" else _user_domains(conn, user)
+        dset = {d.strip().lower() for d in doms if d}
+
+        def _count_workflows_by_status(status: str) -> int:
+            rows = conn.execute("SELECT domains_json FROM workflows WHERE status=?", (status,)).fetchall()
+            if role == "admin":
+                return len(rows)
+            c = 0
+            for r in rows:
+                wdoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
+                if dset.intersection(wdoms):
+                    c += 1
+            return c
+
+        def _count_assessments_by_status(status: str) -> int:
+            rows = conn.execute("SELECT domains_json FROM assessment_items WHERE status=?", (status,)).fetchall()
+            if role == "admin":
+                return len(rows)
+            c = 0
+            for r in rows:
+                adoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
+                if dset.intersection(adoms):
+                    c += 1
+            return c
+
+        def _count_tasks_by_status(status: str) -> int:
+            if role == "admin":
+                return int(conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE status=?", (status,)).fetchone()["c"])
+            if not doms:
+                return 0
+            qmarks = ",".join(["?"] * len(doms))
+            return int(
+                conn.execute(
+                    f"SELECT COUNT(*) AS c FROM tasks WHERE status=? AND domain IN ({qmarks})",
+                    [status, *doms],
+                ).fetchone()["c"]
+            )
+
+        if role in ("reviewer", "admin"):
+            cards = [
+                {"title": "Tasks outstanding for review", "value": _count_tasks_by_status("submitted"), "href": "/review?item_type=task"},
+                {"title": "Workflows outstanding for review", "value": _count_workflows_by_status("submitted"), "href": "/review?item_type=workflow"},
+                {"title": "Assessments outstanding for review", "value": _count_assessments_by_status("submitted"), "href": "/review?item_type=assessment"},
+            ]
+        elif role == "author":
+            cards = [
+                {"title": "Returned Tasks", "value": _count_tasks_by_status("returned"), "href": "/tasks?status=returned"},
+                {"title": "Returned Workflows", "value": _count_workflows_by_status("returned"), "href": "/workflows?status=returned"},
+                {"title": "Returned Assessments", "value": _count_assessments_by_status("returned"), "href": "/assessments?status=returned"},
+            ]
+        else:
+            cards = [
+                {"title": "Confirmed Tasks", "value": _count_tasks_by_status("confirmed"), "href": "/tasks?status=confirmed"},
+                {"title": "Confirmed Workflows", "value": _count_workflows_by_status("confirmed"), "href": "/workflows?status=confirmed"},
+                {"title": "Confirmed Assessments", "value": _count_assessments_by_status("confirmed"), "href": "/assessments?status=confirmed"},
+            ]
+
+        last_audit = conn.execute("SELECT at, actor, action FROM audit_log ORDER BY at DESC LIMIT 1").fetchone()
+
+    return templates.TemplateResponse(
+        request,
+        "home.html",
+        {
+            "cards": cards,
+            "domains": doms,
+            "last_audit": dict(last_audit) if last_audit else None,
+        },
+    )
 
 
 @app.get("/explainer", response_class=HTMLResponse)
@@ -2210,7 +2278,7 @@ def export_download(request: Request, export_id: str):
 
 
 @app.get("/review", response_class=HTMLResponse)
-def review_queue(request: Request):
+def review_queue(request: Request, item_type: str = ""):
     # Reviewers and admins only. (Admin implicitly has all domains.)
     if request.state.role not in ("reviewer", "admin"):
         raise HTTPException(status_code=403, detail="Forbidden: reviewer/admin only")
@@ -2224,42 +2292,107 @@ def review_queue(request: Request):
             dom_rows = conn.execute("SELECT domain FROM user_domains WHERE user_id=?", (uid,)).fetchall() if uid else []
             doms = [str(r["domain"]) for r in dom_rows]
 
+        filter_type = (item_type or "").strip().lower()
+        if filter_type not in ("task", "workflow", "assessment"):
+            filter_type = ""
+
         items: list[dict[str, Any]] = []
         if doms:
             dset = {d.strip().lower() for d in doms if d}
             qmarks = ",".join(["?"] * len(doms))
 
+            # Priority bucket for tasks that block workflow progression
+            # (derived from workflow-side review flag/linkage).
+            blocking_task_refs: set[tuple[str, int]] = set()
+            block_rows = conn.execute(
+                """
+                SELECT wr.task_record_id, wr.task_version
+                FROM workflow_task_refs wr
+                JOIN workflows w
+                  ON w.record_id = wr.workflow_record_id
+                 AND w.version = wr.workflow_version
+                WHERE w.status='submitted' AND w.needs_review_flag=1
+                """
+            ).fetchall()
+            for br in block_rows:
+                blocking_task_refs.add((str(br["task_record_id"]), int(br["task_version"])))
+
             # Tasks
             t_rows = conn.execute(
-                f"SELECT record_id, version, title, status, domain FROM tasks WHERE status='submitted' AND domain IN ({qmarks}) ORDER BY domain ASC, title ASC",
+                f"SELECT record_id, version, title, status, domain, created_at FROM tasks WHERE status='submitted' AND domain IN ({qmarks})",
                 doms,
             ).fetchall()
             for r in t_rows:
-                items.append({"type": "task", "record_id": r["record_id"], "version": int(r["version"]), "title": r["title"], "status": r["status"], "domains": [str(r["domain"])],})
+                rid = str(r["record_id"])
+                ver = int(r["version"])
+                items.append(
+                    {
+                        "type": "task",
+                        "record_id": rid,
+                        "version": ver,
+                        "title": r["title"],
+                        "status": r["status"],
+                        "domains": [str(r["domain"])],
+                        "created_at": str(r["created_at"] or ""),
+                        "priority_bucket": 0 if (rid, ver) in blocking_task_refs else 2,
+                    }
+                )
 
             # Workflows (domain derived)
             w_rows = conn.execute(
-                "SELECT record_id, version, title, status, domains_json FROM workflows WHERE status='submitted' ORDER BY title ASC"
+                "SELECT record_id, version, title, status, domains_json, created_at FROM workflows WHERE status='submitted'"
             ).fetchall()
             for r in w_rows:
                 wdoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
                 if dset.intersection(wdoms):
-                    items.append({"type": "workflow", "record_id": r["record_id"], "version": int(r["version"]), "title": r["title"], "status": r["status"], "domains": wdoms,})
+                    items.append(
+                        {
+                            "type": "workflow",
+                            "record_id": r["record_id"],
+                            "version": int(r["version"]),
+                            "title": r["title"],
+                            "status": r["status"],
+                            "domains": wdoms,
+                            "created_at": str(r["created_at"] or ""),
+                            "priority_bucket": 2,
+                        }
+                    )
 
             # Assessments
             a_rows = conn.execute(
-                "SELECT record_id, version, stem, status, domains_json FROM assessment_items WHERE status='submitted' ORDER BY stem ASC"
+                "SELECT record_id, version, stem, status, domains_json, created_at FROM assessment_items WHERE status='submitted'"
             ).fetchall()
             for r in a_rows:
                 adoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
                 if dset.intersection(adoms):
                     title = str(r["stem"])[:80]
-                    items.append({"type": "assessment", "record_id": r["record_id"], "version": int(r["version"]), "title": title, "status": r["status"], "domains": adoms,})
+                    items.append(
+                        {
+                            "type": "assessment",
+                            "record_id": r["record_id"],
+                            "version": int(r["version"]),
+                            "title": title,
+                            "status": r["status"],
+                            "domains": adoms,
+                            "created_at": str(r["created_at"] or ""),
+                            "priority_bucket": 2,
+                        }
+                    )
 
-            # stable sort: domain then type
-            items.sort(key=lambda it: ("".join(it.get("domains") or []), it.get("type"), it.get("title")))
+            if filter_type:
+                items = [it for it in items if str(it.get("type")) == filter_type]
 
-    return templates.TemplateResponse(request, "review_queue.html", {"items": items, "domains": doms})
+            # Sort: blockers first, then oldest, then type/title.
+            items.sort(
+                key=lambda it: (
+                    int(it.get("priority_bucket", 2)),
+                    str(it.get("created_at") or ""),
+                    str(it.get("type") or ""),
+                    str(it.get("title") or "").lower(),
+                )
+            )
+
+    return templates.TemplateResponse(request, "review_queue.html", {"items": items, "domains": doms, "item_type": filter_type})
 
 
 @app.get("/audit", response_class=HTMLResponse)
@@ -3296,26 +3429,26 @@ def task_view(request: Request, record_id: str, version: int):
     workflows_using: list[dict[str, Any]] = []
     with db() as conn:
         wf_rows = conn.execute(
-            "SELECT record_id, version, title, status, refs_json FROM workflows ORDER BY updated_at DESC"
+            """
+            SELECT w.record_id, w.version, w.title, w.status
+            FROM workflows w
+            JOIN workflow_task_refs wr
+              ON wr.workflow_record_id = w.record_id
+             AND wr.workflow_version = w.version
+            WHERE wr.task_record_id=? AND wr.task_version=?
+            ORDER BY w.updated_at DESC
+            """,
+            (record_id, int(version)),
         ).fetchall()
     for wf in wf_rows:
-        refs = _json_load(wf["refs_json"] or "[]") or []
-        for r in refs:
-            try:
-                rid = str(r.get("record_id") or "").strip()
-                ver = int(r.get("version"))
-            except Exception:
-                continue
-            if rid == record_id and ver == int(version):
-                workflows_using.append(
-                    {
-                        "record_id": wf["record_id"],
-                        "version": int(wf["version"]),
-                        "title": wf["title"],
-                        "status": wf["status"],
-                    }
-                )
-                break
+        workflows_using.append(
+            {
+                "record_id": wf["record_id"],
+                "version": int(wf["version"]),
+                "title": wf["title"],
+                "status": wf["status"],
+            }
+        )
 
     # If returned, surface the most recent return note (if any)
     return_note = None

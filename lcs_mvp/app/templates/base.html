@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "LCS MVP" }}</title>
-  <link rel="stylesheet" href="/static/style.css?v=29" />
+  <link rel="stylesheet" href="/static/style.css?v=32" />
 </head>
-<body>
+<body class="spa-v1">
   <header class="topbar">
     <div class="wrap">
       <div class="brand">
@@ -121,8 +121,88 @@
         }
       }
 
-      initTheme();
-      loadPulse();
+      function initRail(){
+        const body = document.body;
+        const railToggle = document.getElementById('rail-toggle');
+        const railToggleMobile = document.getElementById('rail-toggle-mobile');
+
+        function isMobile(){
+          return window.matchMedia('(max-width: 980px)').matches;
+        }
+
+        function applyRail(state){
+          body.classList.toggle('rail-collapsed', state === 'collapsed');
+          try{ localStorage.setItem('rail', state); }catch(e){}
+        }
+
+        let saved = 'expanded';
+        try{ saved = localStorage.getItem('rail') || 'expanded'; }catch(e){}
+        applyRail(saved === 'collapsed' ? 'collapsed' : 'expanded');
+        body.classList.remove('mobile-rail-open');
+
+        const icons = {
+          'Dashboard':'⌂',
+          'Workflows':'▦',
+          'Tasks':'✓',
+          'Review queue':'⧉',
+          'Content output':'⇢',
+          'Assessments':'◈',
+          'Audit Log':'◷',
+          'Exports library':'⬒',
+          'Import PDF':'⇪',
+          'Import JSON':'⇪',
+          'Users':'◉',
+          'Domains':'◌',
+          'Switch database':'⌁',
+          'Explainer':'?'
+        };
+
+        document.querySelectorAll('.navlink').forEach(function(link){
+          if(link.querySelector('.navtext')) return;
+          const text = (link.textContent || '').trim();
+          const icon = document.createElement('span');
+          icon.className = 'navicon';
+          icon.setAttribute('aria-hidden', 'true');
+          icon.textContent = icons[text] || '•';
+
+          const label = document.createElement('span');
+          label.className = 'navtext';
+          label.textContent = text;
+
+          link.textContent = '';
+          link.appendChild(icon);
+          link.appendChild(label);
+          link.setAttribute('title', text);
+        });
+
+        function toggleRail(){
+          if(isMobile()){
+            body.classList.toggle('mobile-rail-open');
+            return;
+          }
+          const cur = body.classList.contains('rail-collapsed') ? 'collapsed' : 'expanded';
+          applyRail(cur === 'expanded' ? 'collapsed' : 'expanded');
+        }
+
+        if(railToggle) railToggle.addEventListener('click', toggleRail);
+        if(railToggleMobile) railToggleMobile.addEventListener('click', toggleRail);
+
+        window.addEventListener('resize', function(){
+          if(!isMobile()) body.classList.remove('mobile-rail-open');
+        });
+      }
+
+      function boot(){
+        initTheme();
+        initRail();
+        loadPulse();
+      }
+
+      if(document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded', boot);
+      } else {
+        boot();
+      }
     })();
   </script>
 
@@ -133,9 +213,28 @@
     </div>
   </div>
 
-  <div class="layout wrap">
-    <aside class="sidebar">
+  <div class="layout spa-layout">
+    <aside class="sidebar" id="app-rail">
+      <div class="sidebar-shell-controls">
+        <button class="btn secondary rail-toggle" type="button" id="rail-toggle" aria-label="Toggle navigation rail" title="Toggle navigation rail">☰</button>
+      </div>
+
+      <section class="rail-profile" aria-label="Current user">
+        <a class="rail-profile-main" href="/profile" title="Open profile">
+          <span class="rail-profile-label">Signed in</span>
+          <span class="rail-profile-user">{{ request.state.user }}</span>
+          <span class="rail-profile-role">{{ request.state.role }}</span>
+        </a>
+        <form method="post" action="/logout" class="rail-logout-form">
+          <button class="btn secondary rail-logout" type="submit">Logout</button>
+        </form>
+      </section>
+
       {% set role = request.state.role %}
+
+      <div class="sidebar-section">
+        <a class="navlink {% if request.url.path == '/' %}active{% endif %}" href="/">Dashboard</a>
+      </div>
 
       {% if role == 'admin' %}
         <div class="sidebar-section">
@@ -260,7 +359,11 @@
       </div>
     </aside>
 
-    <main class="content">
+    <main class="content wrap spa-main">
+      <button class="btn secondary rail-toggle-mobile" type="button" id="rail-toggle-mobile" aria-label="Open navigation" title="Open navigation">☰ Menu</button>
+      <div class="spa-shell-search card" role="search" aria-label="Application search">
+        <input type="text" id="spa-search" placeholder="Start typing to search..." autocomplete="off" />
+      </div>
       {% block content %}{% endblock %}
     </main>
   </div>

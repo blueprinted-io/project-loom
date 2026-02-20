@@ -2,11 +2,123 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>Task</h1>
-    <p class="muted">Version <code>{{ task.version }}</code></p>
+    <h1>{{ task.title }}</h1>
+    <p class="muted">Task · Version <code>{{ task.version }}</code></p>
   </div>
   <div class="row-right">
     <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+  </div>
+</div>
+
+<div class="detail-layout">
+  <section class="detail-main">
+    {% if return_note %}
+      <div class="callout warn">
+        <b>Returned for changes</b>
+        <div class="muted" style="margin-top:6px">By {{ return_note.actor }} at {{ return_note.at }}</div>
+        <div style="margin-top:10px">{{ return_note.note }}</div>
+      </div>
+    {% endif %}
+
+    {% if warnings %}
+      <div class="callout warn">
+        <b>Lint warnings (warnings-only)</b>
+        <ul>
+          {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <div class="card stack-sm">
+      <p><b>Outcome:</b> {{ task.outcome }}</p>
+      <p><b>Procedure name:</b> {{ task.procedure_name }}</p>
+      <p><b>Irreversible:</b> {{ 'yes' if task.irreversible_flag else 'no' }}</p>
+
+      <h3>Facts</h3>
+      <ul>
+        {% for f in task.facts %}<li>{{ f }}</li>{% endfor %}
+      </ul>
+
+      <h3>Concepts</h3>
+      <ul>
+        {% for c in task.concepts %}<li>{{ c }}</li>{% endfor %}
+      </ul>
+
+      <h3>Dependencies</h3>
+      <ul>
+        {% for d in task.dependencies %}<li>{{ d }}</li>{% endfor %}
+      </ul>
+
+      <h3>Referenced by Workflows</h3>
+      {% if workflows_using %}
+        <ul>
+          {% for w in workflows_using %}
+            <li>
+              <a href="/workflows/{{ w.record_id }}/{{ w.version }}">{{ w.title }}</a>
+              <span class="muted">({{ w.record_id }}@{{ w.version }})</span>
+              <span class="badge badge-{{ w.status }}">{{ w.status }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No workflows currently reference this task version.</p>
+      {% endif %}
+
+      <h3>Procedure</h3>
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width:34%">Step</th>
+            <th style="width:22%">Actions</th>
+            <th style="width:22%">Notes</th>
+            <th style="width:22%">Completion</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for st in task.steps %}
+            <tr>
+              <td>{{ st.text }}</td>
+              <td>
+                {% if st.actions %}
+                  <ul style="margin:0;padding-left:18px">
+                    {% for a in st.actions %}<li class="muted">{{ a }}</li>{% endfor %}
+                  </ul>
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if st.notes %}{{ st.notes }}{% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td>
+                {% if st.completion %}{{ st.completion }}{% else %}<span class="muted">—</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if request.state.role == 'admin' %}
+        <details class="card" style="margin-top:14px">
+          <summary><b>Record metadata</b> <span class="muted">(admin only)</span></summary>
+          <div style="margin-top:10px">
+            <p class="muted">record_id=<code>{{ task.record_id }}</code> · version=<code>{{ task.version }}</code></p>
+            <p class="muted">created_by={{ task.created_by }} · created_at={{ task.created_at }}</p>
+            <p class="muted">updated_by={{ task.updated_by }} · updated_at={{ task.updated_at }}</p>
+            {% if task.reviewed_by %}
+              <p class="muted">reviewed_by={{ task.reviewed_by }} · reviewed_at={{ task.reviewed_at }}</p>
+            {% endif %}
+            {% if task.change_note %}
+              <p class="muted">change_note={{ task.change_note }}</p>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
+    </div>
+  </section>
+
+  <aside class="detail-actions card">
+    <div class="detail-actions-title">Actions</div>
 
     {% if can(request.state.role, 'task:revise') %}
       <a class="btn" href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Revise</a>
@@ -15,143 +127,36 @@
     {% if can(request.state.role, 'assessment:create') %}
       <a class="btn secondary" href="/assessments/new?task_record_id={{ task.record_id }}&task_version={{ task.version }}">New assessment</a>
     {% endif %}
-  </div>
-</div>
 
-{% if return_note %}
-  <div class="callout warn">
-    <b>Returned for changes</b>
-    <div class="muted" style="margin-top:6px">By {{ return_note.actor }} at {{ return_note.at }}</div>
-    <div style="margin-top:10px">{{ return_note.note }}</div>
-  </div>
-{% endif %}
+    {% if task.status == 'draft' and can(request.state.role, 'task:submit') %}
+    <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/submit">
+      <button class="btn" type="submit">Submit for review</button>
+    </form>
+    {% endif %}
 
-{% if warnings %}
-  <div class="callout warn">
-    <b>Lint warnings (warnings-only)</b>
-    <ul>
-      {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
-    </ul>
-  </div>
-{% endif %}
+    {% if task.status == 'submitted' and can(request.state.role, 'task:confirm') %}
+    <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/confirm">
+      <button class="btn" type="submit">Confirm (reviewer)</button>
+    </form>
 
-<div class="card stack-sm">
-  <h2>{{ task.title }}</h2>
-  <p><b>Outcome:</b> {{ task.outcome }}</p>
-  <p><b>Procedure name:</b> {{ task.procedure_name }}</p>
-  <p><b>Irreversible:</b> {{ 'yes' if task.irreversible_flag else 'no' }}</p>
-
-  <h3>Facts</h3>
-  <ul>
-    {% for f in task.facts %}<li>{{ f }}</li>{% endfor %}
-  </ul>
-
-  <h3>Concepts</h3>
-  <ul>
-    {% for c in task.concepts %}<li>{{ c }}</li>{% endfor %}
-  </ul>
-
-  <h3>Dependencies</h3>
-  <ul>
-    {% for d in task.dependencies %}<li>{{ d }}</li>{% endfor %}
-  </ul>
-
-  <h3>Referenced by Workflows</h3>
-  {% if workflows_using %}
-    <ul>
-      {% for w in workflows_using %}
-        <li>
-          <a href="/workflows/{{ w.record_id }}/{{ w.version }}">{{ w.title }}</a>
-          <span class="muted">({{ w.record_id }}@{{ w.version }})</span>
-          <span class="badge badge-{{ w.status }}">{{ w.status }}</span>
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="muted">No workflows currently reference this task version.</p>
-  {% endif %}
-
-  <h3>Procedure</h3>
-  <table class="table">
-    <thead>
-      <tr>
-        <th style="width:34%">Step</th>
-        <th style="width:22%">Actions</th>
-        <th style="width:22%">Notes</th>
-        <th style="width:22%">Completion</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for st in task.steps %}
-        <tr>
-          <td>{{ st.text }}</td>
-          <td>
-            {% if st.actions %}
-              <ul style="margin:0;padding-left:18px">
-                {% for a in st.actions %}<li class="muted">{{ a }}</li>{% endfor %}
-              </ul>
-            {% else %}
-              <span class="muted">—</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if st.notes %}{{ st.notes }}{% else %}<span class="muted">—</span>{% endif %}
-          </td>
-          <td>
-            {% if st.completion %}{{ st.completion }}{% else %}<span class="muted">—</span>{% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  {% if request.state.role == 'admin' %}
-    <details class="card" style="margin-top:14px">
-      <summary><b>Record metadata</b> <span class="muted">(admin only)</span></summary>
-      <div style="margin-top:10px">
-        <p class="muted">record_id=<code>{{ task.record_id }}</code> · version=<code>{{ task.version }}</code></p>
-        <p class="muted">created_by={{ task.created_by }} · created_at={{ task.created_at }}</p>
-        <p class="muted">updated_by={{ task.updated_by }} · updated_at={{ task.updated_at }}</p>
-        {% if task.reviewed_by %}
-          <p class="muted">reviewed_by={{ task.reviewed_by }} · reviewed_at={{ task.reviewed_at }}</p>
-        {% endif %}
-        {% if task.change_note %}
-          <p class="muted">change_note={{ task.change_note }}</p>
-        {% endif %}
+    <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/return" class="card detail-inline-card">
+      <div class="muted" style="margin-bottom:6px"><b>Return for changes</b> (requires a note)</div>
+      <textarea name="note" rows="3" placeholder="What must change before this can be confirmed?" required></textarea>
+      <div style="margin-top:8px">
+        <button class="btn" type="submit">Return</button>
       </div>
-    </details>
-  {% endif %}
-</div>
-
-<div class="actions-bar">
-  {% if task.status == 'draft' and can(request.state.role, 'task:submit') %}
-  <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/submit">
-    <button class="btn" type="submit">Submit for review</button>
-  </form>
-  {% endif %}
-
-  {% if task.status == 'submitted' and can(request.state.role, 'task:confirm') %}
-  <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/confirm">
-    <button class="btn" type="submit">Confirm (reviewer)</button>
-  </form>
-
-  <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/return" class="card" style="padding:10px;margin:0;min-width:360px">
-    <div class="muted" style="margin-bottom:6px"><b>Return for changes</b> (requires a note)</div>
-    <textarea name="note" rows="2" placeholder="What must change before this can be confirmed?" required></textarea>
-    <div style="margin-top:8px">
-      <button class="btn" type="submit">Return</button>
-    </div>
-  </form>
-  {% endif %}
-
-  {% if request.state.role == 'admin' %}
-    <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-submit">
-      <button class="btn secondary" type="submit">Force submit</button>
     </form>
-    <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-confirm">
-      <button class="btn secondary" type="submit">Force confirm</button>
-    </form>
-  {% endif %}
+    {% endif %}
+
+    {% if request.state.role == 'admin' %}
+      <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-submit">
+        <button class="btn secondary" type="submit">Force submit</button>
+      </form>
+      <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-confirm">
+        <button class="btn secondary" type="submit">Force confirm</button>
+      </form>
+    {% endif %}
+  </aside>
 </div>
 
 {% endblock %}
