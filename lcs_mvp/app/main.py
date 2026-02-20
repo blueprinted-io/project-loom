@@ -1600,39 +1600,63 @@ def home(request: Request):
         dset = {d.strip().lower() for d in doms if d}
 
         def _count_workflows_by_status(status: str) -> int:
-            rows = conn.execute("SELECT domains_json FROM workflows WHERE status=?", (status,)).fetchall()
-            if role == "admin":
-                return len(rows)
+            rows = conn.execute(
+                "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id"
+            ).fetchall()
             c = 0
             for r in rows:
-                wdoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
+                latest = conn.execute(
+                    "SELECT status, domains_json FROM workflows WHERE record_id=? AND version=?",
+                    (r["record_id"], int(r["latest_version"])),
+                ).fetchone()
+                if not latest or str(latest["status"]) != status:
+                    continue
+                if role == "admin":
+                    c += 1
+                    continue
+                wdoms = [str(x).strip().lower() for x in (_json_load(latest["domains_json"]) or []) if str(x).strip()]
                 if dset.intersection(wdoms):
                     c += 1
             return c
 
         def _count_assessments_by_status(status: str) -> int:
-            rows = conn.execute("SELECT domains_json FROM assessment_items WHERE status=?", (status,)).fetchall()
-            if role == "admin":
-                return len(rows)
+            rows = conn.execute(
+                "SELECT record_id, MAX(version) AS latest_version FROM assessment_items GROUP BY record_id"
+            ).fetchall()
             c = 0
             for r in rows:
-                adoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
+                latest = conn.execute(
+                    "SELECT status, domains_json FROM assessment_items WHERE record_id=? AND version=?",
+                    (r["record_id"], int(r["latest_version"])),
+                ).fetchone()
+                if not latest or str(latest["status"]) != status:
+                    continue
+                if role == "admin":
+                    c += 1
+                    continue
+                adoms = [str(x).strip().lower() for x in (_json_load(latest["domains_json"]) or []) if str(x).strip()]
                 if dset.intersection(adoms):
                     c += 1
             return c
 
         def _count_tasks_by_status(status: str) -> int:
-            if role == "admin":
-                return int(conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE status=?", (status,)).fetchone()["c"])
-            if not doms:
-                return 0
-            qmarks = ",".join(["?"] * len(doms))
-            return int(
-                conn.execute(
-                    f"SELECT COUNT(*) AS c FROM tasks WHERE status=? AND domain IN ({qmarks})",
-                    [status, *doms],
-                ).fetchone()["c"]
-            )
+            rows = conn.execute(
+                "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id"
+            ).fetchall()
+            c = 0
+            for r in rows:
+                latest = conn.execute(
+                    "SELECT status, domain FROM tasks WHERE record_id=? AND version=?",
+                    (r["record_id"], int(r["latest_version"])),
+                ).fetchone()
+                if not latest or str(latest["status"]) != status:
+                    continue
+                if role == "admin":
+                    c += 1
+                    continue
+                if str(latest["domain"] or "").strip().lower() in dset:
+                    c += 1
+            return c
 
         if role in ("reviewer", "admin"):
             cards = [
@@ -1663,6 +1687,100 @@ def home(request: Request):
             "domains": doms,
             "last_audit": dict(last_audit) if last_audit else None,
         },
+    )
+
+
+@app.get("/search", response_class=HTMLResponse)
+def search(request: Request, q: str = ""):
+    q_norm = (q or "").strip().lower()
+    if not q_norm:
+        return templates.TemplateResponse(request, "search_results.html", {"q": q, "tasks": [], "workflows": []})
+
+    role = request.state.role
+    user = request.state.user
+
+    with db() as conn:
+        doms = _active_domains(conn) if role == "admin" else _user_domains(conn, user)
+        dset = {d.strip().lower() for d in doms if d}
+
+        task_rows = conn.execute(
+            "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id ORDER BY record_id"
+        ).fetchall()
+        tasks: list[dict[str, Any]] = []
+        for r in task_rows:
+            rid = r["record_id"]
+            latest_v = int(r["latest_version"])
+            t = conn.execute(
+                "SELECT record_id, version, title, status, domain, outcome, tags_json FROM tasks WHERE record_id=? AND version=?",
+                (rid, latest_v),
+            ).fetchone()
+            if not t:
+                continue
+            domain_val = str(t["domain"] or "").strip().lower()
+            if role != "admin" and domain_val not in dset:
+                continue
+            tags = [str(x).strip().lower() for x in (_json_load(t["tags_json"] or "[]") or []) if str(x).strip()]
+            hay = " ".join([
+                str(t["record_id"] or ""),
+                str(t["title"] or ""),
+                str(t["outcome"] or ""),
+                str(t["domain"] or ""),
+                " ".join(tags),
+            ]).lower()
+            if q_norm not in hay:
+                continue
+            tasks.append(
+                {
+                    "record_id": t["record_id"],
+                    "version": int(t["version"]),
+                    "title": t["title"],
+                    "status": t["status"],
+                    "domain": t["domain"],
+                    "tags": tags,
+                }
+            )
+
+        wf_rows = conn.execute(
+            "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id ORDER BY record_id"
+        ).fetchall()
+        workflows: list[dict[str, Any]] = []
+        for r in wf_rows:
+            rid = r["record_id"]
+            latest_v = int(r["latest_version"])
+            w = conn.execute(
+                "SELECT record_id, version, title, status, objective, domains_json, tags_json FROM workflows WHERE record_id=? AND version=?",
+                (rid, latest_v),
+            ).fetchone()
+            if not w:
+                continue
+            wdoms = [str(x).strip().lower() for x in (_json_load(w["domains_json"] or "[]") or []) if str(x).strip()]
+            if role != "admin" and not dset.intersection(set(wdoms)):
+                continue
+            tags = [str(x).strip().lower() for x in (_json_load(w["tags_json"] or "[]") or []) if str(x).strip()]
+            hay = " ".join([
+                str(w["record_id"] or ""),
+                str(w["title"] or ""),
+                str(w["objective"] or ""),
+                " ".join(wdoms),
+                " ".join(tags),
+            ]).lower()
+            if q_norm not in hay:
+                continue
+            workflows.append(
+                {
+                    "record_id": w["record_id"],
+                    "version": int(w["version"]),
+                    "title": w["title"],
+                    "status": w["status"],
+                    "domains": wdoms,
+                    "tags": tags,
+                }
+            )
+
+    return templates.TemplateResponse(
+        request,
+        "search_results.html",
+        {"q": q, "tasks": tasks, "workflows": workflows},
     )
 
 

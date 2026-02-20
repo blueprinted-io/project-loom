@@ -361,9 +361,9 @@
 
     <main class="content wrap spa-main">
       <button class="btn secondary rail-toggle-mobile" type="button" id="rail-toggle-mobile" aria-label="Open navigation" title="Open navigation">☰ Menu</button>
-      <div class="spa-shell-search card" role="search" aria-label="Application search">
-        <input type="text" id="spa-search" placeholder="Start typing to search..." autocomplete="off" />
-      </div>
+      <form class="spa-shell-search card" role="search" aria-label="Application search" method="get" action="/search">
+        <input type="text" id="spa-search" name="q" placeholder="Search tasks, workflows, domains, tags..." autocomplete="off" />
+      </form>
       {% block content %}{% endblock %}
     </main>
   </div>
