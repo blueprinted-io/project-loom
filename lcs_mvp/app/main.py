@@ -11,6 +11,7 @@ import shutil
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
+from uuid import uuid4
 from typing import Any, Literal
 
 import httpx
@@ -1511,7 +1512,15 @@ def profile_avatar(request: Request):
     elif low.endswith(".webp"):
         mt = "image/webp"
 
-    return FileResponse(str(f_abs), media_type=mt)
+    return FileResponse(
+        str(f_abs),
+        media_type=mt,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.post("/profile/save")
@@ -1537,7 +1546,8 @@ def profile_save(
         safe_user = re.sub(r"[^a-zA-Z0-9_-]+", "_", actor)[:48]
         out_dir = Path(UPLOADS_DIR) / "avatars"
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = (out_dir / f"avatar__{safe_user}__{ts}{ext}").resolve()
+        nonce = uuid4().hex[:10]
+        out_path = (out_dir / f"avatar__{safe_user}__{ts}__{nonce}{ext}").resolve()
 
         data = avatar.file.read()
         if len(data) > 2_000_000:
