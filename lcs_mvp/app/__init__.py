@@ -1,1 +1,1 @@
-# Package marker for seed scripts and tooling.
+# App package
