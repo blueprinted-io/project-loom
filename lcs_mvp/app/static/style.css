@@ -551,6 +551,21 @@ body.spa-v1 .dashboard-card-value{font-size:34px;line-height:1;font-weight:300;l
 body.spa-v1 .dashboard-audit-line{font-size:15px}
 body.spa-v1 .audit-card{grid-column:span 2}
 
+body.spa-v1 .reviewer-dashboard-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+body.spa-v1 .author-dashboard-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+body.spa-v1 .reviewer-card,
+body.spa-v1 .author-returned-card{position:relative;padding-top:14px}
+body.spa-v1 .reviewer-card-icon{
+  width:30px;height:30px;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:color-mix(in oklab, var(--accent) 14%, var(--panel));
+  border:1px solid color-mix(in oklab, var(--accent) 35%, var(--border));
+  color:color-mix(in oklab, var(--accent) 75%, var(--ink));
+  margin-bottom:6px;
+}
+body.spa-v1 .author-action-card{border-style:dashed}
+body.spa-v1 .author-action-card .dashboard-card-value{font-size:22px;font-weight:500;color:var(--muted)}
+
 body.spa-v1 .detail-layout{
   display:grid;
   grid-template-columns:minmax(0,1fr) 320px;
@@ -574,6 +589,8 @@ body.spa-v1 .detail-inline-card{padding:10px;margin:0}
 @media (max-width: 980px){
   body.spa-v1 .review-row{align-items:flex-start;flex-direction:column}
   body.spa-v1 .dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  body.spa-v1 .reviewer-dashboard-grid{grid-template-columns:1fr}
+  body.spa-v1 .author-dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   body.spa-v1 .audit-card{grid-column:span 2}
   body.spa-v1 .detail-layout{grid-template-columns:1fr}
   body.spa-v1 .detail-actions{position:relative;top:auto}

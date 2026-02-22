@@ -1,25 +1,67 @@
 {% extends "base.html" %}
 {% block content %}
+{% set reviewer_mode = (request.state.role == 'reviewer') %}
+{% set author_mode = (request.state.role == 'author') %}
+
 <div class="page-header">
   <div>
     <h1>Dashboard</h1>
-    <div class="muted">Actionable summary for your current role and domain access.</div>
+    {% if reviewer_mode %}
+      <div class="muted">Review queue overview.</div>
+    {% elif author_mode %}
+      <div class="muted">Returned-items-first author workspace.</div>
+    {% else %}
+      <div class="muted">Actionable summary for your current role and domain access.</div>
+    {% endif %}
   </div>
 </div>
 
-{% if domains %}
+{% if domains and not reviewer_mode and not author_mode %}
   <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
 {% endif %}
 
-<div class="dashboard-grid">
+<div class="dashboard-grid {% if reviewer_mode %}reviewer-dashboard-grid{% endif %} {% if author_mode %}author-dashboard-grid{% endif %}">
   {% for c in cards %}
-    <a class="card dashboard-card" href="{{ c.href }}">
+    <a class="card dashboard-card {% if reviewer_mode %}reviewer-card{% endif %} {% if author_mode %}author-returned-card{% endif %}" href="{{ c.href }}">
+      {% if reviewer_mode or author_mode %}
+        <div class="reviewer-card-icon">
+          {% if 'Tasks' in c.title %}✓{% elif 'Workflows' in c.title %}▦{% else %}◈{% endif %}
+        </div>
+      {% endif %}
       <div class="dashboard-card-title">{{ c.title }}</div>
       <div class="dashboard-card-value">{{ c.value }}</div>
-      <div class="muted">Open</div>
+      <div class="muted">Open queue view</div>
     </a>
   {% endfor %}
 
+  {% if author_mode %}
+    <a class="card dashboard-card author-action-card" href="/workflows/new">
+      <div class="dashboard-card-title">Write a workflow</div>
+      <div class="muted">Create a new workflow</div>
+    </a>
+
+    <a class="card dashboard-card author-action-card" href="/tasks/new">
+      <div class="dashboard-card-title">Write a task</div>
+      <div class="muted">Create a new task</div>
+    </a>
+
+    <a class="card dashboard-card author-action-card" href="/assessments/new">
+      <div class="dashboard-card-title">Write an assessment</div>
+      <div class="muted">Create a new assessment</div>
+    </a>
+
+    <a class="card dashboard-card author-action-card" href="/import/pdf">
+      <div class="dashboard-card-title">Import a PDF</div>
+      <div class="muted">Import source material</div>
+    </a>
+
+    <a class="card dashboard-card author-action-card" href="/import/json">
+      <div class="dashboard-card-title">Import JSON</div>
+      <div class="muted">Import structured records</div>
+    </a>
+  {% endif %}
+
+  {% if not reviewer_mode and not author_mode %}
   <section class="card dashboard-card audit-card">
     <div class="dashboard-card-title">Last audit</div>
     {% if last_audit %}
@@ -31,5 +73,6 @@
     {% endif %}
     <div style="margin-top:8px"><a href="/audit">Open audit log</a></div>
   </section>
+  {% endif %}
 </div>
 {% endblock %}
