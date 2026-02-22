@@ -84,6 +84,10 @@ CANONICAL_TASK_LIBRARIES = {
 
 CANONICAL_WORKFLOW_LIBRARIES = {
     "aws": ROOT / "seed" / "canonical_workflows_aws.json",
+    "windows": ROOT / "seed" / "canonical_workflows_windows.json",
+    "kubernetes": ROOT / "seed" / "canonical_workflows_kubernetes.json",
+    "postgres": ROOT / "seed" / "canonical_workflows_postgres.json",
+    "arch": ROOT / "seed" / "canonical_workflows_arch.json",
 }
 
 
