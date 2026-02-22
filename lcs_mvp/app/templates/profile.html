@@ -12,7 +12,7 @@
 
 <div class="card" style="margin-bottom:16px">
   <h2 style="margin-top:0">Identity</h2>
-  <form method="post" action="/profile/save" enctype="multipart/form-data" class="grid" style="grid-template-columns: 1fr 280px; gap: 14px">
+  <form id="profile-form" method="post" action="/profile/save" enctype="multipart/form-data" class="grid" style="grid-template-columns: 1fr 280px; gap: 14px">
     <div>
       <label>Username</label>
       <input value="{{ user.username }}" disabled />
@@ -26,18 +26,27 @@
 
     <div>
       <label>Avatar</label>
-      {% if user.avatar_path %}
-        <div class="card" style="padding:10px">
-          <img src="/profile/avatar" alt="avatar" style="width:100%; border-radius:12px; border:1px solid var(--border)" />
-          <div class="muted" style="margin-top:8px">Stored: <code>{{ user.avatar_path }}</code></div>
+      <div class="card avatar-editor">
+        <div class="avatar-preview-circle-wrap">
+          <img src="{% if user.avatar_path %}/profile/avatar{% endif %}" alt="avatar preview" class="avatar-preview-circle" id="avatar-preview-circle" {% if not user.avatar_path %}style="display:none"{% endif %} />
+          <canvas id="avatar-crop-canvas" class="avatar-crop-canvas" width="320" height="320" style="display:none"></canvas>
+          <div class="avatar-preview-fallback" id="avatar-preview-fallback" {% if user.avatar_path %}style="display:none"{% endif %}>{{ (user.username or '?')[:1]|upper }}</div>
         </div>
-      {% else %}
-        <div class="muted">No avatar uploaded.</div>
-      {% endif %}
+        <div id="avatar-crop-controls" class="avatar-crop-controls" style="display:none">
+          <label style="margin-top:8px">Zoom</label>
+          <input id="avatar-zoom" type="range" min="1" max="3" step="0.01" value="1" />
+          <button type="button" class="btn secondary" id="avatar-reset" style="margin-top:8px">Reset crop</button>
+          <div class="muted" style="margin-top:6px">Drag the image to position it in the circle.</div>
+        </div>
+        <div class="muted" style="margin-top:8px">Avatar is displayed as a circle in navigation.</div>
+        {% if user.avatar_path %}
+          <div class="muted" style="margin-top:6px">Stored: <code>{{ user.avatar_path }}</code></div>
+        {% endif %}
+      </div>
 
       <div style="margin-top:10px">
-        <input type="file" name="avatar" accept="image/png,image/jpeg,image/webp" />
-        <div class="muted" style="margin-top:6px">PNG/JPG/WebP. Stored locally on the server.</div>
+        <input type="file" id="avatar-input" name="avatar" accept="image/png,image/jpeg,image/webp" />
+        <div class="muted" style="margin-top:6px">PNG/JPG/WebP. Choose and crop before saving.</div>
       </div>
     </div>
 
@@ -66,4 +75,133 @@
   </form>
 </div>
 
+<script>
+  (function(){
+    const form = document.getElementById('profile-form');
+    const input = document.getElementById('avatar-input');
+    const img = document.getElementById('avatar-preview-circle');
+    const fallback = document.getElementById('avatar-preview-fallback');
+    const canvas = document.getElementById('avatar-crop-canvas');
+    const controls = document.getElementById('avatar-crop-controls');
+    const zoom = document.getElementById('avatar-zoom');
+    const reset = document.getElementById('avatar-reset');
+    if(!form || !input || !img || !fallback || !canvas || !controls || !zoom || !reset) return;
+
+    const ctx = canvas.getContext('2d');
+    let srcImg = null;
+    let state = {scale:1, minScale:1, x:0, y:0, dragging:false, lastX:0, lastY:0};
+    let hasCrop = false;
+
+    function draw(){
+      if(!srcImg) return;
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0,0,w,h);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(w/2,h/2,w/2-2,0,Math.PI*2);
+      ctx.clip();
+      const dw = srcImg.width * state.scale;
+      const dh = srcImg.height * state.scale;
+      ctx.drawImage(srcImg, state.x, state.y, dw, dh);
+      ctx.restore();
+      ctx.beginPath();
+      ctx.arc(w/2,h/2,w/2-1,0,Math.PI*2);
+      ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    function fitImage(){
+      if(!srcImg) return;
+      const w = canvas.width;
+      const h = canvas.height;
+      state.minScale = Math.max(w/srcImg.width, h/srcImg.height);
+      state.scale = state.minScale;
+      zoom.value = String(state.scale);
+      state.x = (w - srcImg.width * state.scale)/2;
+      state.y = (h - srcImg.height * state.scale)/2;
+      draw();
+    }
+
+    function loadFromFile(file){
+      const url = URL.createObjectURL(file);
+      const i = new Image();
+      i.onload = function(){
+        srcImg = i;
+        hasCrop = true;
+        img.style.display = 'none';
+        fallback.style.display = 'none';
+        canvas.style.display = 'block';
+        controls.style.display = 'block';
+        fitImage();
+      };
+      i.src = url;
+    }
+
+    zoom.addEventListener('input', function(){
+      if(!srcImg) return;
+      const prev = state.scale;
+      state.scale = Math.max(state.minScale, parseFloat(zoom.value || '1'));
+      const cx = canvas.width/2;
+      const cy = canvas.height/2;
+      state.x = cx - ((cx - state.x) * (state.scale/prev));
+      state.y = cy - ((cy - state.y) * (state.scale/prev));
+      draw();
+    });
+
+    reset.addEventListener('click', fitImage);
+
+    canvas.addEventListener('pointerdown', function(e){
+      state.dragging = true;
+      state.lastX = e.clientX;
+      state.lastY = e.clientY;
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointermove', function(e){
+      if(!state.dragging) return;
+      const dx = e.clientX - state.lastX;
+      const dy = e.clientY - state.lastY;
+      state.lastX = e.clientX;
+      state.lastY = e.clientY;
+      state.x += dx;
+      state.y += dy;
+      draw();
+    });
+    canvas.addEventListener('pointerup', function(e){
+      state.dragging = false;
+      try{ canvas.releasePointerCapture(e.pointerId); }catch(_){}
+    });
+
+    input.addEventListener('change', function(){
+      const f = input.files && input.files[0];
+      if(!f) return;
+      loadFromFile(f);
+    });
+
+    form.addEventListener('submit', async function(e){
+      if(!hasCrop || !srcImg) return;
+      e.preventDefault();
+      const out = document.createElement('canvas');
+      out.width = 512;
+      out.height = 512;
+      const octx = out.getContext('2d');
+      const factor = out.width / canvas.width;
+      octx.drawImage(
+        srcImg,
+        state.x * factor,
+        state.y * factor,
+        srcImg.width * state.scale * factor,
+        srcImg.height * state.scale * factor
+      );
+      const blob = await new Promise(resolve => out.toBlob(resolve, 'image/png', 0.92));
+      if(blob){
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], 'avatar-cropped.png', {type:'image/png'}));
+        input.files = dt.files;
+      }
+      form.submit();
+    });
+  })();
+</script>
 {% endblock %}

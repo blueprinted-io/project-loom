@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "LCS MVP" }}</title>
-  <link rel="stylesheet" href="/static/style.css?v=32" />
+  <link rel="stylesheet" href="/static/style.css?v=44" />
 </head>
 <body class="spa-v1">
   <header class="topbar">
@@ -125,6 +125,8 @@
         const body = document.body;
         const railToggle = document.getElementById('rail-toggle');
         const railToggleMobile = document.getElementById('rail-toggle-mobile');
+        const railCloseMobile = document.getElementById('rail-close-mobile');
+        const railBackdrop = document.getElementById('rail-backdrop');
 
         function isMobile(){
           return window.matchMedia('(max-width: 980px)').matches;
@@ -132,6 +134,11 @@
 
         function applyRail(state){
           body.classList.toggle('rail-collapsed', state === 'collapsed');
+          if(railToggle){
+            railToggle.textContent = state === 'collapsed' ? '»' : '«';
+            railToggle.setAttribute('aria-label', state === 'collapsed' ? 'Expand navigation rail' : 'Collapse navigation rail');
+            railToggle.setAttribute('title', state === 'collapsed' ? 'Expand navigation rail' : 'Collapse navigation rail');
+          }
           try{ localStorage.setItem('rail', state); }catch(e){}
         }
 
@@ -157,6 +164,19 @@
           'Explainer':'?'
         };
 
+        const railAvatar = document.getElementById('rail-avatar');
+        const railAvatarFallback = document.getElementById('rail-avatar-fallback');
+        if(railAvatar){
+          railAvatar.addEventListener('error', function(){
+            railAvatar.style.display = 'none';
+            if(railAvatarFallback) railAvatarFallback.style.display = 'flex';
+          });
+          railAvatar.addEventListener('load', function(){
+            railAvatar.style.display = 'block';
+            if(railAvatarFallback) railAvatarFallback.style.display = 'none';
+          });
+        }
+
         document.querySelectorAll('.navlink').forEach(function(link){
           if(link.querySelector('.navtext')) return;
           const text = (link.textContent || '').trim();
@@ -175,17 +195,26 @@
           link.setAttribute('title', text);
         });
 
-        function toggleRail(){
-          if(isMobile()){
-            body.classList.toggle('mobile-rail-open');
-            return;
-          }
+        function toggleMobileRail(open){
+          body.classList.toggle('mobile-rail-open', open);
+        }
+
+        function toggleRailDesktop(){
           const cur = body.classList.contains('rail-collapsed') ? 'collapsed' : 'expanded';
           applyRail(cur === 'expanded' ? 'collapsed' : 'expanded');
         }
 
-        if(railToggle) railToggle.addEventListener('click', toggleRail);
-        if(railToggleMobile) railToggleMobile.addEventListener('click', toggleRail);
+        if(railToggle) railToggle.addEventListener('click', function(){
+          if(isMobile()) return;
+          toggleRailDesktop();
+        });
+        if(railToggleMobile) railToggleMobile.addEventListener('click', function(){ toggleMobileRail(true); });
+        if(railCloseMobile) railCloseMobile.addEventListener('click', function(){ toggleMobileRail(false); });
+        if(railBackdrop) railBackdrop.addEventListener('click', function(){ toggleMobileRail(false); });
+
+        document.querySelectorAll('.navlink').forEach(function(link){
+          link.addEventListener('click', function(){ if(isMobile()) toggleMobileRail(false); });
+        });
 
         window.addEventListener('resize', function(){
           if(!isMobile()) body.classList.remove('mobile-rail-open');
@@ -206,28 +235,28 @@
     })();
   </script>
 
-  <div class="wrap">
-    <div class="global-dev-banner" role="status" aria-live="polite">
-      <strong>Active development notice:</strong>
-      This application is an MVP in active development. Features, UI, and behavior may change without notice. It is not designed for operational use at this stage.
-    </div>
-  </div>
-
   <div class="layout spa-layout">
     <aside class="sidebar" id="app-rail">
       <div class="sidebar-shell-controls">
-        <button class="btn secondary rail-toggle" type="button" id="rail-toggle" aria-label="Toggle navigation rail" title="Toggle navigation rail">☰</button>
+        <button class="btn secondary rail-toggle" type="button" id="rail-toggle" aria-label="Collapse navigation rail" title="Collapse navigation rail">«</button>
+        <button class="btn secondary rail-close-mobile" type="button" id="rail-close-mobile" aria-label="Close navigation" title="Close navigation">✕</button>
       </div>
 
       <section class="rail-profile" aria-label="Current user">
-        <a class="rail-profile-main" href="/profile" title="Open profile">
-          <span class="rail-profile-label">Signed in</span>
-          <span class="rail-profile-user">{{ request.state.user }}</span>
-          <span class="rail-profile-role">{{ request.state.role }}</span>
-        </a>
-        <form method="post" action="/logout" class="rail-logout-form">
-          <button class="btn secondary rail-logout" type="submit">Logout</button>
-        </form>
+        <div class="rail-profile-main">
+          <a class="rail-avatar-wrap" href="/profile" title="Open profile">
+            <img src="/profile/avatar" alt="avatar" class="rail-avatar" id="rail-avatar" />
+            <span class="rail-avatar-fallback" id="rail-avatar-fallback">{{ (request.state.user or '?')[:1]|upper }}</span>
+          </a>
+          <a class="rail-profile-text" href="/profile" title="Open profile">
+            <span class="rail-profile-label">Signed in</span>
+            <span class="rail-profile-user">{{ request.state.user }}</span>
+            <span class="rail-profile-role">{{ request.state.role }}</span>
+          </a>
+          <form method="post" action="/logout" class="rail-logout-inline-form">
+            <button class="btn secondary rail-logout-inline" type="submit" aria-label="Logout" title="Logout">⎋</button>
+          </form>
+        </div>
       </section>
 
       {% set role = request.state.role %}
@@ -358,12 +387,17 @@
         Active DB: <b>{{ request.state.db_key }}</b>
       </div>
     </aside>
+    <div class="rail-backdrop" id="rail-backdrop" aria-hidden="true"></div>
 
     <main class="content wrap spa-main">
       <button class="btn secondary rail-toggle-mobile" type="button" id="rail-toggle-mobile" aria-label="Open navigation" title="Open navigation">☰ Menu</button>
       <form class="spa-shell-search card" role="search" aria-label="Application search" method="get" action="/search">
         <input type="text" id="spa-search" name="q" placeholder="Search tasks, workflows, domains, tags..." autocomplete="off" />
       </form>
+      <div class="global-dev-banner" role="status" aria-live="polite">
+        <strong>Active development notice:</strong>
+        This application is an MVP in active development. Features, UI, and behavior may change without notice. It is not designed for operational use at this stage.
+      </div>
       {% block content %}{% endblock %}
     </main>
   </div>
