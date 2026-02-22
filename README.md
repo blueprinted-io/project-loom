@@ -6,6 +6,8 @@ blueprinted.io is a **database-defined learning content system** for technical o
 
 It defines work as structured, governed records (Tasks + Workflows) so content does not drift, contradict itself, or rot the moment reality changes.
 
+![blueprinted.io workflow](assets/blueprinted-io-diagram.png)
+
 ## Why (LearningOps)
 
 Learning is still built like waterfall software: big launches, slow review cycles, and content that’s obsolete before it’s finished.
