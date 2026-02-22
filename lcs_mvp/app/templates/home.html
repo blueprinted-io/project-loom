@@ -1,12 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
+{% set admin_mode = (request.state.role == 'admin') %}
 {% set reviewer_mode = (request.state.role == 'reviewer') %}
 {% set author_mode = (request.state.role == 'author') %}
+{% set assessment_author_mode = (request.state.role == 'assessment_author') %}
 
 <div class="page-header">
   <div>
     <h1>Dashboard</h1>
-    {% if reviewer_mode %}
+    {% if admin_mode %}
+      <div class="muted">Operational health and intervention dashboard.</div>
+    {% elif reviewer_mode %}
       <div class="muted">Review queue overview.</div>
     {% elif author_mode %}
       <div class="muted">Returned-items-first author workspace.</div>
@@ -16,63 +20,162 @@
   </div>
 </div>
 
-{% if domains and not reviewer_mode and not author_mode %}
-  <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
-{% endif %}
-
-<div class="dashboard-grid {% if reviewer_mode %}reviewer-dashboard-grid{% endif %} {% if author_mode %}author-dashboard-grid{% endif %}">
-  {% for c in cards %}
-    <a class="card dashboard-card {% if reviewer_mode %}reviewer-card{% endif %} {% if author_mode %}author-returned-card{% endif %}" href="{{ c.href }}">
-      {% if reviewer_mode or author_mode %}
-        <div class="reviewer-card-icon">
-          {% if 'Tasks' in c.title %}✓{% elif 'Workflows' in c.title %}▦{% else %}◈{% endif %}
-        </div>
-      {% endif %}
-      <div class="dashboard-card-title">{{ c.title }}</div>
-      <div class="dashboard-card-value">{{ c.value }}</div>
-      <div class="muted">Open queue view</div>
-    </a>
-  {% endfor %}
-
-  {% if author_mode %}
-    <a class="card dashboard-card author-action-card" href="/workflows/new">
-      <div class="dashboard-card-title">Write a workflow</div>
-      <div class="muted">Create a new workflow</div>
-    </a>
-
-    <a class="card dashboard-card author-action-card" href="/tasks/new">
-      <div class="dashboard-card-title">Write a task</div>
-      <div class="muted">Create a new task</div>
-    </a>
-
-    <a class="card dashboard-card author-action-card" href="/assessments/new">
-      <div class="dashboard-card-title">Write an assessment</div>
-      <div class="muted">Create a new assessment</div>
-    </a>
-
-    <a class="card dashboard-card author-action-card" href="/import/pdf">
-      <div class="dashboard-card-title">Import a PDF</div>
-      <div class="muted">Import source material</div>
-    </a>
-
-    <a class="card dashboard-card author-action-card" href="/import/json">
-      <div class="dashboard-card-title">Import JSON</div>
-      <div class="muted">Import structured records</div>
-    </a>
-  {% endif %}
-
-  {% if not reviewer_mode and not author_mode %}
-  <section class="card dashboard-card audit-card">
-    <div class="dashboard-card-title">Last audit</div>
-    {% if last_audit %}
-      <div class="dashboard-audit-line"><b>{{ last_audit.action }}</b></div>
-      <div class="muted">by {{ last_audit.actor }}</div>
-      <div class="muted">{{ last_audit.at }}</div>
-    {% else %}
-      <div class="muted">No audit entries yet.</div>
-    {% endif %}
-    <div style="margin-top:8px"><a href="/audit">Open audit log</a></div>
+{% if admin_mode %}
+  <section class="dashboard-section">
+    <div class="section-header">State health</div>
+    <div class="status-breakdown-grid">
+      {% for s in (admin_panels.status_breakdown or []) %}
+        {% set total = s.draft + s.submitted + s.returned + s.confirmed %}
+        <a class="card status-breakdown-card" href="{{ s.href }}">
+          <div class="status-breakdown-head">
+            <b>{{ s.title }}</b>
+            <span class="muted">Total {{ total }}</span>
+          </div>
+          <div class="status-bar" aria-label="{{ s.title }} status mix">
+            {% if total > 0 %}
+              <span class="seg seg-draft" style="width: {{ (s.draft * 100 / total)|round(1) }}%"></span>
+              <span class="seg seg-submitted" style="width: {{ (s.submitted * 100 / total)|round(1) }}%"></span>
+              <span class="seg seg-returned" style="width: {{ (s.returned * 100 / total)|round(1) }}%"></span>
+              <span class="seg seg-confirmed" style="width: {{ (s.confirmed * 100 / total)|round(1) }}%"></span>
+            {% endif %}
+          </div>
+          <div class="status-legend">
+            <span><i class="dot dot-draft"></i>Draft {{ s.draft }}</span>
+            <span><i class="dot dot-submitted"></i>Submitted {{ s.submitted }}</span>
+            <span><i class="dot dot-returned"></i>Returned {{ s.returned }}</span>
+            <span><i class="dot dot-confirmed"></i>Confirmed {{ s.confirmed }}</span>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
   </section>
+
+  <section class="dashboard-section">
+    <div class="section-header">Blockers and pressure</div>
+    <div class="dashboard-grid">
+      {% for c in (admin_panels.blockers or []) %}
+        <a class="card dashboard-card" href="{{ c.href }}">
+          <div class="dashboard-card-title">{{ c.title }}</div>
+          <div class="dashboard-card-value">{{ c.value }}</div>
+          <div class="muted">Open records</div>
+        </a>
+      {% endfor %}
+    </div>
+    {% set bt = admin_panels.blocker_total or 0 %}
+    <div class="card blocker-composition-card">
+      <div class="dashboard-card-title">Blocker composition</div>
+      <div class="status-bar" aria-label="Blocker composition">
+        {% if bt > 0 %}
+          {% for c in (admin_panels.blockers or []) %}
+            <span class="seg seg-{{ loop.index }}" style="width: {{ (c.value * 100 / bt)|round(1) }}%"></span>
+          {% endfor %}
+        {% endif %}
+      </div>
+      <div class="status-legend">
+        {% for c in (admin_panels.blockers or []) %}
+          <span><i class="dot dot-{{ loop.index }}"></i>{{ c.title }} {{ c.value }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="dashboard-section">
+    <div class="section-header">Domain pressure</div>
+    <div class="card domain-pressure-card">
+      {% if admin_panels.domain_pressure %}
+        <div class="domain-pressure-table" role="table" aria-label="Domain pressure">
+          <div class="domain-pressure-head" role="row">
+            <div>Domain</div><div>Status</div><div>Score</div><div>Signals</div><div></div>
+          </div>
+          {% for d in admin_panels.domain_pressure %}
+            <div class="domain-pressure-row" role="row">
+              <div><b>{{ d.domain }}</b></div>
+              <div><span class="pressure-chip pressure-{{ d.level }}">{{ d.level }}</span></div>
+              <div><span class="pressure-score pressure-{{ d.level }}">{{ d.score }}</span></div>
+              <div class="muted">T{{ d.submitted_tasks }} · W{{ d.submitted_workflows }} · A{{ d.submitted_assessments }} · R{{ d.returned_total }} · B{{ d.blocked_workflows }}</div>
+              <div><a href="{{ d.href }}">Open</a></div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="muted">No domain pressure signals yet.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="dashboard-section">
+    <div class="section-header">Integrity checks</div>
+    <div class="dashboard-grid reviewer-dashboard-grid">
+      {% for c in (admin_panels.integrity or []) %}
+        {% set ok = (c.value == 0) %}
+        <a class="card dashboard-card integrity-card integrity-{{ 'pass' if ok else 'fail' }}" href="{{ c.href }}">
+          <div class="dashboard-card-title">{{ c.title }}</div>
+          <div class="dashboard-card-value">{{ c.value }}</div>
+          <div class="integrity-state {{ 'ok' if ok else 'alert' }}">{{ 'PASS' if ok else 'ACTION NEEDED' }}</div>
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+
+{% else %}
+  {% if domains and not reviewer_mode and not author_mode %}
+    <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
   {% endif %}
-</div>
+
+  <div class="dashboard-grid {% if reviewer_mode %}reviewer-dashboard-grid{% endif %} {% if author_mode %}author-dashboard-grid{% endif %}">
+    {% for c in cards %}
+      <a class="card dashboard-card {% if reviewer_mode %}reviewer-card{% endif %} {% if author_mode %}author-returned-card{% endif %}" href="{{ c.href }}">
+        {% if reviewer_mode or author_mode %}
+          <div class="reviewer-card-icon">
+            {% if 'Tasks' in c.title %}✓{% elif 'Workflows' in c.title %}▦{% else %}◈{% endif %}
+          </div>
+        {% endif %}
+        <div class="dashboard-card-title">{{ c.title }}</div>
+        <div class="dashboard-card-value">{{ c.value }}</div>
+        <div class="muted">Open queue view</div>
+      </a>
+    {% endfor %}
+
+    {% if author_mode %}
+      <a class="card dashboard-card author-action-card" href="/workflows/new">
+        <div class="dashboard-card-title">Write a workflow</div>
+        <div class="muted">Create a new workflow</div>
+      </a>
+
+      <a class="card dashboard-card author-action-card" href="/tasks/new">
+        <div class="dashboard-card-title">Write a task</div>
+        <div class="muted">Create a new task</div>
+      </a>
+
+      <a class="card dashboard-card author-action-card" href="/assessments/new">
+        <div class="dashboard-card-title">Write an assessment</div>
+        <div class="muted">Create a new assessment</div>
+      </a>
+
+      <a class="card dashboard-card author-action-card" href="/import/pdf">
+        <div class="dashboard-card-title">Import a PDF</div>
+        <div class="muted">Import source material</div>
+      </a>
+
+      <a class="card dashboard-card author-action-card" href="/import/json">
+        <div class="dashboard-card-title">Import JSON</div>
+        <div class="muted">Import structured records</div>
+      </a>
+    {% endif %}
+
+    {% if not reviewer_mode and not author_mode and not assessment_author_mode %}
+    <section class="card dashboard-card audit-card">
+      <div class="dashboard-card-title">Last audit</div>
+      {% if last_audit %}
+        <div class="dashboard-audit-line"><b>{{ last_audit.action }}</b></div>
+        <div class="muted">by {{ last_audit.actor }}</div>
+        <div class="muted">{{ last_audit.at }}</div>
+      {% else %}
+        <div class="muted">No audit entries yet.</div>
+      {% endif %}
+      <div style="margin-top:8px"><a href="/audit">Open audit log</a></div>
+    </section>
+    {% endif %}
+  </div>
+{% endif %}
 {% endblock %}

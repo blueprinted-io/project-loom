@@ -1668,7 +1668,8 @@ def home(request: Request):
                     c += 1
             return c
 
-        if role in ("reviewer", "admin"):
+        admin_panels: dict[str, Any] = {}
+        if role == "reviewer":
             cards = [
                 {"title": "Tasks outstanding for review", "value": _count_tasks_by_status("submitted"), "href": "/review?item_type=task"},
                 {"title": "Workflows outstanding for review", "value": _count_workflows_by_status("submitted"), "href": "/review?item_type=workflow"},
@@ -1680,6 +1681,196 @@ def home(request: Request):
                 {"title": "Returned Workflows", "value": _count_workflows_by_status("returned"), "href": "/workflows?status=returned"},
                 {"title": "Returned Assessments", "value": _count_assessments_by_status("returned"), "href": "/assessments?status=returned"},
             ]
+        elif role == "assessment_author":
+            cards = [
+                {"title": "Returned Questions", "value": _count_assessments_by_status("returned"), "href": "/assessments?status=returned"},
+                {"title": "Confirmed Tasks", "value": _count_tasks_by_status("confirmed"), "href": "/tasks?status=confirmed"},
+                {"title": "Confirmed Workflows", "value": _count_workflows_by_status("confirmed"), "href": "/workflows?status=confirmed"},
+                {"title": "Confirmed Assessments", "value": _count_assessments_by_status("confirmed"), "href": "/assessments?status=confirmed"},
+            ]
+        elif role == "admin":
+            domain_pressure: dict[str, dict[str, Any]] = {
+                d: {
+                    "submitted_tasks": 0,
+                    "submitted_workflows": 0,
+                    "submitted_assessments": 0,
+                    "returned_total": 0,
+                    "blocked_workflows": 0,
+                }
+                for d in doms
+            }
+
+            workflow_rows = conn.execute(
+                "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id"
+            ).fetchall()
+            awaiting_task_confirmation = 0
+            invalid_workflows = 0
+            for r in workflow_rows:
+                rid = str(r["record_id"])
+                latest_v = int(r["latest_version"])
+                w = conn.execute(
+                    "SELECT status, domains_json FROM workflows WHERE record_id=? AND version=?",
+                    (rid, latest_v),
+                ).fetchone()
+                refs = conn.execute(
+                    "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+                    (rid, latest_v),
+                ).fetchall()
+                pairs = [(x["task_record_id"], int(x["task_version"])) for x in refs]
+                readiness = workflow_readiness(conn, pairs)
+                if readiness == "awaiting_task_confirmation":
+                    awaiting_task_confirmation += 1
+                elif readiness == "invalid":
+                    invalid_workflows += 1
+
+                wdoms = [str(x).strip().lower() for x in (_json_load((w["domains_json"] if w else "[]") or "[]") or []) if str(x).strip()]
+                if not wdoms:
+                    wdoms = [str(x).strip().lower() for x in (_workflow_domains(conn, pairs) or []) if str(x).strip()]
+                wstatus = str(w["status"] if w else "")
+                for d in wdoms:
+                    if d not in domain_pressure:
+                        domain_pressure[d] = {
+                            "submitted_tasks": 0,
+                            "submitted_workflows": 0,
+                            "submitted_assessments": 0,
+                            "returned_total": 0,
+                            "blocked_workflows": 0,
+                        }
+                    if wstatus == "submitted":
+                        domain_pressure[d]["submitted_workflows"] += 1
+                        if readiness == "awaiting_task_confirmation":
+                            domain_pressure[d]["blocked_workflows"] += 1
+                    elif wstatus == "returned":
+                        domain_pressure[d]["returned_total"] += 1
+
+            task_rows = conn.execute(
+                "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id"
+            ).fetchall()
+            tasks_missing_domain = 0
+            for r in task_rows:
+                t = conn.execute(
+                    "SELECT status, domain FROM tasks WHERE record_id=? AND version=?",
+                    (r["record_id"], int(r["latest_version"])),
+                ).fetchone()
+                if not t or not str(t["domain"] or "").strip():
+                    tasks_missing_domain += 1
+                d = str((t["domain"] if t else "") or "").strip().lower()
+                if d:
+                    if d not in domain_pressure:
+                        domain_pressure[d] = {
+                            "submitted_tasks": 0,
+                            "submitted_workflows": 0,
+                            "submitted_assessments": 0,
+                            "returned_total": 0,
+                            "blocked_workflows": 0,
+                        }
+                    if str(t["status"]) == "submitted":
+                        domain_pressure[d]["submitted_tasks"] += 1
+                    elif str(t["status"]) == "returned":
+                        domain_pressure[d]["returned_total"] += 1
+
+            assessment_rows = conn.execute(
+                "SELECT record_id, MAX(version) AS latest_version FROM assessment_items GROUP BY record_id"
+            ).fetchall()
+            assessments_missing_domain = 0
+            for r in assessment_rows:
+                a = conn.execute(
+                    "SELECT status, domains_json FROM assessment_items WHERE record_id=? AND version=?",
+                    (r["record_id"], int(r["latest_version"])),
+                ).fetchone()
+                dom_list = [str(x).strip().lower() for x in (_json_load(a["domains_json"] or "[]") or [])] if a else []
+                if not dom_list:
+                    assessments_missing_domain += 1
+                for d in dom_list:
+                    if d not in domain_pressure:
+                        domain_pressure[d] = {
+                            "submitted_tasks": 0,
+                            "submitted_workflows": 0,
+                            "submitted_assessments": 0,
+                            "returned_total": 0,
+                            "blocked_workflows": 0,
+                        }
+                    if str(a["status"]) == "submitted":
+                        domain_pressure[d]["submitted_assessments"] += 1
+                    elif str(a["status"]) == "returned":
+                        domain_pressure[d]["returned_total"] += 1
+
+            domain_pressure_rows: list[dict[str, Any]] = []
+            for d, m in domain_pressure.items():
+                score = (
+                    m["submitted_tasks"] * 1.0
+                    + m["submitted_workflows"] * 2.0
+                    + m["submitted_assessments"] * 1.5
+                    + m["returned_total"] * 1.5
+                    + m["blocked_workflows"] * 3.0
+                )
+                if score >= 8:
+                    level = "red"
+                elif score > 0:
+                    level = "amber"
+                else:
+                    level = "green"
+
+                domain_pressure_rows.append(
+                    {
+                        "domain": d,
+                        "score": round(score, 1),
+                        "level": level,
+                        **m,
+                        "href": f"/tasks?status=submitted&domain={d}",
+                    }
+                )
+            domain_pressure_rows.sort(key=lambda x: (-float(x["score"]), x["domain"]))
+
+            tasks_status = {
+                "draft": _count_tasks_by_status("draft"),
+                "submitted": _count_tasks_by_status("submitted"),
+                "returned": _count_tasks_by_status("returned"),
+                "confirmed": _count_tasks_by_status("confirmed"),
+            }
+            workflows_status = {
+                "draft": _count_workflows_by_status("draft"),
+                "submitted": _count_workflows_by_status("submitted"),
+                "returned": _count_workflows_by_status("returned"),
+                "confirmed": _count_workflows_by_status("confirmed"),
+            }
+            assessments_status = {
+                "draft": _count_assessments_by_status("draft"),
+                "submitted": _count_assessments_by_status("submitted"),
+                "returned": _count_assessments_by_status("returned"),
+                "confirmed": _count_assessments_by_status("confirmed"),
+            }
+
+            returned_tasks = tasks_status["returned"]
+            returned_workflows = workflows_status["returned"]
+            returned_assessments = assessments_status["returned"]
+
+            admin_panels = {
+                "status_breakdown": [
+                    {"title": "Tasks", "href": "/tasks", **tasks_status},
+                    {"title": "Workflows", "href": "/workflows", **workflows_status},
+                    {"title": "Assessments", "href": "/assessments", **assessments_status},
+                ],
+                "health": [
+                    {"title": "Tasks submitted", "value": tasks_status["submitted"], "href": "/tasks?status=submitted"},
+                    {"title": "Workflows submitted", "value": workflows_status["submitted"], "href": "/workflows?status=submitted"},
+                    {"title": "Assessments submitted", "value": assessments_status["submitted"], "href": "/assessments?status=submitted"},
+                ],
+                "blockers": [
+                    {"title": "Workflows blocked by tasks", "value": awaiting_task_confirmation, "href": "/workflows?status=submitted"},
+                    {"title": "Returned tasks", "value": returned_tasks, "href": "/tasks?status=returned"},
+                    {"title": "Returned workflows", "value": returned_workflows, "href": "/workflows?status=returned"},
+                    {"title": "Returned assessments", "value": returned_assessments, "href": "/assessments?status=returned"},
+                ],
+                "blocker_total": int(awaiting_task_confirmation + returned_tasks + returned_workflows + returned_assessments),
+                "integrity": [
+                    {"title": "Invalid workflows", "value": invalid_workflows, "href": "/workflows"},
+                    {"title": "Tasks missing domain", "value": tasks_missing_domain, "href": "/tasks"},
+                    {"title": "Assessments missing domain", "value": assessments_missing_domain, "href": "/assessments"},
+                ],
+                "domain_pressure": domain_pressure_rows,
+            }
+            cards = []
         else:
             cards = [
                 {"title": "Confirmed Tasks", "value": _count_tasks_by_status("confirmed"), "href": "/tasks?status=confirmed"},
@@ -1696,6 +1887,7 @@ def home(request: Request):
             "cards": cards,
             "domains": doms,
             "last_audit": dict(last_audit) if last_audit else None,
+            "admin_panels": admin_panels,
         },
     )
 
