@@ -1,0 +1,14 @@
+[
+  {"domain":"postgres","title":"Establish PostgreSQL point-in-time recovery capability","objective":"Enable WAL archiving and base backups for database recovery within RPO targets.","tags":["backup","resilience","compliance"]},
+  {"domain":"postgres","title":"Configure PostgreSQL high availability replication","objective":"Establish streaming replication with automated failover for service continuity.","tags":["resilience","high-availability","operations"]},
+  {"domain":"postgres","title":"Harden PostgreSQL access control baseline","objective":"Restrict client networks and authentication methods per security policy.","tags":["security","access-control","hardening"]},
+  {"domain":"postgres","title":"Enable PostgreSQL workload observability","objective":"Capture query performance metrics and slow query diagnostics.","tags":["observability","performance","operations"]},
+  {"domain":"postgres","title":"Implement PostgreSQL credential rotation workflow","objective":"Rotate database passwords and connection credentials without application disruption.","tags":["security","identity","resilience"]},
+  {"domain":"postgres","title":"Establish PostgreSQL backup recovery validation","objective":"Schedule and test restore procedures from base backups and WAL.","tags":["backup","resilience","compliance"]},
+  {"domain":"postgres","title":"Configure PostgreSQL resource governance","objective":"Apply connection limits and statement timeouts to prevent resource exhaustion.","tags":["governance","resilience","performance"]},
+  {"domain":"postgres","title":"Implement PostgreSQL row-level security policies","objective":"Enforce tenant data isolation through database-level access controls.","tags":["security","compliance","multi-tenancy"]},
+  {"domain":"postgres","title":"Enable PostgreSQL TLS encryption baseline","objective":"Require encrypted client connections with valid certificate chains.","tags":["security","compliance","hardening"]},
+  {"domain":"postgres","title":"Establish PostgreSQL maintenance automation","objective":"Schedule vacuum, analyze, and index maintenance for query performance.","tags":["performance","automation","operations"]},
+  {"domain":"postgres","title":"Configure PostgreSQL logical replication","objective":"Enable selective data replication for analytics and disaster recovery.","tags":["resilience","observability","integration"]},
+  {"domain":"postgres","title":"Audit PostgreSQL privileged access assignments","objective":"Review and reduce superuser and elevated role assignments.","tags":["security","compliance","governance"]}
+]

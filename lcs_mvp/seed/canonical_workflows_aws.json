@@ -1,0 +1,14 @@
+[
+  {"domain":"aws","title":"Harden S3 data protection baseline","objective":"Ensure critical S3 buckets enforce encryption, versioning, and lifecycle retention.","tags":["security","resilience","compliance"]},
+  {"domain":"aws","title":"Secure IAM access hygiene cycle","objective":"Reduce privilege risk through access key rotation and least-privilege role controls.","tags":["security","identity","access-control"]},
+  {"domain":"aws","title":"Establish VPC traffic observability baseline","objective":"Capture and retain network telemetry for incident response and troubleshooting.","tags":["networking","observability","incident-response"]},
+  {"domain":"aws","title":"Improve EC2 reliability guardrails","objective":"Increase workload resilience with monitoring, alarms, and safe operational fallback.","tags":["resilience","observability","performance"]},
+  {"domain":"aws","title":"Strengthen RDS recoverability controls","objective":"Ensure database backup, diagnostics, and restore readiness meet recovery targets.","tags":["backup","resilience","compliance"]},
+  {"domain":"aws","title":"Standardize ALB logging and retention","objective":"Provide request-level auditability and troubleshooting visibility for application ingress.","tags":["observability","compliance","networking"]},
+  {"domain":"aws","title":"Enforce container image risk controls in ECR","objective":"Reduce deployment risk by scanning and governing image provenance.","tags":["security","compliance","resilience"]},
+  {"domain":"aws","title":"Build event-driven alert routing for backup failures","objective":"Detect and route backup failures to response channels with minimal latency.","tags":["incident-response","observability","backup"]},
+  {"domain":"aws","title":"Apply organization policy guardrails","objective":"Constrain privileged actions through organization-wide policy enforcement.","tags":["compliance","security","access-control"]},
+  {"domain":"aws","title":"Enable CloudTrail governance coverage","objective":"Maintain account-wide API audit logging for security and compliance reviews.","tags":["compliance","security","observability"]},
+  {"domain":"aws","title":"Protect data distribution through CloudFront origin controls","objective":"Limit direct origin exposure and enforce controlled edge access paths.","tags":["security","networking","resilience"]},
+  {"domain":"aws","title":"Harden EKS control plane telemetry","objective":"Ensure cluster control plane events are logged for security and operations teams.","tags":["observability","security","incident-response"]}
+]

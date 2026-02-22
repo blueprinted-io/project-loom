@@ -1,0 +1,14 @@
+[
+  {"domain":"kubernetes","title":"Harden Kubernetes cluster security posture","objective":"Establish pod security, network policies, and admission controls across the cluster.","tags":["security","hardening","compliance"]},
+  {"domain":"kubernetes","title":"Enable Kubernetes control plane observability","objective":"Capture API audit logs and control plane telemetry for security review.","tags":["observability","security","incident-response"]},
+  {"domain":"kubernetes","title":"Standardize Kubernetes workload scaling policies","objective":"Configure HPA and cluster autoscaling for demand-based capacity management.","tags":["performance","resilience","cost-optimization"]},
+  {"domain":"kubernetes","title":"Establish Kubernetes disaster recovery readiness","objective":"Ensure etcd backups and cluster state can be restored within RTO targets.","tags":["backup","resilience","compliance"]},
+  {"domain":"kubernetes","title":"Secure Kubernetes workload network segmentation","objective":"Apply namespace isolation and network policies for traffic control.","tags":["networking","security","hardening"]},
+  {"domain":"kubernetes","title":"Implement Kubernetes credential rotation workflow","objective":"Rotate service account tokens and image pull secrets without service disruption.","tags":["security","identity","resilience"]},
+  {"domain":"kubernetes","title":"Enable Kubernetes resource quota governance","objective":"Apply namespace quotas and limits to prevent resource exhaustion.","tags":["governance","cost-optimization","resilience"]},
+  {"domain":"kubernetes","title":"Harden Kubernetes pod security standards","objective":"Enforce baseline/restricted pod security profiles across namespaces.","tags":["security","compliance","hardening"]},
+  {"domain":"kubernetes","title":"Establish Kubernetes certificate automation","objective":"Automate TLS certificate issuance and renewal for ingress workloads.","tags":["resilience","security","automation"]},
+  {"domain":"kubernetes","title":"Configure Kubernetes node maintenance procedures","objective":"Enable safe node draining and upgrades without workload disruption.","tags":["resilience","patching","operations"]},
+  {"domain":"kubernetes","title":"Implement Kubernetes backup for stateful workloads","objective":"Schedule and validate persistent volume backup procedures.","tags":["backup","resilience","compliance"]},
+  {"domain":"kubernetes","title":"Establish Kubernetes incident response runbooks","objective":"Document and test failover, rollback, and recovery procedures.","tags":["incident-response","resilience","compliance"]}
+]

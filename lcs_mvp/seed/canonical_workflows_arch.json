@@ -1,0 +1,14 @@
+[
+  {"domain":"arch","title":"Establish Arch Linux rolling release stability controls","objective":"Manage pacman upgrades with testing validation and rollback capability.","tags":["resilience","patching","operations"]},
+  {"domain":"arch","title":"Harden Arch Linux endpoint security baseline","objective":"Apply firewall, sudo, and SSH hardening for minimal attack surface.","tags":["security","hardening","compliance"]},
+  {"domain":"arch","title":"Enable Arch Linux system observability pipeline","objective":"Forward journald and audit logs to centralized analysis.","tags":["observability","incident-response","operations"]},
+  {"domain":"arch","title":"Implement Arch Linux backup recovery validation","objective":"Schedule and test Btrfs snapshots and system restore procedures.","tags":["backup","resilience","compliance"]},
+  {"domain":"arch","title":"Configure Arch Linux kernel management strategy","objective":"Maintain stable and LTS kernel paths with safe fallback boot.","tags":["resilience","patching","operations"]},
+  {"domain":"arch","title":"Establish Arch Linux package integrity workflow","objective":"Ensure GPG keyring currency and package signature verification.","tags":["security","compliance","supply-chain"]},
+  {"domain":"arch","title":"Implement Arch Linux service hardening","objective":"Apply systemd service restrictions and sandboxing policies.","tags":["security","hardening","compliance"]},
+  {"domain":"arch","title":"Configure Arch Linux network time synchronization","objective":"Maintain accurate system clock for auth and distributed operations.","tags":["resilience","operations","identity"]},
+  {"domain":"arch","title":"Establish Arch Linux automated maintenance","objective":"Schedule pacman upgrades with health checks and notifications.","tags":["automation","patching","operations"]},
+  {"domain":"arch","title":"Harden Arch Linux file system encryption","objective":"Ensure root and data partitions are encrypted with key escrow.","tags":["security","compliance","resilience"]},
+  {"domain":"arch","title":"Implement Arch Linux privileged access logging","objective":"Capture sudo and root command activity for audit review.","tags":["observability","security","compliance"]},
+  {"domain":"arch","title":"Configure Arch Linux firewall baseline","objective":"Enable nftables with default-deny and approved service rules.","tags":["security","networking","hardening"]}
+]

@@ -1,0 +1,14 @@
+[
+  {"domain":"windows","title":"Harden Windows endpoint protection baseline","objective":"Establish comprehensive malware and threat protection across Windows hosts.","tags":["security","hardening","compliance"]},
+  {"domain":"windows","title":"Standardize Windows privileged access controls","objective":"Reduce credential risk through local admin password management and rotation.","tags":["security","identity","access-control"]},
+  {"domain":"windows","title":"Enable Windows host network segmentation","objective":"Restrict inbound traffic to approved services and sources.","tags":["networking","security","hardening"]},
+  {"domain":"windows","title":"Secure Windows remote administration channels","objective":"Strengthen RDP and WinRM security posture for administrative access.","tags":["security","access-control","hardening"]},
+  {"domain":"windows","title":"Protect Windows data-at-rest with encryption","objective":"Ensure system drives are encrypted with recoverable keys.","tags":["security","resilience","compliance"]},
+  {"domain":"windows","title":"Maintain Windows patch currency","objective":"Apply security updates within maintenance windows without service disruption.","tags":["security","patching","resilience"]},
+  {"domain":"windows","title":"Establish Windows event monitoring pipeline","objective":"Forward security and operational events to centralized analysis.","tags":["observability","incident-response","compliance"]},
+  {"domain":"windows","title":"Enable PowerShell activity audit trail","objective":"Capture script execution and command activity for forensic review.","tags":["observability","security","compliance"]},
+  {"domain":"windows","title":"Implement Windows credential protection","objective":"Reduce credential theft risk through virtualization-based security.","tags":["security","hardening","identity"]},
+  {"domain":"windows","title":"Standardize Windows certificate lifecycle","objective":"Automate enrollment and renewal for endpoint authentication certificates.","tags":["identity","resilience","compliance"]},
+  {"domain":"windows","title":"Establish Windows backup recovery capability","objective":"Ensure file shares and system state are recoverable within RTO/RPO targets.","tags":["backup","resilience","compliance"]},
+  {"domain":"windows","title":"Harden Windows file service protocols","objective":"Disable legacy SMB versions and enforce secure negotiation.","tags":["security","networking","hardening"]}
+]
