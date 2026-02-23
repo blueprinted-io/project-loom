@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "LCS MVP" }}</title>
-  <link rel="stylesheet" href="/static/style.css?v=52" />
+  <link rel="stylesheet" href="/static/style.css?v=53" />
 </head>
 <body class="spa-v1">
   <header class="topbar">
@@ -225,6 +225,19 @@
         initTheme();
         initRail();
         loadPulse();
+        initDevBanner();
+      }
+
+      function initDevBanner(){
+        const banner = document.getElementById('dev-banner');
+        if(!banner) return;
+        
+        const closeBtn = banner.querySelector('.dev-banner-close');
+        if(closeBtn){
+          closeBtn.addEventListener('click', function(){
+            banner.classList.add('dev-banner-hidden');
+          });
+        }
       }
 
       if(document.readyState === 'loading'){
@@ -394,9 +407,12 @@
       <form class="spa-shell-search card" role="search" aria-label="Application search" method="get" action="/search">
         <input type="text" id="spa-search" name="q" placeholder="Search tasks, workflows, domains, tags..." autocomplete="off" />
       </form>
-      <div class="global-dev-banner" role="status" aria-live="polite">
-        <strong>Active development notice:</strong>
-        This application is an MVP in active development. Features, UI, and behavior may change without notice. It is not designed for operational use at this stage.
+      <div class="global-dev-banner" role="status" aria-live="polite" id="dev-banner">
+        <span class="dev-banner-text">
+          <strong>Active development notice:</strong>
+          This application is an MVP in active development. Features, UI, and behavior may change without notice. It is not designed for operational use at this stage.
+        </span>
+        <button type="button" class="dev-banner-close" aria-label="Dismiss notice" title="Dismiss">✕</button>
       </div>
       {% block content %}{% endblock %}
     </main>

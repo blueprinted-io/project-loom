@@ -45,6 +45,7 @@
           <tr>
             <th>username</th>
             <th>role</th>
+            <th>domains</th>
             <th>password</th>
             <th style="width:140px">quick login</th>
           </tr>
@@ -54,6 +55,15 @@
           <tr>
             <td><code>{{ u.username }}</code></td>
             <td><span class="badge">{{ u.role }}</span></td>
+            <td>
+              {% if u.domains %}
+                {% for d in u.domains %}
+                  <span class="badge" style="margin-right:4px; margin-bottom:2px; display:inline-block">{{ d }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
             <td><code>{{ u.demo_password }}</code></td>
             <td>
               <button

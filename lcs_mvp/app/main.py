@@ -1419,15 +1419,25 @@ def login_form(request: Request):
     # Show demo users and their passwords (MVP demo convenience).
     with db() as conn:
         users = conn.execute(
-            "SELECT username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
+            "SELECT id, username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
         ).fetchall()
+        
+        # Fetch domains for each user
+        users_with_domains = []
+        for u in users:
+            user_dict = dict(u)
+            if user_dict["role"] == "admin":
+                user_dict["domains"] = _active_domains(conn)
+            else:
+                user_dict["domains"] = _user_domains(conn, user_dict["username"])
+            users_with_domains.append(user_dict)
 
     custom = _list_custom_db_keys()
     profiles = [{"key": k, "label": _db_profile_label(k)} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + custom]
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"users": [dict(u) for u in users], "profiles": profiles, "db_key": request.state.db_key},
+        {"users": users_with_domains, "profiles": profiles, "db_key": request.state.db_key},
     )
 
 
