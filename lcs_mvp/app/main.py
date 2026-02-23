@@ -1918,6 +1918,25 @@ def home(request: Request):
             returned_workflows = workflows_status["returned"]
             returned_assessments = assessments_status["returned"]
 
+            # Count workflows with outdated task references
+            outdated_workflows = 0
+            for r in workflow_rows:
+                rid = str(r["record_id"])
+                latest_v = int(r["latest_version"])
+                refs = conn.execute(
+                    "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+                    (rid, latest_v),
+                ).fetchall()
+                for ref in refs:
+                    # Check if there's a newer version of this task
+                    latest_task = conn.execute(
+                        "SELECT MAX(version) as max_v FROM tasks WHERE record_id=?",
+                        (ref["task_record_id"],)
+                    ).fetchone()
+                    if latest_task and latest_task["max_v"] and latest_task["max_v"] > ref["task_version"]:
+                        outdated_workflows += 1
+                        break  # Count each workflow only once
+
             admin_panels = {
                 "status_breakdown": [
                     {"title": "Tasks", "href": "/tasks", **tasks_status},
@@ -1940,6 +1959,7 @@ def home(request: Request):
                     {"title": "Invalid workflows", "value": invalid_workflows, "href": "/workflows"},
                     {"title": "Tasks missing domain", "value": tasks_missing_domain, "href": "/tasks"},
                     {"title": "Assessments missing domain", "value": assessments_missing_domain, "href": "/assessments"},
+                    {"title": "Workflows with outdated refs", "value": outdated_workflows, "href": "/workflows"},
                 ],
                 "domain_pressure": domain_pressure_rows,
             }
@@ -4258,6 +4278,17 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
             readiness = workflow_readiness(conn, pairs)
             doms = _workflow_domains(conn, pairs)
 
+            # Check for outdated task references
+            outdated_refs = False
+            for ref in refs:
+                latest_task = conn.execute(
+                    "SELECT MAX(version) as max_v FROM tasks WHERE record_id=?",
+                    (ref["task_record_id"],)
+                ).fetchone()
+                if latest_task and latest_task["max_v"] and latest_task["max_v"] > ref["task_version"]:
+                    outdated_refs = True
+                    break
+
             tags = [str(x).strip().lower() for x in (_json_load(latest["tags_json"]) if "tags_json" in latest.keys() else [])]
             for t in tags:
                 if t:
@@ -4285,6 +4316,7 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
                     "readiness": readiness,
                     "domains": doms,
                     "tags": tags,
+                    "outdated_refs": outdated_refs,
                 }
             )
 
