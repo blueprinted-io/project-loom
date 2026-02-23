@@ -49,10 +49,10 @@
   <thead>
     <tr>
       <th>Title</th>
-      <th>Ver</th>
+      <th>Latest Confirmed</th>
+      <th>Latest Version</th>
       <th>Status</th>
       <th>Readiness</th>
-      <th>Update</th>
       <th>Domains</th>
       <th>Tags</th>
     </tr>
@@ -66,7 +66,8 @@
           <div class="muted" style="margin-top:4px">Record: <code>{{ it.record_id[:8] }}…</code></div>
         {% endif %}
       </td>
-      <td><code>{{ it.latest_version }}</code></td>
+      <td>{% if it.latest_confirmed_version %}<code>v{{ it.latest_confirmed_version }}</code>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td><code>v{{ it.latest_version }}</code>{% if it.latest_version > (it.latest_confirmed_version or 0) %}<span class="badge badge-warn" style="margin-left:4px">new</span>{% endif %}</td>
       <td><span class="badge badge-{{ it.status }}">{{ it.status }}</span></td>
       <td>
         {% if it.readiness == 'ready' %}
@@ -75,13 +76,6 @@
           <span class="badge badge-warn">awaiting_task_confirmation</span>
         {% else %}
           <span class="badge badge-deprecated">invalid</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if it.pending_update %}
-          <span class="badge badge-warn" title="A new version is awaiting confirmation">🔄 pending</span>
-        {% else %}
-          <span class="badge badge-confirmed">✓ current</span>
         {% endif %}
       </td>
       <td>

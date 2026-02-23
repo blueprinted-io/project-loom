@@ -4407,27 +4407,23 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
                     (_json_dump(doms), rid, latest_v),
                 )
 
-            # Check if this confirmed workflow has a pending draft update
-            pending_update = False
-            if latest["status"] == "confirmed":
-                # Check if there's a newer version (draft) waiting
-                has_draft = conn.execute(
-                    "SELECT 1 FROM workflows WHERE record_id = ? AND version > ? AND status = 'draft'",
-                    (rid, latest_v)
-                ).fetchone()
-                if has_draft:
-                    pending_update = True
+            # Get latest confirmed version for this workflow
+            latest_confirmed = conn.execute(
+                "SELECT MAX(version) as max_v FROM workflows WHERE record_id = ? AND status = 'confirmed'",
+                (rid,)
+            ).fetchone()
+            latest_confirmed_v = latest_confirmed["max_v"] if latest_confirmed and latest_confirmed["max_v"] else None
 
             items.append(
                 {
                     "record_id": rid,
                     "latest_version": latest_v,
+                    "latest_confirmed_version": latest_confirmed_v,
                     "title": latest["title"],
                     "status": latest["status"],
                     "readiness": readiness,
                     "domains": doms,
                     "tags": tags,
-                    "pending_update": pending_update,
                 }
             )
 
