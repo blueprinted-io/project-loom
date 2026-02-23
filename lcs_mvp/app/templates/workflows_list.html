@@ -52,7 +52,6 @@
       <th>Ver</th>
       <th>Status</th>
       <th>Readiness</th>
-      <th>Refs</th>
       <th>Domains</th>
       <th>Tags</th>
     </tr>
@@ -75,13 +74,6 @@
           <span class="badge badge-warn">awaiting_task_confirmation</span>
         {% else %}
           <span class="badge badge-deprecated">invalid</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if it.outdated_refs %}
-          <span class="badge badge-warn" title="References outdated task versions">⚠️ stale</span>
-        {% else %}
-          <span class="badge badge-confirmed">✓ current</span>
         {% endif %}
       </td>
       <td>
