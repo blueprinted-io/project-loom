@@ -4324,13 +4324,14 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
                     """
                     INSERT INTO workflows (
                         record_id, version, status,
-                        title, domains_json, tags_json, meta_json,
+                        title, objective, domains_json, tags_json, meta_json,
                         created_at, updated_at, created_by, updated_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         wf_record_id, new_wf_version, "draft",
                         src_wf["title"],
+                        src_wf["objective"],
                         src_wf["domains_json"],
                         src_wf["tags_json"],
                         src_wf["meta_json"],
