@@ -61,6 +61,14 @@
         </div>
       {% endif %}
 
+      {% if pending_workflow_version %}
+        <div class="callout warn">
+          <b>⚠️ This workflow is outdated</b>
+          <p>A new version (v{{ pending_workflow_version }}) exists with updated task references. <a href="/workflows/{{ workflow.record_id }}/{{ pending_workflow_version }}">View pending version →</a></p>
+          <p class="muted">This confirmed version is preserved but may not reflect current reality.</p>
+        </div>
+      {% endif %}
+
       <h3>Tasks</h3>
       <ol>
         {% for r in refs %}

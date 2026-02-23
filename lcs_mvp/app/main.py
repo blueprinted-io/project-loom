@@ -4063,6 +4063,9 @@ def task_new_version(request: Request, record_id: str, version: int):
             ),
         )
 
+        # Cascade: update workflows referencing previous task version
+        _cascade_workflow_updates(conn, record_id, new_v, actor)
+
     audit("task", record_id, new_v, "new_version", actor, note=f"from v{version}")
     return RedirectResponse(url=f"/tasks/{record_id}/{new_v}/edit", status_code=303)
 
@@ -4180,9 +4183,6 @@ def task_confirm(request: Request, record_id: str, version: int):
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
         )
 
-        # Cascade: create/update workflow drafts for confirmed workflows referencing old version
-        _cascade_workflow_updates(conn, record_id, version, actor)
-
     audit("task", record_id, version, "confirm", actor)
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
@@ -4218,28 +4218,17 @@ def task_force_confirm(request: Request, record_id: str, version: int):
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
         )
 
-        conn.execute(
-            """
-            UPDATE tasks
-            SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
-            WHERE record_id=? AND version=?
-            """,
-            (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
-        )
-
-        # Cascade: create/update workflow drafts for confirmed workflows referencing old version
-        _cascade_workflow_updates(conn, record_id, version, actor)
-
     audit("task", record_id, version, "force_confirm", actor, note="admin forced confirmation")
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
 
 def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new_task_version: int, actor: str):
-    """When a task is confirmed, cascade to workflows referencing previous versions.
+    """When a task is revised, cascade to confirmed workflows referencing older versions.
     
-    For each confirmed workflow referencing an older version of this task:
-    - If workflow has a non-confirmed version: update it to reference the new task version
-    - If no non-confirmed version: create a new submitted version with updated task reference
+    Rules:
+    - Confirmed workflow + new task version → create submitted workflow (or update if exists)
+    - While workflow is unconfirmed (submitted/draft) → accumulate task changes (no new version)
+    - When workflow confirmed again → new version if more task updates arrive
     """
     # Find all confirmed workflows that reference any version of this task (except the new one)
     workflows_to_update = conn.execute(
@@ -4662,6 +4651,16 @@ def workflow_view(request: Request, record_id: str, version: int):
                 "latest_version": latest_version,
                 "has_update": latest_version > r["version"]
             })
+        
+        # Check if this confirmed workflow has a pending update
+        pending_workflow_version = None
+        if wf["status"] == "confirmed":
+            pending = conn.execute(
+                "SELECT version FROM workflows WHERE record_id = ? AND version > ? AND status != 'confirmed'",
+                (record_id, version)
+            ).fetchone()
+            if pending:
+                pending_workflow_version = pending["version"]
 
     return templates.TemplateResponse(
         request,
@@ -4674,6 +4673,7 @@ def workflow_view(request: Request, record_id: str, version: int):
             "readiness_reasons": readiness_info["reasons"],
             "blocking_task_refs": readiness_info["blocking_task_refs"],
             "domains": doms,
+            "pending_workflow_version": pending_workflow_version,
         },
     )
 
