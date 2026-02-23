@@ -4645,13 +4645,31 @@ def workflow_view(request: Request, record_id: str, version: int):
         readiness_info = workflow_readiness_detail(conn, refs_pairs)
         doms = _workflow_domains(conn, refs_pairs)
 
+        # Check for newer task versions
+        refs_with_updates = []
+        for r in refs:
+            latest_task = conn.execute(
+                "SELECT MAX(version) as max_v FROM tasks WHERE record_id=?",
+                (r["record_id"],)
+            ).fetchone()
+            latest_version = latest_task["max_v"] if latest_task and latest_task["max_v"] else r["version"]
+            refs_with_updates.append({
+                "order_index": r["order_index"],
+                "record_id": r["record_id"],
+                "version": r["version"],
+                "title": r["title"],
+                "task_status": r["task_status"],
+                "latest_version": latest_version,
+                "has_update": latest_version > r["version"]
+            })
+
     return templates.TemplateResponse(
         request,
         "workflow_view.html",
         {
             "workflow": dict(wf),
             "all_versions": all_versions,
-            "refs": refs,
+            "refs": refs_with_updates,
             "readiness": readiness_info["readiness"],
             "readiness_reasons": readiness_info["reasons"],
             "blocking_task_refs": readiness_info["blocking_task_refs"],
