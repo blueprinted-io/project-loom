@@ -52,6 +52,7 @@
       <th>Ver</th>
       <th>Status</th>
       <th>Readiness</th>
+      <th>Update</th>
       <th>Domains</th>
       <th>Tags</th>
     </tr>
@@ -74,6 +75,13 @@
           <span class="badge badge-warn">awaiting_task_confirmation</span>
         {% else %}
           <span class="badge badge-deprecated">invalid</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if it.pending_update %}
+          <span class="badge badge-warn" title="A new version is awaiting confirmation">🔄 pending</span>
+        {% else %}
+          <span class="badge badge-confirmed">✓ current</span>
         {% endif %}
       </td>
       <td>

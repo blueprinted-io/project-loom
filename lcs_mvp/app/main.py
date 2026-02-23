@@ -4180,6 +4180,9 @@ def task_confirm(request: Request, record_id: str, version: int):
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
         )
 
+        # Cascade: create/update workflow drafts for confirmed workflows referencing old version
+        _cascade_workflow_updates(conn, record_id, version, actor)
+
     audit("task", record_id, version, "confirm", actor)
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
@@ -4215,8 +4218,135 @@ def task_force_confirm(request: Request, record_id: str, version: int):
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
         )
 
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
+            WHERE record_id=? AND version=?
+            """,
+            (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
+        )
+
+        # Cascade: create/update workflow drafts for confirmed workflows referencing old version
+        _cascade_workflow_updates(conn, record_id, version, actor)
+
     audit("task", record_id, version, "force_confirm", actor, note="admin forced confirmation")
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
+def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new_task_version: int, actor: str):
+    """When a task is confirmed, cascade to workflows referencing previous versions.
+    
+    For each confirmed workflow referencing an older version of this task:
+    - If workflow has a draft version: update that draft to reference the new task version
+    - If no draft: create a new draft version with updated task reference
+    """
+    # Find all confirmed workflows that reference any version of this task (except the new one)
+    workflows_to_update = conn.execute(
+        """
+        SELECT DISTINCT w.record_id, w.version, w.title, w.status
+        FROM workflows w
+        JOIN workflow_task_refs wr ON w.record_id = wr.workflow_record_id AND w.version = wr.workflow_version
+        WHERE wr.task_record_id = ?
+        AND w.status = 'confirmed'
+        AND wr.task_version < ?
+        """,
+        (task_record_id, new_task_version)
+    ).fetchall()
+    
+    for wf in workflows_to_update:
+        wf_record_id = wf["record_id"]
+        wf_confirmed_version = wf["version"]
+        
+        # Check if there's already a draft version of this workflow
+        latest_wf = conn.execute(
+            "SELECT MAX(version) as max_v FROM workflows WHERE record_id = ?",
+            (wf_record_id,)
+        ).fetchone()
+        latest_wf_version = latest_wf["max_v"] if latest_wf else wf_confirmed_version
+        
+        # Get current refs for the workflow (either draft or confirmed)
+        current_refs = conn.execute(
+            """
+            SELECT task_record_id, task_version, order_index
+            FROM workflow_task_refs
+            WHERE workflow_record_id = ? AND workflow_version = ?
+            ORDER BY order_index
+            """,
+            (wf_record_id, latest_wf_version)
+        ).fetchall()
+        
+        # Build updated refs: replace old task version with new one
+        updated_refs = []
+        for ref in current_refs:
+            if ref["task_record_id"] == task_record_id:
+                updated_refs.append((task_record_id, new_task_version, ref["order_index"]))
+            else:
+                updated_refs.append((ref["task_record_id"], ref["task_version"], ref["order_index"]))
+        
+        # Check if draft already exists
+        draft_exists = conn.execute(
+            "SELECT 1 FROM workflows WHERE record_id = ? AND version = ? AND status = 'draft'",
+            (wf_record_id, latest_wf_version)
+        ).fetchone()
+        
+        if draft_exists:
+            # Update existing draft's task refs
+            conn.execute(
+                "DELETE FROM workflow_task_refs WHERE workflow_record_id = ? AND workflow_version = ?",
+                (wf_record_id, latest_wf_version)
+            )
+            for ref_record_id, ref_version, order_idx in updated_refs:
+                conn.execute(
+                    """
+                    INSERT INTO workflow_task_refs (workflow_record_id, workflow_version, task_record_id, task_version, order_index)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (wf_record_id, latest_wf_version, ref_record_id, ref_version, order_idx)
+                )
+            conn.execute(
+                "UPDATE workflows SET updated_at = ?, updated_by = ? WHERE record_id = ? AND version = ?",
+                (utc_now_iso(), actor, wf_record_id, latest_wf_version)
+            )
+        else:
+            # Create new draft version
+            new_wf_version = latest_wf_version + 1
+            now = utc_now_iso()
+            
+            # Copy workflow data from confirmed version
+            src_wf = conn.execute(
+                "SELECT * FROM workflows WHERE record_id = ? AND version = ?",
+                (wf_record_id, wf_confirmed_version)
+            ).fetchone()
+            
+            if src_wf:
+                conn.execute(
+                    """
+                    INSERT INTO workflows (
+                        record_id, version, status,
+                        title, domains_json, tags_json, meta_json,
+                        created_at, updated_at, created_by, updated_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        wf_record_id, new_wf_version, "draft",
+                        src_wf["title"],
+                        src_wf["domains_json"],
+                        src_wf["tags_json"],
+                        src_wf["meta_json"],
+                        now, now, actor, actor
+                    )
+                )
+                
+                # Insert updated task refs
+                for ref_record_id, ref_version, order_idx in updated_refs:
+                    conn.execute(
+                        """
+                        INSERT INTO workflow_task_refs (workflow_record_id, workflow_version, task_record_id, task_version, order_index)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (wf_record_id, new_wf_version, ref_record_id, ref_version, order_idx)
+                    )
 
 
 # ---- Workflows ----
@@ -4276,6 +4406,17 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
                     (_json_dump(doms), rid, latest_v),
                 )
 
+            # Check if this confirmed workflow has a pending draft update
+            pending_update = False
+            if latest["status"] == "confirmed":
+                # Check if there's a newer version (draft) waiting
+                has_draft = conn.execute(
+                    "SELECT 1 FROM workflows WHERE record_id = ? AND version > ? AND status = 'draft'",
+                    (rid, latest_v)
+                ).fetchone()
+                if has_draft:
+                    pending_update = True
+
             items.append(
                 {
                     "record_id": rid,
@@ -4285,6 +4426,7 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
                     "readiness": readiness,
                     "domains": doms,
                     "tags": tags,
+                    "pending_update": pending_update,
                 }
             )
 
