@@ -78,9 +78,6 @@
             {% if r.task_status != 'confirmed' %}
               <span class="badge badge-warn">{{ r.task_status }}</span>
             {% endif %}
-            {% if r.has_update %}
-              <span class="badge badge-warn" title="Newer version available: v{{ r.latest_version }}">↗ v{{ r.latest_version }} available</span>
-            {% endif %}
           </li>
         {% endfor %}
       </ol>

@@ -4231,9 +4231,6 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
     - While workflow is unconfirmed (submitted/draft) → accumulate task changes (no new version)
     - When workflow confirmed again → new version if more task updates arrive
     """
-    import sys
-    print(f"DEBUG CASCADE: task={task_record_id} v{new_task_version}", file=sys.stderr)
-    
     # Find all confirmed workflows that reference any version of this task (except the new one)
     workflows_to_update = conn.execute(
         """
@@ -4246,9 +4243,6 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
         """,
         (task_record_id, new_task_version)
     ).fetchall()
-    
-    import sys
-    print(f"DEBUG CASCADE: found {len(workflows_to_update)} workflows to update", file=sys.stderr)
     
     for wf in workflows_to_update:
         wf_record_id = wf["record_id"]
@@ -4316,8 +4310,6 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
             ).fetchone()
             
             if src_wf:
-                import sys
-                print(f"DEBUG CASCADE: creating {wf_record_id} v{new_wf_version}", file=sys.stderr)
                 conn.execute(
                     """
                     INSERT INTO workflows (
@@ -4346,7 +4338,6 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
                         """,
                         (wf_record_id, new_wf_version, ref_record_id, ref_version, order_idx)
                     )
-                print(f"DEBUG CASCADE: done", file=sys.stderr)
 
 
 # ---- Workflows ----
@@ -4643,24 +4634,6 @@ def workflow_view(request: Request, record_id: str, version: int):
         refs_pairs = [(r["record_id"], int(r["version"])) for r in refs]
         readiness_info = workflow_readiness_detail(conn, refs_pairs)
         doms = _workflow_domains(conn, refs_pairs)
-
-        # Check for newer task versions
-        refs_with_updates = []
-        for r in refs:
-            latest_task = conn.execute(
-                "SELECT MAX(version) as max_v FROM tasks WHERE record_id=?",
-                (r["record_id"],)
-            ).fetchone()
-            latest_version = latest_task["max_v"] if latest_task and latest_task["max_v"] else r["version"]
-            refs_with_updates.append({
-                "order_index": r["order_index"],
-                "record_id": r["record_id"],
-                "version": r["version"],
-                "title": r["title"],
-                "task_status": r["task_status"],
-                "latest_version": latest_version,
-                "has_update": latest_version > r["version"]
-            })
         
         # Check if this confirmed workflow has a pending update
         pending_workflow_version = None
@@ -4678,7 +4651,7 @@ def workflow_view(request: Request, record_id: str, version: int):
         {
             "workflow": dict(wf),
             "all_versions": all_versions,
-            "refs": refs_with_updates,
+            "refs": refs,
             "readiness": readiness_info["readiness"],
             "readiness_reasons": readiness_info["reasons"],
             "blocking_task_refs": readiness_info["blocking_task_refs"],
