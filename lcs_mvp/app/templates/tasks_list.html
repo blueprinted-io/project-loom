@@ -20,7 +20,8 @@
     <a href="/tasks?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
     <a href="/tasks?status=returned" class="pill {{ 'active' if status=='returned' else '' }}">Returned</a>
     <a href="/tasks?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
-    <a href="/tasks?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Deprecated</a>
+    <a href="/tasks?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Superseded</a>
+    <a href="/tasks?status=retired" class="pill {{ 'active' if status=='retired' else '' }}">Retired</a>
 
     <form method="get" action="/tasks" class="search">
       {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}

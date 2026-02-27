@@ -23,7 +23,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated"]
+Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated", "retired"]
 Role = Literal["viewer", "author", "assessment_author", "content_publisher", "reviewer", "audit", "admin"]
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -3946,6 +3946,8 @@ def task_save(
         ).fetchone()
         if not src:
             raise HTTPException(404)
+        if src["status"] == "retired":
+            raise HTTPException(409, detail="Cannot revise a retired task without unretiring/replacing policy")
 
         # If the source version was returned for changes, force the change_note to reference the return note.
         if src["status"] == "returned":
@@ -4022,6 +4024,8 @@ def task_new_version(request: Request, record_id: str, version: int):
         ).fetchone()
         if not src:
             raise HTTPException(404)
+        if src["status"] == "retired":
+            raise HTTPException(409, detail="Cannot revise a retired task without unretiring/replacing policy")
         latest_v = get_latest_version(conn, "tasks", record_id) or version
         new_v = latest_v + 1
         now = utc_now_iso()
@@ -4112,7 +4116,7 @@ def task_force_submit(request: Request, record_id: str, version: int):
         ).fetchone()
         if not row:
             raise HTTPException(404)
-        if row["status"] in ("deprecated", "confirmed"):
+        if row["status"] in ("deprecated", "retired", "confirmed"):
             raise HTTPException(409, detail=f"Cannot force-submit a {row['status']} task")
         conn.execute(
             "UPDATE tasks SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
@@ -4202,8 +4206,8 @@ def task_force_confirm(request: Request, record_id: str, version: int):
         ).fetchone()
         if not row:
             raise HTTPException(404)
-        if row["status"] == "deprecated":
-            raise HTTPException(409, detail="Cannot force-confirm a deprecated task")
+        if row["status"] in ("deprecated", "retired"):
+            raise HTTPException(409, detail=f"Cannot force-confirm a {row['status']} task")
 
         # Still enforce: you can't confirm an empty/bad record (structure checks are enforced earlier).
         # Admin override is for lifecycle, not semantics.
@@ -4224,6 +4228,38 @@ def task_force_confirm(request: Request, record_id: str, version: int):
         )
 
     audit("task", record_id, version, "force_confirm", actor, note="admin forced confirmation")
+    return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
+@app.post("/tasks/{record_id}/{version}/retire")
+def task_retire(request: Request, record_id: str, version: int, note: str = Form("")):
+    """Retire a task version with no replacement.
+
+    Retired task versions are treated as invalid workflow references and do not auto-cascade.
+    Use for intentionally removed capabilities/features.
+    """
+    require(request.state.role, "task:confirm")
+    actor = request.state.user
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] in ("retired", "deprecated"):
+            raise HTTPException(409, detail="Task is already retired/superseded")
+
+        domain = (row["domain"] or "").strip()
+        if domain and not _user_has_domain(conn, actor, domain):
+            raise HTTPException(status_code=403, detail=f"Forbidden: you are not authorized for domain '{domain}'")
+
+        conn.execute(
+            "UPDATE tasks SET status='retired', updated_at=?, updated_by=?, change_note=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, (note or "Retired with no replacement"), record_id, version),
+        )
+
+    audit("task", record_id, version, "retire", actor, note=(note or "retired with no replacement"))
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
 
@@ -4488,8 +4524,9 @@ def workflow_readiness_detail(conn: sqlite3.Connection, refs: list[tuple[str, in
 
     Rules:
       - If any reference is missing => invalid
-      - If any reference is deprecated => invalid
-      - Else if any reference is not confirmed (draft/submitted) => awaiting_task_confirmation
+      - If any reference is retired => invalid (no replacement)
+      - Deprecated references are treated as historical/superseded and do not block readiness
+      - Else if any reference is not confirmed (draft/submitted/returned) => awaiting_task_confirmation
       - Else => ready
 
     Returns:
@@ -4516,9 +4553,13 @@ def workflow_readiness_detail(conn: sqlite3.Connection, refs: list[tuple[str, in
             return {"readiness": "invalid", "reasons": reasons, "blocking_task_refs": blocking}
 
         st = row["status"]
-        if st == "deprecated":
-            reasons.append(f"Deprecated Task reference: {rid}@{ver} is deprecated")
+        if st == "retired":
+            reasons.append(f"Retired Task reference: {rid}@{ver} has no active replacement")
             return {"readiness": "invalid", "reasons": reasons, "blocking_task_refs": blocking}
+
+        # Superseded historical task versions are allowed for existing approved workflows.
+        if st == "deprecated":
+            continue
 
         if st != "confirmed":
             awaiting = True
@@ -4540,7 +4581,7 @@ def enforce_workflow_ref_rules(conn: sqlite3.Connection, refs: list[tuple[str, i
     Hard constraints here:
       - at least one task reference must exist
       - referenced task versions must exist
-      - referenced task versions must not be deprecated
+      - referenced task versions must not be retired
     """
     if not refs:
         raise HTTPException(status_code=400, detail="Workflow must include at least one Task reference")
@@ -4549,7 +4590,7 @@ def enforce_workflow_ref_rules(conn: sqlite3.Connection, refs: list[tuple[str, i
     if derived == "invalid":
         raise HTTPException(
             status_code=409,
-            detail="Workflow contains invalid Task references (missing or deprecated task versions)",
+            detail="Workflow contains invalid Task references (missing or retired task versions)",
         )
 
 

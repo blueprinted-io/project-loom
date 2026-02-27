@@ -148,6 +148,16 @@
     </form>
     {% endif %}
 
+    {% if task.status == 'confirmed' and can(request.state.role, 'task:confirm') %}
+    <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/retire" class="card detail-inline-card">
+      <div class="muted" style="margin-bottom:6px"><b>Retire task</b> (no replacement)</div>
+      <textarea name="note" rows="2" placeholder="Reason this task is being retired (optional)"></textarea>
+      <div style="margin-top:8px">
+        <button class="btn secondary" type="submit">Retire</button>
+      </div>
+    </form>
+    {% endif %}
+
     {% if request.state.role == 'admin' %}
       <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-submit">
         <button class="btn secondary" type="submit">Force submit</button>
