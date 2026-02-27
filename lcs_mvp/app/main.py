@@ -4408,16 +4408,27 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
             ).fetchone()
             latest_confirmed_v = latest_confirmed["max_v"] if latest_confirmed and latest_confirmed["max_v"] else None
 
+            has_incoming_replacement = bool(latest_confirmed_v and latest_v > int(latest_confirmed_v))
+            if has_incoming_replacement:
+                if readiness == "awaiting_task_confirmation":
+                    replacement_state = "waiting_on_tasks"
+                elif latest["status"] == "submitted":
+                    replacement_state = "awaiting_workflow_confirmation"
+                else:
+                    replacement_state = "incoming"
+            else:
+                replacement_state = None
+
             items.append(
                 {
                     "record_id": rid,
                     "latest_version": latest_v,
-                    "latest_confirmed_version": latest_confirmed_v,
                     "title": latest["title"],
                     "status": latest["status"],
                     "readiness": readiness,
                     "domains": doms,
                     "tags": tags,
+                    "replacement_state": replacement_state,
                 }
             )
 
