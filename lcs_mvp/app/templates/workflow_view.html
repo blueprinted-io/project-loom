@@ -3,7 +3,7 @@
 <div class="page-header">
   <div>
     <h1>{{ workflow.title }}</h1>
-    <p class="muted">Workflow · Record <code>{{ workflow.record_id[:8] }}…</code> · Version <code>{{ workflow.version }}</code></p>
+    <p class="muted">Workflow · Record <code>{{ workflow.record_id }}</code> · Version <code>{{ workflow.version }}</code></p>
     
     {% if all_versions|length > 1 %}
     <div style="margin-top:8px">

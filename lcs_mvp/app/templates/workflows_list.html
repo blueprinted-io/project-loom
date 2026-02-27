@@ -63,7 +63,7 @@
       <td>
         <a href="/workflows/{{ it.record_id }}/{{ it.latest_version }}">{{ it.title }}</a>
         {% if request.state.role == 'admin' %}
-          <div class="muted" style="margin-top:4px">Record: <code>{{ it.record_id[:8] }}…</code></div>
+          <div class="muted" style="margin-top:4px">Record: <code>{{ it.record_id }}</code></div>
         {% endif %}
       </td>
       <td><code>v{{ it.latest_version }}</code></td>
