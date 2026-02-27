@@ -9,10 +9,17 @@
     <div style="margin-top:8px">
       <span class="muted">Versions:</span>
       {% for v in all_versions %}
+        {% set suffix = '' %}
+        {% if latest_confirmed_version and v.version == latest_confirmed_version %}
+          {% set suffix = ' · current approved' %}
+        {% elif latest_confirmed_version and v.version > latest_confirmed_version and v.status != 'confirmed' %}
+          {% set suffix = ' · incoming replacement' %}
+        {% endif %}
+
         {% if v.version == workflow.version %}
-          <span class="badge badge-{{ v.status }}" style="margin-left:4px">v{{ v.version }} ({{ v.status }})</span>
+          <span class="badge badge-{{ v.status }}" style="margin-left:4px">v{{ v.version }} ({{ v.status }}{{ suffix }})</span>
         {% else %}
-          <a href="/workflows/{{ workflow.record_id }}/{{ v.version }}" class="badge" style="margin-left:4px">v{{ v.version }} ({{ v.status }})</a>
+          <a href="/workflows/{{ workflow.record_id }}/{{ v.version }}" class="badge" style="margin-left:4px">v{{ v.version }} ({{ v.status }}{{ suffix }})</a>
         {% endif %}
       {% endfor %}
     </div>
@@ -63,9 +70,9 @@
 
       {% if pending_workflow_version %}
         <div class="callout warn">
-          <b>⚠️ This workflow is outdated</b>
-          <p>A new version (v{{ pending_workflow_version }}) exists with updated task references. <a href="/workflows/{{ workflow.record_id }}/{{ pending_workflow_version }}">View pending version →</a></p>
-          <p class="muted">This confirmed version is preserved but may not reflect current reality.</p>
+          <b>Incoming replacement in progress</b>
+          <p>This approved workflow remains usable. A replacement version (v{{ pending_workflow_version }}{% if pending_workflow_status %}, {{ pending_workflow_status }}{% endif %}) is awaiting confirmation.</p>
+          <p><a href="/workflows/{{ workflow.record_id }}/{{ pending_workflow_version }}">View replacement version →</a></p>
         </div>
       {% endif %}
 

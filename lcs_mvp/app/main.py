@@ -4004,6 +4004,10 @@ def task_save(
             ),
         )
 
+        # Cascade: update workflows referencing previous task version
+        _cascade_workflow_updates(conn, record_id, new_v, actor)
+        conn.commit()
+
     audit("task", record_id, new_v, "new_version", actor, note=f"from v{version}: {note}")
     return RedirectResponse(url=f"/tasks/{record_id}/{new_v}", status_code=303)
 
@@ -4635,15 +4639,24 @@ def workflow_view(request: Request, record_id: str, version: int):
         readiness_info = workflow_readiness_detail(conn, refs_pairs)
         doms = _workflow_domains(conn, refs_pairs)
         
-        # Check if this confirmed workflow has a pending update
+        # Version context for UI messaging
+        latest_confirmed = conn.execute(
+            "SELECT MAX(version) AS v FROM workflows WHERE record_id=? AND status='confirmed'",
+            (record_id,),
+        ).fetchone()
+        latest_confirmed_version = int(latest_confirmed["v"]) if latest_confirmed and latest_confirmed["v"] else None
+
+        # If viewing confirmed version, surface incoming replacement (if any)
         pending_workflow_version = None
+        pending_workflow_status = None
         if wf["status"] == "confirmed":
             pending = conn.execute(
-                "SELECT version FROM workflows WHERE record_id = ? AND version > ? AND status != 'confirmed'",
+                "SELECT version, status FROM workflows WHERE record_id = ? AND version > ? AND status != 'confirmed' ORDER BY version DESC LIMIT 1",
                 (record_id, version)
             ).fetchone()
             if pending:
-                pending_workflow_version = pending["version"]
+                pending_workflow_version = int(pending["version"])
+                pending_workflow_status = str(pending["status"])
 
     return templates.TemplateResponse(
         request,
@@ -4656,7 +4669,9 @@ def workflow_view(request: Request, record_id: str, version: int):
             "readiness_reasons": readiness_info["reasons"],
             "blocking_task_refs": readiness_info["blocking_task_refs"],
             "domains": doms,
+            "latest_confirmed_version": latest_confirmed_version,
             "pending_workflow_version": pending_workflow_version,
+            "pending_workflow_status": pending_workflow_status,
         },
     )
 
