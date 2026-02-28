@@ -56,21 +56,25 @@
   </form>
 </div>
 
-<div class="card">
+<div class="card" {% if role in ('viewer', 'audit', 'content_publisher') %}style="opacity:0.5;pointer-events:none"{% endif %}>
   <h2 style="margin-top:0">Domains (self-select for demo)</h2>
-  <p class="muted">This is temporary. Eventually domain entitlements should be managed by admins/policy.</p>
+  {% if role in ('viewer', 'audit', 'content_publisher') %}
+    <p class="muted">Domain assignment does not apply to your role. Your role has implicit visibility across all domains.</p>
+  {% else %}
+    <p class="muted">This is temporary. Eventually domain entitlements should be managed by admins/policy.</p>
+  {% endif %}
 
   <form method="post" action="/profile/domains/save">
     <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px">
       {% for d in domains %}
         <label class="check" style="margin:0">
-          <input type="checkbox" name="domain" value="{{ d }}" {% if d in selected %}checked{% endif %} />
+          <input type="checkbox" name="domain" value="{{ d }}" {% if d in selected %}checked{% endif %} {% if role in ('viewer', 'audit', 'content_publisher') %}disabled{% endif %} />
           <span>{{ d }}</span>
         </label>
       {% endfor %}
     </div>
     <div style="margin-top:12px">
-      <button class="btn secondary" type="submit">Save domains</button>
+      <button class="btn secondary" type="submit" {% if role in ('viewer', 'audit', 'content_publisher') %}disabled{% endif %}>Save domains</button>
     </div>
   </form>
 </div>

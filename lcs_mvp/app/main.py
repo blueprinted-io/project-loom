@@ -1519,7 +1519,7 @@ def profile_view(request: Request, msg: str | None = None):
     return templates.TemplateResponse(
         request,
         "profile.html",
-        {"user": dict(u), "domains": domains, "selected": selected, "msg": msg},
+        {"user": dict(u), "domains": domains, "selected": selected, "msg": msg, "role": request.state.role},
     )
 
 
