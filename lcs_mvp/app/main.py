@@ -4727,6 +4727,21 @@ def workflow_view(request: Request, record_id: str, version: int):
         ).fetchone()
         latest_confirmed_version = int(latest_confirmed["v"]) if latest_confirmed and latest_confirmed["v"] else None
 
+        # Diff task refs against last confirmed workflow version to flag updated tasks
+        task_version_changes: dict[str, dict[str, int]] = {}
+        if latest_confirmed_version and version > latest_confirmed_version:
+            old_refs = conn.execute(
+                "SELECT task_record_id, task_version FROM workflow_task_refs"
+                " WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+                (record_id, latest_confirmed_version),
+            ).fetchall()
+            old_versions = {r["task_record_id"]: int(r["task_version"]) for r in old_refs}
+            for r in refs:
+                old_v = old_versions.get(r["record_id"])
+                new_v = int(r["version"])
+                if old_v is not None and new_v > old_v:
+                    task_version_changes[r["record_id"]] = {"old": old_v, "new": new_v}
+
         # If viewing confirmed version, surface incoming replacement (if any)
         pending_workflow_version = None
         pending_workflow_status = None
@@ -4753,6 +4768,7 @@ def workflow_view(request: Request, record_id: str, version: int):
             "latest_confirmed_version": latest_confirmed_version,
             "pending_workflow_version": pending_workflow_version,
             "pending_workflow_status": pending_workflow_status,
+            "task_version_changes": task_version_changes,
         },
     )
 

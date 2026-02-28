@@ -76,6 +76,13 @@
         </div>
       {% endif %}
 
+      {% if task_version_changes %}
+      <div class="callout warn">
+        <b>{{ task_version_changes|length }} task{{ 's' if task_version_changes|length != 1 else '' }} updated since last confirmed version</b>
+        <p>Review each updated task in the context of this workflow before confirming.</p>
+      </div>
+      {% endif %}
+
       <h3>Tasks</h3>
       <ol>
         {% for r in refs %}
@@ -84,6 +91,9 @@
             <span class="muted">({{ r.record_id }}@{{ r.version }})</span>
             {% if r.task_status != 'confirmed' %}
               <span class="badge badge-warn">{{ r.task_status }}</span>
+            {% endif %}
+            {% if r.record_id in task_version_changes %}
+              <span class="badge badge-warn">updated v{{ task_version_changes[r.record_id].old }} → v{{ r.version }}</span>
             {% endif %}
           </li>
         {% endfor %}
