@@ -1651,11 +1651,11 @@ def home(request: Request):
 
     cards: list[dict[str, Any]] = []
     with db() as conn:
-        doms = _active_domains(conn) if role == "admin" else _user_domains(conn, user)
+        # viewer, audit, and content_publisher are domain-less roles: they cannot
+        # be assigned domains and are implicitly granted visibility across all domains.
+        _domain_agnostic = role in ("admin", "viewer", "audit", "content_publisher")
+        doms = _active_domains(conn) if _domain_agnostic else _user_domains(conn, user)
         dset = {d.strip().lower() for d in doms if d}
-
-        # Roles that see all confirmed content regardless of domain assignment
-        _confirmed_sees_all = role in ("admin", "viewer", "audit", "content_publisher")
 
         def _count_workflows_by_status(status: str) -> int:
             rows = conn.execute(
@@ -1668,9 +1668,6 @@ def home(request: Request):
                     (r["record_id"], int(r["latest_version"])),
                 ).fetchone()
                 if not latest or str(latest["status"]) != status:
-                    continue
-                if _confirmed_sees_all and status == "confirmed":
-                    c += 1
                     continue
                 if role == "admin":
                     c += 1
@@ -1692,9 +1689,6 @@ def home(request: Request):
                 ).fetchone()
                 if not latest or str(latest["status"]) != status:
                     continue
-                if _confirmed_sees_all and status == "confirmed":
-                    c += 1
-                    continue
                 if role == "admin":
                     c += 1
                     continue
@@ -1714,9 +1708,6 @@ def home(request: Request):
                     (r["record_id"], int(r["latest_version"])),
                 ).fetchone()
                 if not latest or str(latest["status"]) != status:
-                    continue
-                if _confirmed_sees_all and status == "confirmed":
-                    c += 1
                     continue
                 if role == "admin":
                     c += 1
