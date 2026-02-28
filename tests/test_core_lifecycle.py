@@ -8,45 +8,6 @@ from fastapi.testclient import TestClient
 import lcs_mvp.app.main as app_main
 
 
-def _login(client: TestClient, username: str, password: str) -> None:
-    r = client.post(
-        "/login",
-        data={"username": username, "password": password},
-        follow_redirects=False,
-    )
-    assert r.status_code == 303
-
-
-def _logout(client: TestClient) -> None:
-    r = client.post("/logout", follow_redirects=False)
-    assert r.status_code == 303
-
-
-def _create_task(client: TestClient, domain: str) -> tuple[str, int]:
-    r = client.post(
-        "/tasks/new",
-        data={
-            "title": f"Task for {domain}",
-            "outcome": "Outcome",
-            "procedure_name": "procedure",
-            "domain": domain,
-            "facts": "Fact A",
-            "concepts": "Concept A",
-            "dependencies": "Dependency A",
-            "step_text": ["Do thing"],
-            "step_completion": ["Thing is done"],
-            "step_actions": ["echo done"],
-            "step_notes": [""],
-        },
-        follow_redirects=False,
-    )
-    assert r.status_code == 303
-    loc = r.headers.get("location", "")
-    m = re.search(r"/tasks/([0-9a-f-]+)/(\d+)/edit", loc)
-    assert m, f"unexpected create task redirect: {loc}"
-    return m.group(1), int(m.group(2))
-
-
 def _create_workflow(client: TestClient, task_record_id: str, task_version: int) -> tuple[str, int]:
     r = client.post(
         "/workflows/new",
@@ -64,24 +25,24 @@ def _create_workflow(client: TestClient, task_record_id: str, task_version: int)
     return m.group(1), int(m.group(2))
 
 
-def test_task_submit_rejects_unauthorized_domain(client: TestClient) -> None:
-    _login(client, "jjoplin", "password2")
-    rid, ver = _create_task(client, "aws")
+def test_task_submit_rejects_unauthorized_domain(client: TestClient, login, create_task) -> None:
+    login("jjoplin", "password2")
+    rid, ver = create_task("aws")
 
     r = client.post(f"/tasks/{rid}/{ver}/submit")
     assert r.status_code == 403
     assert "not authorized for domain 'aws'" in r.json()["detail"]
 
 
-def test_task_submit_then_confirm_happy_path(client: TestClient) -> None:
-    _login(client, "jjoplin", "password2")
-    rid, ver = _create_task(client, "debian")
+def test_task_submit_then_confirm_happy_path(client: TestClient, login, logout, create_task) -> None:
+    login("jjoplin", "password2")
+    rid, ver = create_task("debian")
 
     r_submit = client.post(f"/tasks/{rid}/{ver}/submit", follow_redirects=False)
     assert r_submit.status_code == 303
 
-    _logout(client)
-    _login(client, "jhendrix", "password1")
+    logout()
+    login("jhendrix", "password1")
 
     r_confirm = client.post(f"/tasks/{rid}/{ver}/confirm", follow_redirects=False)
     assert r_confirm.status_code == 303
@@ -99,9 +60,78 @@ def test_task_submit_then_confirm_happy_path(client: TestClient) -> None:
     assert str(row[0]) == "confirmed"
 
 
-def test_workflow_confirm_blocked_until_referenced_task_confirmed(client: TestClient) -> None:
-    _login(client, "jjoplin", "password2")
-    task_rid, task_ver = _create_task(client, "debian")
+def test_task_full_lifecycle_return_and_resubmit(client: TestClient, login, logout, create_task) -> None:
+    login("jjoplin", "password2")
+    rid, ver1 = create_task("debian")
+
+    r_submit_v1 = client.post(f"/tasks/{rid}/{ver1}/submit", follow_redirects=False)
+    assert r_submit_v1.status_code == 303
+
+    logout()
+    login("jhendrix", "password1")
+
+    r_return_v1 = client.post(
+        f"/tasks/{rid}/{ver1}/return",
+        data={"note": "Please add clearer verification wording."},
+        follow_redirects=False,
+    )
+    assert r_return_v1.status_code == 303
+
+    logout()
+    login("jjoplin", "password2")
+
+    r_save_v2 = client.post(
+        f"/tasks/{rid}/{ver1}/save",
+        data={
+            "title": "Task for debian v2",
+            "outcome": "Outcome updated after review",
+            "procedure_name": "procedure",
+            "domain": "debian",
+            "facts": "Fact A",
+            "concepts": "Concept A",
+            "dependencies": "Dependency A",
+            "step_text": ["Do thing"],
+            "step_completion": ["Thing is done and verified"],
+            "step_actions": ["echo done"],
+            "step_notes": [""],
+            "change_note": "Addressed reviewer return note with clearer completion proof.",
+        },
+        follow_redirects=False,
+    )
+    assert r_save_v2.status_code == 303
+    loc = r_save_v2.headers.get("location", "")
+    m = re.search(rf"/tasks/{rid}/(\d+)$", loc)
+    assert m, f"unexpected revise redirect: {loc}"
+    ver2 = int(m.group(1))
+    assert ver2 == ver1 + 1
+
+    r_submit_v2 = client.post(f"/tasks/{rid}/{ver2}/submit", follow_redirects=False)
+    assert r_submit_v2.status_code == 303
+
+    logout()
+    login("jhendrix", "password1")
+
+    r_confirm_v2 = client.post(f"/tasks/{rid}/{ver2}/confirm", follow_redirects=False)
+    assert r_confirm_v2.status_code == 303
+
+    conn = sqlite3.connect(app_main.DB_DEBIAN_PATH)
+    try:
+        statuses = conn.execute(
+            "SELECT version, status FROM tasks WHERE record_id=? ORDER BY version",
+            (rid,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert [(int(v), str(s)) for v, s in statuses] == [
+        (ver1, "returned"),
+        (ver2, "confirmed"),
+    ]
+
+
+def test_workflow_confirm_blocked_until_referenced_task_confirmed(client: TestClient, login, logout, create_task) -> None:
+    login("jjoplin", "password2")
+    task_rid, task_ver = create_task("debian")
 
     r_task_submit = client.post(f"/tasks/{task_rid}/{task_ver}/submit", follow_redirects=False)
     assert r_task_submit.status_code == 303
@@ -110,8 +140,8 @@ def test_workflow_confirm_blocked_until_referenced_task_confirmed(client: TestCl
     r_wf_submit = client.post(f"/workflows/{wf_rid}/{wf_ver}/submit", follow_redirects=False)
     assert r_wf_submit.status_code == 303
 
-    _logout(client)
-    _login(client, "jhendrix", "password1")
+    logout()
+    login("jhendrix", "password1")
 
     r_wf_confirm_blocked = client.post(f"/workflows/{wf_rid}/{wf_ver}/confirm")
     assert r_wf_confirm_blocked.status_code == 409
