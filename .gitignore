@@ -1,6 +1,11 @@
 
 # LCS MVP runtime artifacts
 lcs_mvp/.venv/
-lcs_mvp/data/
 lcs_mvp/__pycache__/
 lcs_mvp/*.pyc
+
+# Keep data directory but ignore WAL files (auto-generated)
+lcs_mvp/data/*.db-shm
+lcs_mvp/data/*.db-wal
+lcs_mvp/data/exports/
+lcs_mvp/data/uploads/
