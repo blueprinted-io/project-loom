@@ -1654,6 +1654,9 @@ def home(request: Request):
         doms = _active_domains(conn) if role == "admin" else _user_domains(conn, user)
         dset = {d.strip().lower() for d in doms if d}
 
+        # Roles that see all confirmed content regardless of domain assignment
+        _confirmed_sees_all = role in ("admin", "viewer", "audit", "content_publisher")
+
         def _count_workflows_by_status(status: str) -> int:
             rows = conn.execute(
                 "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id"
@@ -1665,6 +1668,9 @@ def home(request: Request):
                     (r["record_id"], int(r["latest_version"])),
                 ).fetchone()
                 if not latest or str(latest["status"]) != status:
+                    continue
+                if _confirmed_sees_all and status == "confirmed":
+                    c += 1
                     continue
                 if role == "admin":
                     c += 1
@@ -1686,6 +1692,9 @@ def home(request: Request):
                 ).fetchone()
                 if not latest or str(latest["status"]) != status:
                     continue
+                if _confirmed_sees_all and status == "confirmed":
+                    c += 1
+                    continue
                 if role == "admin":
                     c += 1
                     continue
@@ -1705,6 +1714,9 @@ def home(request: Request):
                     (r["record_id"], int(r["latest_version"])),
                 ).fetchone()
                 if not latest or str(latest["status"]) != status:
+                    continue
+                if _confirmed_sees_all and status == "confirmed":
+                    c += 1
                     continue
                 if role == "admin":
                     c += 1
@@ -5106,13 +5118,20 @@ def _assessment_lint(stem: str, options: list[dict[str, str]], correct_key: str,
 
 def _assessment_export_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     r = dict(row)
+    options = _json_load(r["options_json"]) or []
+    # Robustness: Handle legacy dict format {"A": "...", ...}
+    if isinstance(options, dict):
+        normalized = []
+        for k in ["A", "B", "C", "D"]:
+            normalized.append({"key": k, "text": str(options.get(k) or "")})
+        options = normalized
     return {
         "type": "assessment",
         "record_id": r["record_id"],
         "version": int(r["version"]),
         "status": r["status"],
         "stem": r["stem"],
-        "options": _json_load(r["options_json"]) or [],
+        "options": options,
         "correct_key": r["correct_key"],
         "rationale": r.get("rationale") or "",
         "claim": r.get("claim") or "fact_probe",
@@ -5656,6 +5675,14 @@ def assessment_edit_form(request: Request, record_id: str, version: int):
     item = dict(row)
     lint = _json_load(item.get("lint_json") or "[]") or []
     options = _json_load(item.get("options_json") or "[]") or []
+
+    # Robustness: Handle legacy dict format {"A": "...", ...}
+    if isinstance(options, dict):
+        normalized = []
+        for k in ["A", "B", "C", "D"]:
+            normalized.append({"key": k, "text": str(options.get(k) or "")})
+        options = normalized
+
     item["options"] = options
 
     return templates.TemplateResponse(
