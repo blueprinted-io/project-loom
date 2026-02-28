@@ -2350,6 +2350,9 @@ def admin_users_delete(request: Request, username: str = Form("")):
     return RedirectResponse(url="/admin/users", status_code=303)
 
 
+_DOMAIN_AGNOSTIC_ROLES = {"viewer", "audit", "content_publisher"}
+
+
 @app.post("/admin/users/domains")
 def admin_user_domains_form(request: Request, username: str = Form("")):
     require_admin(request)
@@ -2361,6 +2364,8 @@ def admin_user_domains_form(request: Request, username: str = Form("")):
         u = conn.execute("SELECT id, username, role FROM users WHERE username=?", (username,)).fetchone()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
+        if str(u["role"]) in _DOMAIN_AGNOSTIC_ROLES:
+            raise HTTPException(status_code=400, detail=f"Role '{u['role']}' has implicit cross-domain visibility and cannot be assigned domains")
 
         domains = _active_domains(conn)
         selected_rows = conn.execute("SELECT domain FROM user_domains WHERE user_id=?", (int(u["id"]),)).fetchall()
@@ -2380,9 +2385,11 @@ def admin_user_domains_save(request: Request, username: str = Form(""), domain: 
     selected = sorted({(d or "").strip().lower() for d in (domain or []) if (d or "").strip()})
 
     with db() as conn:
-        u = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        u = conn.execute("SELECT id, role FROM users WHERE username=?", (username,)).fetchone()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
+        if str(u["role"]) in _DOMAIN_AGNOSTIC_ROLES:
+            raise HTTPException(status_code=400, detail=f"Role has implicit cross-domain visibility and cannot be assigned domains")
 
         allowed = set(_active_domains(conn))
         for d in selected:

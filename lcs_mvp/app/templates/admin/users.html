@@ -72,7 +72,7 @@
         <td>
           <form method="post" action="/admin/users/domains" style="display:inline">
             <input type="hidden" name="username" value="{{ u.username }}" />
-            <button class="btn secondary" type="submit">Edit domains</button>
+            <button class="btn secondary" type="submit" {% if u.role in ('viewer', 'audit', 'content_publisher') %}disabled title="This role has implicit cross-domain visibility and cannot be assigned domains"{% endif %}>Edit domains</button>
           </form>
 
           <form method="post" action="/admin/users/reset" style="display:inline">
