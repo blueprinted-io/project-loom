@@ -1,0 +1,225 @@
+# Project Loom — Development Guide
+
+**Repository:** https://github.com/blueprinted-io/project-loom  
+**Last Updated:** 2026-02-28  
+**Status:** MVP Active Development
+
+---
+
+## Quick Start (Local Development)
+
+### Prerequisites
+- Python 3.10+
+- SQLite (bundled with Python)
+- Git
+
+### Setup
+
+```bash
+# Clone
+git clone https://github.com/blueprinted-io/project-loom.git
+cd project-loom/lcs_mvp
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# or: .venv\Scripts\activate  # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Initialize database (first run only)
+python -c "from app.main import init_db; init_db()"
+
+# Seed demo data (optional)
+python -c "from app.main import seed_demo_data; seed_demo_data()"
+```
+
+### Running the Server
+
+```bash
+# Development (with auto-reload)
+.venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Production (no reload, daemonized)
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Access at: http://localhost:8000
+
+Default demo users (if seeded):
+- `admin` / `password0` — Full admin access
+- `reviewer` / `password1` — Can review/confirm all content
+- `author` / `password2` — Can create tasks/workflows
+- `viewer` / `password3` — Read-only, sees all confirmed content
+- `audit` / `password4` — Audit log access, sees all confirmed content
+- `content_publisher` / `password6` — Can export/publish content
+
+---
+
+## Architecture Overview
+
+### Stack
+- **Backend:** FastAPI (Python)
+- **Frontend:** Jinja2 server-rendered HTML templates
+- **Database:** SQLite (single file: `data/lcs.db`)
+- **Auth:** Session-based (HTTP-only cookies)
+- **Styling:** Custom CSS (SPA-v1 theme in `static/style.css`)
+
+### Key Directories
+```
+lcs_mvp/
+├── app/
+│   ├── main.py           # FastAPI app, routes, business logic
+│   ├── templates/        # Jinja2 HTML templates
+│   └── static/           # CSS, JS, images
+├── data/                 # SQLite database (gitignored)
+├── scripts/              # Utility scripts
+└── requirements.txt      # Python dependencies
+```
+
+---
+
+## Recent Changes (2026-02-28)
+
+### Dashboard & Role System
+- **Domain-agnostic roles:** `viewer`, `audit`, `content_publisher` now see all confirmed content across all domains (no domain assignment needed)
+- **Per-domain breakdown table:** Domain-agnostic roles see a table showing confirmed tasks/workflows/assessments per domain with filter links
+- **Health thresholds tightened:** Domain pressure now shows red <85%, amber 85-95%, green ≥95% (was 50/70)
+
+### Admin & Profile
+- **Disabled domain assignment:** Admin "Edit domains" button is disabled for domain-agnostic roles with explanatory tooltip
+- **Backend enforcement:** API rejects domain assignment attempts for these roles (HTTP 400)
+- **Profile page:** Domain section greyed out for domain-agnostic roles with explanation
+
+### UI Polish
+- **Author dashboard icons:** Create/import cards now have visual icons (⎇ ✓ ◈ 📄 {})
+- **Disabled button styling:** Global `.btn:disabled` styling (opacity 0.4, not-allowed cursor)
+
+### Explainer Page
+- Added RAG (Retrieval-Augmented Generation) description for the system overview diagram
+
+---
+
+## Key Concepts
+
+### Roles & Permissions
+
+| Role | Domains | Can Create | Can Review | Notes |
+|------|---------|------------|------------|-------|
+| `admin` | All (implicit) | Yes | Yes | Full access, operational dashboard |
+| `reviewer` | All (implicit) | No | Yes | Review queue, can confirm/return anything |
+| `author` | Assigned only | Yes | No | Creates content, sees returned items |
+| `assessment_author` | Assigned only | Assessments | No | Creates assessments, sees confirmed tasks/workflows |
+| `viewer` | All (implicit) | No | No | Read-only, per-domain breakdown table |
+| `audit` | All (implicit) | No | No | Audit log access, per-domain breakdown |
+| `content_publisher` | All (implicit) | No | No | Export/publish, per-domain breakdown |
+
+### Content Lifecycle
+
+```
+draft → submitted → confirmed
+   ↑        ↓
+   └──── returned
+```
+
+- **Draft:** Author working, not visible to others
+- **Submitted:** Awaiting review
+- **Returned:** Reviewer requested changes, back to author
+- **Confirmed:** Approved, visible to viewer/audit/content_publisher
+- **Deprecated:** Older confirmed version superseded
+- **Retired:** Permanently removed (admin action)
+
+### Domain Model
+
+- **Domain:** A subject area (e.g., "kubernetes", "aws", "debian")
+- **Task:** Smallest unit of work — outcome, facts, concepts, procedure steps
+- **Workflow:** Ordered list of Tasks achieving one objective
+- **Assessment:** Questions linked to Tasks/Workflows for learning verification
+
+---
+
+## Common Operations
+
+### Restart Server After Code Changes
+
+```bash
+# Find and kill existing process
+pkill -f "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+# Restart
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Database Migrations
+
+SQLite schema is auto-created on first run via `init_db()`. For schema changes:
+
+1. Modify `CREATE TABLE` statements in `init_db()`
+2. Run migration manually or recreate database
+
+### Adding Demo Data
+
+```python
+from app.main import seed_demo_data
+seed_demo_data()
+```
+
+---
+
+## Development Notes
+
+### CSS/Styling
+- Main stylesheet: `app/static/style.css`
+- SPA theme class: `body.spa-v1` (current active theme)
+- Custom properties (CSS variables) defined in `:root`
+
+### Template Structure
+- Base: `templates/base.html`
+- Dashboard: `templates/home.html` (role-conditional rendering)
+- Forms: `templates/task_form.html`, `templates/workflow_form.html`, etc.
+
+### Debugging
+- Server logs: `/tmp/lcs_mvp.log` (if using nohup) or terminal output
+- Enable debug: Add `--reload` flag for auto-restart on code changes
+- Database: Inspect directly with `sqlite3 data/lcs.db`
+
+---
+
+## Future Considerations
+
+### React Rewrite (Post-MVP)
+The current server-rendered approach is correct for MVP velocity. A full React rewrite is planned after:
+1. Feature set is locked and validated
+2. Domain model is stable
+3. API endpoints are cleanly extracted
+
+See `blueprinted-io-kimi-prompt.md` in workspace root for marketing site context (separate React project).
+
+---
+
+## Troubleshooting
+
+### Port already in use
+```bash
+lsof -i :8000  # Find process
+kill <PID>     # Terminate it
+```
+
+### Database locked
+SQLite doesn't handle concurrent writes well. Ensure only one server process is running.
+
+### Static files not updating
+Browser may cache CSS. Hard refresh: `Ctrl+Shift+R` (or `Cmd+Shift+R` on Mac).
+
+---
+
+## Contact
+
+- **Issues:** GitHub Issues
+- **Docs:** This README + inline code comments
+- **Slack/Discord:** #project-loom channel
+
+---
+
+*Generated by OpenClaw session — 2026-02-28*
