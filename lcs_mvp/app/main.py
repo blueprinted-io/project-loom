@@ -1876,10 +1876,10 @@ def home(request: Request):
                     health_pct = 100.0
                 
                 # Status thresholds (higher health = better)
-                # Calibrated for realistic seed distributions (~50-60% confirmed)
-                if health_pct >= 70:
+                # green >=95%, amber 85-95%, red <85%
+                if health_pct >= 95:
                     level = "green"
-                elif health_pct >= 50:
+                elif health_pct >= 85:
                     level = "amber"
                 else:
                     level = "red"
