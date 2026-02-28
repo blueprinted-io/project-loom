@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 
 from fastapi.testclient import TestClient
-
-import lcs_mvp.app.main as app_main
 
 
 def _create_workflow(client: TestClient, task_record_id: str, task_version: int) -> tuple[str, int]:
@@ -47,17 +44,9 @@ def test_task_submit_then_confirm_happy_path(client: TestClient, login, logout, 
     r_confirm = client.post(f"/tasks/{rid}/{ver}/confirm", follow_redirects=False)
     assert r_confirm.status_code == 303
 
-    conn = sqlite3.connect(app_main.DB_DEBIAN_PATH)
-    try:
-        row = conn.execute(
-            "SELECT status FROM tasks WHERE record_id=? AND version=?",
-            (rid, ver),
-        ).fetchone()
-    finally:
-        conn.close()
-
-    assert row is not None
-    assert str(row[0]) == "confirmed"
+    r_status = client.get(f"/tasks/{rid}/{ver}/status")
+    assert r_status.status_code == 200
+    assert r_status.json()["status"] == "confirmed"
 
 
 def test_task_full_lifecycle_return_and_resubmit(client: TestClient, login, logout, create_task) -> None:
@@ -114,19 +103,8 @@ def test_task_full_lifecycle_return_and_resubmit(client: TestClient, login, logo
     r_confirm_v2 = client.post(f"/tasks/{rid}/{ver2}/confirm", follow_redirects=False)
     assert r_confirm_v2.status_code == 303
 
-    conn = sqlite3.connect(app_main.DB_DEBIAN_PATH)
-    try:
-        statuses = conn.execute(
-            "SELECT version, status FROM tasks WHERE record_id=? ORDER BY version",
-            (rid,),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    assert [(int(v), str(s)) for v, s in statuses] == [
-        (ver1, "returned"),
-        (ver2, "confirmed"),
-    ]
+    assert client.get(f"/tasks/{rid}/{ver1}/status").json()["status"] == "returned"
+    assert client.get(f"/tasks/{rid}/{ver2}/status").json()["status"] == "confirmed"
 
 
 def test_workflow_confirm_blocked_until_referenced_task_confirmed(client: TestClient, login, logout, create_task) -> None:
@@ -153,14 +131,6 @@ def test_workflow_confirm_blocked_until_referenced_task_confirmed(client: TestCl
     r_wf_confirm = client.post(f"/workflows/{wf_rid}/{wf_ver}/confirm", follow_redirects=False)
     assert r_wf_confirm.status_code == 303
 
-    conn = sqlite3.connect(app_main.DB_DEBIAN_PATH)
-    try:
-        row = conn.execute(
-            "SELECT status FROM workflows WHERE record_id=? AND version=?",
-            (wf_rid, wf_ver),
-        ).fetchone()
-    finally:
-        conn.close()
-
-    assert row is not None
-    assert str(row[0]) == "confirmed"
+    r_status = client.get(f"/workflows/{wf_rid}/{wf_ver}/status")
+    assert r_status.status_code == 200
+    assert r_status.json()["status"] == "confirmed"

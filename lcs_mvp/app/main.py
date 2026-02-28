@@ -3867,6 +3867,17 @@ def task_view(request: Request, record_id: str, version: int):
     )
 
 
+@app.get("/tasks/{record_id}/{version}/status")
+def task_status(record_id: str, version: int):
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404)
+    return {"status": row["status"]}
+
+
 @app.get("/tasks/{record_id}/{version}/edit", response_class=HTMLResponse)
 def task_edit_form(request: Request, record_id: str, version: int):
     require(request.state.role, "task:revise")
@@ -4744,6 +4755,17 @@ def workflow_view(request: Request, record_id: str, version: int):
             "pending_workflow_status": pending_workflow_status,
         },
     )
+
+
+@app.get("/workflows/{record_id}/{version}/status")
+def workflow_status(record_id: str, version: int):
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404)
+    return {"status": row["status"]}
 
 
 @app.get("/workflows/{record_id}/{version}/revise", response_class=HTMLResponse)
