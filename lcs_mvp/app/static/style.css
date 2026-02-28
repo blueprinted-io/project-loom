@@ -216,6 +216,7 @@ html[data-theme="dark"] .sidebar-flag{background:color-mix(in oklab, var(--warn)
 .btn.secondary:hover{filter:none;box-shadow:0 10px 24px rgba(17,24,39,.06)}
 
 .btn:focus-visible{outline:3px solid color-mix(in oklab, var(--accent) 55%, transparent);outline-offset:2px}
+.btn:disabled,.btn[disabled]{opacity:0.4;cursor:not-allowed;pointer-events:none;filter:none;box-shadow:none;transform:none}
 
 /* buttons inside topbar: opaque pills (no transparency) */
 .topbar .btn.secondary{
