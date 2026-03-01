@@ -74,10 +74,10 @@
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Domain health spider <button type="button" class="info-btn js-info-btn" data-info-title="Domain health spider" data-info-content="Shows how healthy each domain is based on task completion rates. The closer a domain is to the center, the better its health. Outer rings show where problems are building up." aria-label="Explain Domain health spider">i</button></div>
+    <div class="section-header">Domain health spider <button type="button" class="info-btn js-info-btn" data-info-title="Domain health spider" data-info-content="Shows how healthy each domain is based on task completion rates. The inner ring is 100% health. Outer rings show where problems are building up." aria-label="Explain Domain health spider">i</button></div>
     <div class="card">
       {% if spider.axes %}
-      <div class="muted" style="margin-bottom:8px">Center is 100% health. Outer ring is current lowest domain health ({{ spider.outer_health }}%).</div>
+      <div class="muted" style="margin-bottom:8px">Inner ring is 100% health. Outer ring is current lowest domain health ({{ spider.outer_health }}%).</div>
       <svg class="spider-svg" viewBox="0 0 {{ spider.width }} {{ spider.height }}" role="img" aria-label="Domain health spider chart">
         {% for ring in spider.rings %}
           <circle cx="{{ spider.cx }}" cy="{{ spider.cy }}" r="{{ ring.r }}" fill="none" stroke="currentColor" opacity="0.12" />
@@ -97,8 +97,7 @@
             {{ a.domain }} {{ a.health }}%
           </text>
         {% endfor %}
-        <circle cx="{{ spider.cx }}" cy="{{ spider.cy }}" r="2.5" fill="currentColor" opacity="0.7" />
-        <text x="{{ spider.cx + 5 }}" y="{{ spider.cy - 6 }}" font-size="10" opacity="0.75">100</text>
+        <circle cx="{{ spider.cx }}" cy="{{ spider.cy }}" r="2.5" fill="currentColor" opacity="0.35" />
       </svg>
       {% if spider.focus %}
       <div class="spider-focus">

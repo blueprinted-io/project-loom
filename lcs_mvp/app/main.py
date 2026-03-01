@@ -2098,12 +2098,13 @@ def _admin_dashboard_visuals(
     # Keep risky domains first in legend/order.
     trend_series.sort(key=lambda x: (not bool(x["is_focus"]), float(x["current"]), str(x["domain"])))
 
-    # --- Domain spider (current snapshot): center=100%, farther out=lower health ---
+    # --- Domain spider (current snapshot): first ring=100%, farther out=lower health ---
     spider_w = 300
     spider_h = 300
     spider_cx = 150.0
     spider_cy = 150.0
     spider_r = 108.0
+    spider_inner_r = spider_r / 5.0  # first ring = 100% health
     spider_source = sorted(
         [{"domain": str(s["domain"]), "current": float(s["current"])} for s in trend_series],
         key=lambda x: str(x["domain"]),
@@ -2119,7 +2120,7 @@ def _admin_dashboard_visuals(
         axis_x = spider_cx + (spider_r * math.cos(ang))
         axis_y = spider_cy + (spider_r * math.sin(ang))
         health = float(s["current"])
-        value_r = (max(0.0, min(spider_scale_range, (100.0 - health))) / spider_scale_range) * spider_r
+        value_r = spider_inner_r + (max(0.0, min(spider_scale_range, (100.0 - health))) / spider_scale_range) * (spider_r - spider_inner_r)
         value_x = spider_cx + (value_r * math.cos(ang))
         value_y = spider_cy + (value_r * math.sin(ang))
         label_x = spider_cx + ((spider_r + 16.0) * math.cos(ang))
@@ -2152,7 +2153,8 @@ def _admin_dashboard_visuals(
         )
     spider_rings = []
     for pct_out in (20, 40, 60, 80, 100):
-        health_mark = 100.0 - ((float(pct_out) / 100.0) * spider_scale_range)
+        # ring 1 (pct_out=20) = 100%, ring 5 (pct_out=100) = outer_health
+        health_mark = 100.0 - ((float(pct_out - 20) / 80.0) * spider_scale_range)
         spider_rings.append(
             {
                 "r": round((float(pct_out) / 100.0) * spider_r, 2),
