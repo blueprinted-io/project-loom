@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Login · blueprinted.io</title>
-  <link rel="stylesheet" href="/static/style.css?v=59" />
+  <link rel="stylesheet" href="/static/style.css?v=60" />
 </head>
 <body>
   <div class="wrap" style="padding: 24px 0">
@@ -24,7 +24,7 @@
       <div class="row" style="align-items:flex-start">
         <div>
           <h1 style="margin-top:0">Login</h1>
-          <p class="muted">Pick a demo user below and click Login. The button auto-fills credentials for convenience.</p>
+          <p class="muted">Select a user below to log in instantly.</p>
         </div>
         <div class="row-right">
           <form method="post" action="/db/pick" style="display:flex; gap:8px; align-items:end">
@@ -43,7 +43,7 @@
 
       <div class="demo-users-list">
         {% for u in users %}
-        <div class="demo-user-card">
+        <button class="demo-user-card js-quick-login" type="button" data-username="{{ u.username }}" data-password="{{ u.demo_password }}">
           <div class="demo-user-avatar-wrap">
             <img class="demo-user-avatar" src="/avatar/{{ u.username }}?v=1" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
             <span class="demo-user-avatar-fallback" style="display:none">{{ u.username[:1]|upper }}</span>
@@ -52,20 +52,8 @@
             <div class="demo-user-name">{{ u.username }}</div>
             <div class="demo-user-role">{{ u.role }}</div>
           </div>
-          <div class="demo-user-domains">
-            {% if u.domains %}
-              {% for d in u.domains %}
-                <span class="badge">{{ d }}</span>
-              {% endfor %}
-            {% endif %}
-          </div>
-          <button
-            class="btn secondary js-quick-login demo-user-login"
-            type="button"
-            data-username="{{ u.username }}"
-            data-password="{{ u.demo_password }}"
-          >Login</button>
-        </div>
+          <div class="demo-user-chevron">›</div>
+        </button>
         {% endfor %}
       </div>
     </div>
