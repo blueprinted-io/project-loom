@@ -1574,7 +1574,8 @@ def public_avatar(username: str):
         str(f_abs),
         media_type=mt,
         headers={
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "no-cache, must-revalidate",
+            "Pragma": "no-cache",
         },
     )
 
