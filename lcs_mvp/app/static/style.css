@@ -501,6 +501,34 @@ body.spa-v1 .rail-close-mobile:hover{
 }
 body.spa-v1 .rail-close-mobile{display:none}
 
+/* Sidebar header with logo */
+body.spa-v1 .sidebar-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:8px;
+  padding:4px 2px;
+}
+body.spa-v1 .sidebar-logo{
+  display:flex;
+  align-items:center;
+  text-decoration:none;
+}
+body.spa-v1 .sidebar-logo img{
+  height:32px;
+  width:auto;
+  display:block;
+}
+body.spa-v1 .rail-close-mobile{
+  position:static;
+  margin-left:auto;
+}
+
+@media (max-width:980px){
+  body.spa-v1 .rail-close-mobile{display:inline-flex}
+  body.spa-v1 .rail-toggle{display:none}
+}
+
 body.spa-v1.rail-collapsed .sidebar{width:78px;padding:14px 10px}
 body.spa-v1.rail-collapsed .spa-main{margin-left:78px;width:calc(100% - 78px)}
 body.spa-v1.rail-collapsed .sidebar-shell-controls{justify-content:center}
