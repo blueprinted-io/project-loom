@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Login · blueprinted.io</title>
-  <link rel="stylesheet" href="/static/style.css?v=60" />
+  <link rel="stylesheet" href="/static/style.css?v=61" />
 </head>
 <body>
   <div class="wrap" style="padding: 24px 0">
@@ -50,7 +50,12 @@
           </div>
           <div class="demo-user-info">
             <div class="demo-user-name">{{ u.username }}</div>
-            <div class="demo-user-role">{{ u.role }}</div>
+            <div class="demo-user-meta">
+              <span class="demo-user-role">{{ u.role }}</span>
+              {% if u.domains %}
+              <span class="demo-user-domain-count">{{ u.domains|length }} domain{% if u.domains|length > 1 %}s{% endif %}</span>
+              {% endif %}
+            </div>
           </div>
           <div class="demo-user-chevron">›</div>
         </button>
