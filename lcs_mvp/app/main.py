@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import itertools
 import json
+import logging
 import math
 import os
 import re
@@ -12,7 +14,6 @@ import shutil
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from uuid import uuid4
 from typing import Any, Literal
 
 import httpx
@@ -25,6 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .utils import _json_dump, _json_load, parse_lines, parse_meta, parse_tags
+
+logger = logging.getLogger(__name__)
 
 Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated", "retired"]
 Role = Literal["viewer", "author", "assessment_author", "content_publisher", "reviewer", "audit", "admin"]
@@ -75,6 +78,18 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 app = FastAPI(title="Learning Content System MVP")
 
 
+def _import_error_response(request: Request, detail: str, status_code: int):
+    """Render the appropriate import form with an error message."""
+    path = str(request.url.path)
+    if path.startswith("/import/json"):
+        template = "import_json.html"
+        ctx: dict[str, Any] = {"error": detail}
+    else:
+        template = "import_pdf.html"
+        ctx = {"error": detail, "lmstudio_base_url": LMSTUDIO_BASE_URL, "lmstudio_model": LMSTUDIO_MODEL}
+    return templates.TemplateResponse(request, template, ctx, status_code=status_code)
+
+
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
     """Prefer HTML error details for browser flows.
@@ -84,17 +99,7 @@ async def _http_exception_handler(request: Request, exc: HTTPException):
     """
     accept = (request.headers.get("accept") or "").lower()
     if "text/html" in accept and (str(request.url.path).startswith("/import/pdf") or str(request.url.path).startswith("/import/json")):
-        # Render the import form again, but include the error detail.
-        template = "import_json.html" if str(request.url.path).startswith("/import/json") else "import_pdf.html"
-        ctx = {"error": str(exc.detail)}
-        if template == "import_pdf.html":
-            ctx.update({"lmstudio_base_url": LMSTUDIO_BASE_URL, "lmstudio_model": LMSTUDIO_MODEL})
-        return templates.TemplateResponse(
-            request,
-            template,
-            ctx,
-            status_code=exc.status_code,
-        )
+        return _import_error_response(request, str(exc.detail), exc.status_code)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
@@ -108,21 +113,9 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
 
     accept = (request.headers.get("accept") or "").lower()
     if "text/html" in accept and (str(request.url.path).startswith("/import/pdf") or str(request.url.path).startswith("/import/json")):
-        template = "import_json.html" if str(request.url.path).startswith("/import/json") else "import_pdf.html"
-        ctx = {"error": f"Unhandled error: {type(exc).__name__}: {exc}"}
-        if template == "import_pdf.html":
-            ctx.update({"lmstudio_base_url": LMSTUDIO_BASE_URL, "lmstudio_model": LMSTUDIO_MODEL})
-        return templates.TemplateResponse(
-            request,
-            template,
-            ctx,
-            status_code=500,
-        )
+        return _import_error_response(request, "An unexpected error occurred.", 500)
 
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"Unhandled error: {type(exc).__name__}: {exc}"},
-    )
+    return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
 
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -313,7 +306,7 @@ def _backfill_workflow_domains(conn: sqlite3.Connection) -> None:
     for r in rows:
         try:
             existing = (r["domains_json"] or "").strip()
-        except Exception:
+        except (TypeError, AttributeError):
             existing = ""
         if existing and existing != "[]":
             continue
@@ -518,7 +511,12 @@ def db() -> sqlite3.Connection:
     return conn
 
 
+_KNOWN_TABLES = frozenset({"tasks", "workflows", "assessment_items", "users", "domains", "audit_log"})
+
+
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    if table not in _KNOWN_TABLES:
+        raise ValueError(f"_column_exists: unknown table {table!r}")
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return any(r["name"] == column for r in rows)
 
@@ -1065,11 +1063,8 @@ def _zip_steps(
     step_actions: list[str],
     step_notes: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    # Keep ordering.
     out: list[dict[str, Any]] = []
-    step_notes = step_notes or []
-
-    for t, c, a, n in zip(step_text, step_completion, step_actions, step_notes, strict=False):
+    for t, c, a, n in itertools.zip_longest(step_text, step_completion, step_actions, step_notes or [], fillvalue=""):
         actions = [ln.strip() for ln in (a or "").splitlines() if ln.strip()]
         out.append(
             {
@@ -1079,25 +1074,7 @@ def _zip_steps(
                 "notes": (n or "").strip(),
             }
         )
-
-    # If lists are mismatched, extend with remaining text.
-    longest = max(len(step_text), len(step_completion), len(step_actions), len(step_notes))
-    for i in range(len(out), longest):
-        t = step_text[i] if i < len(step_text) else ""
-        c = step_completion[i] if i < len(step_completion) else ""
-        a = step_actions[i] if i < len(step_actions) else ""
-        n = step_notes[i] if i < len(step_notes) else ""
-        actions = [ln.strip() for ln in (a or "").splitlines() if ln.strip()]
-        out.append(
-            {
-                "text": (t or "").strip(),
-                "completion": (c or "").strip(),
-                "actions": actions,
-                "notes": (n or "").strip(),
-            }
-        )
-
-    # Drop empty rows
+    # Drop empty rows.
     return [
         s
         for s in out
@@ -1365,20 +1342,34 @@ def audit(
     )
 
 
+_VERSIONED_TABLES = frozenset({"tasks", "workflows", "assessment_items"})
+
+
+def _normalize_domains(json_str: str | None) -> list[str]:
+    """Parse a JSON domain array, normalising each entry to lowercase stripped strings."""
+    return [v for x in (_json_load(json_str) or []) if (v := str(x).strip().lower())]
+
+
+def _fetch_return_note(conn: sqlite3.Connection, entity_type: str, record_id: str, version: int) -> dict[str, Any] | None:
+    """Return the most recent return-for-changes note for an entity, or None."""
+    rn = conn.execute(
+        "SELECT note, at, actor FROM audit_log"
+        " WHERE entity_type=? AND record_id=? AND version=? AND action='return_for_changes'"
+        " ORDER BY at DESC LIMIT 1",
+        (entity_type, record_id, version),
+    ).fetchone()
+    if rn and rn["note"]:
+        return {"note": rn["note"], "at": rn["at"], "actor": rn["actor"]}
+    return None
+
+
 def get_latest_version(conn: sqlite3.Connection, table: str, record_id: str) -> int | None:
+    if table not in _VERSIONED_TABLES:
+        raise ValueError(f"get_latest_version: unknown table {table!r}")
     row = conn.execute(
         f"SELECT MAX(version) AS v FROM {table} WHERE record_id=?", (record_id,)
     ).fetchone()
     return int(row["v"]) if row and row["v"] is not None else None
-
-
-def require_can_edit(status: str) -> None:
-    # Legacy guardrail (we now treat *all* records as immutable and always create new versions).
-    if status == "confirmed":
-        raise HTTPException(
-            status_code=409,
-            detail="Confirmed records are immutable. Create a new version.",
-        )
 
 
 # --- Routes ---
@@ -1502,7 +1493,7 @@ def _avatar_file_response(avatar_path: str, *, no_store: bool) -> FileResponse:
     f = Path(p)
     try:
         f_abs = f.resolve()
-    except Exception:
+    except (ValueError, OSError):
         raise HTTPException(status_code=400, detail="Invalid avatar path")
 
     if base not in f_abs.parents:
@@ -1730,22 +1721,8 @@ def _system_health_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
     return {"velocity": velocity, "staleness": staleness, "coverage": coverage}
 
 
-def _admin_dashboard_visuals(
-    conn: sqlite3.Connection,
-    *,
-    active_domains: list[str],
-    domain_pressure_rows: list[dict[str, Any]],
-    tasks_status: dict[str, int],
-    workflows_status: dict[str, int],
-    assessments_status: dict[str, int],
-    returned_tasks: int,
-    returned_workflows: int,
-    returned_assessments: int,
-    system_health: dict[str, Any],
-    trend_days: int = 14,
-) -> dict[str, Any]:
-    """Build admin-only analytics visuals from existing state/audit tables."""
-    # --- Coverage gap (ranked) ---
+def _viz_coverage_gaps(system_health: dict[str, Any]) -> dict[str, Any]:
+    """Coverage gap ranking from system health data."""
     cov_rows = list(system_health.get("coverage") or [])
     cov_items: list[dict[str, Any]] = []
     total_gap = 0
@@ -1778,8 +1755,19 @@ def _admin_dashboard_visuals(
     cov_rank_max = max([int(x["gap"]) for x in cov_rank] + [1])
     for x in cov_rank:
         x["bar_pct"] = round((float(x["gap"]) * 100.0) / float(cov_rank_max), 1)
+    return {"total_gap": int(total_gap), "items": cov_rank}
 
-    # --- Pipeline flow ---
+
+def _viz_pipeline_flow(
+    tasks_status: dict[str, int],
+    workflows_status: dict[str, int],
+    assessments_status: dict[str, int],
+    returned_tasks: int,
+    returned_workflows: int,
+    returned_assessments: int,
+    domain_pressure_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Pipeline flow bar chart and return-distribution pie chart."""
     flow_stages = [
         {
             "key": "draft",
@@ -1810,8 +1798,6 @@ def _admin_dashboard_visuals(
         {"name": "Workflows", "value": int(returned_workflows)},
         {"name": "Assessments", "value": int(returned_assessments)},
     ]
-
-    # --- Return distribution by domain ---
     return_dist = [
         {"domain": str(d.get("domain") or ""), "value": int(d.get("returned_total") or 0)}
         for d in domain_pressure_rows
@@ -1822,16 +1808,8 @@ def _admin_dashboard_visuals(
     pie_cy = 120.0
     pie_r = 100.0
     pie_palette = [
-        "#dc2626",
-        "#f59e0b",
-        "#2563eb",
-        "#14b8a6",
-        "#7c3aed",
-        "#ea580c",
-        "#0ea5e9",
-        "#9333ea",
-        "#16a34a",
-        "#be123c",
+        "#dc2626", "#f59e0b", "#2563eb", "#14b8a6", "#7c3aed",
+        "#ea580c", "#0ea5e9", "#9333ea", "#16a34a", "#be123c",
     ]
     pie_slices: list[dict[str, Any]] = []
     if return_pie_total > 0:
@@ -1863,8 +1841,20 @@ def _admin_dashboard_visuals(
                 }
             )
             start_deg = end_deg
+    pipeline_flow = {"stages": flow_stages, "returns": flow_returns}
+    returns_pie = {
+        "total": return_pie_total,
+        "size": 240,
+        "cx": pie_cx,
+        "cy": pie_cy,
+        "r": pie_r,
+        "slices": pie_slices,
+    }
+    return pipeline_flow, returns_pie
 
-    # --- Workflow cycle-time histogram (submit -> confirm) ---
+
+def _viz_cycle_histogram(conn: sqlite3.Connection, trend_days: int) -> dict[str, Any]:
+    """Workflow submit-to-confirm cycle-time histogram."""
     cycle_rows = conn.execute(
         """
         SELECT ((julianday(c.at)-julianday(s.at))*24.0) AS h
@@ -1902,7 +1892,6 @@ def _admin_dashboard_visuals(
     cycle_total = int(sum(int(x["count"]) for x in cycle_hist))
     for x in cycle_hist:
         x["pct_total"] = round((float(x["count"]) * 100.0) / float(cycle_total), 1) if cycle_total else 0.0
-
     group_defs = [
         ("fast", "Fast (<2h)", ["0-1h", "1-2h"]),
         ("normal", "Nominal (2-8h)", ["2-4h", "4-8h"]),
@@ -1931,6 +1920,161 @@ def _admin_dashboard_visuals(
         cycle_p90 = round(d_sorted[p90_idx], 1)
         cycle_tail_count = int(sum(1 for d in d_sorted if d >= 8.0))
         cycle_tail_pct = round((float(cycle_tail_count) * 100.0) / float(len(d_sorted)), 1) if d_sorted else None
+    return {
+        "avg_hours": cycle_avg,
+        "median_hours": cycle_median,
+        "p90_hours": cycle_p90,
+        "tail_count": cycle_tail_count,
+        "tail_pct": cycle_tail_pct,
+        "sample_count": cycle_total,
+        "groups": cycle_groups,
+    }
+
+
+def _viz_domain_spider(trend_series: list[dict[str, Any]]) -> dict[str, Any]:
+    """Domain health spider chart (current snapshot)."""
+    spider_w = 300
+    spider_h = 300
+    spider_cx = 150.0
+    spider_cy = 150.0
+    spider_r = 108.0
+    spider_inner_r = spider_r / 5.0  # first ring = 100% health
+    spider_source = sorted(
+        [{"domain": str(s["domain"]), "current": float(s["current"])} for s in trend_series],
+        key=lambda x: str(x["domain"]),
+    )
+    spider_axes: list[dict[str, Any]] = []
+    spider_pts: list[str] = []
+    axis_count = len(spider_source)
+    spider_outer_health = min([float(x["current"]) for x in spider_source] + [100.0])
+    spider_scale_range = max(0.1, 100.0 - spider_outer_health)
+    for i, s in enumerate(spider_source):
+        ang = (-math.pi / 2.0) + (2.0 * math.pi * float(i) / float(axis_count)) if axis_count else 0.0
+        axis_x = spider_cx + (spider_r * math.cos(ang))
+        axis_y = spider_cy + (spider_r * math.sin(ang))
+        health = float(s["current"])
+        value_r = spider_inner_r + (max(0.0, min(spider_scale_range, (100.0 - health))) / spider_scale_range) * (spider_r - spider_inner_r)
+        value_x = spider_cx + (value_r * math.cos(ang))
+        value_y = spider_cy + (value_r * math.sin(ang))
+        label_x = spider_cx + ((spider_r + 16.0) * math.cos(ang))
+        label_y = spider_cy + ((spider_r + 16.0) * math.sin(ang))
+        cos_v = math.cos(ang)
+        if cos_v > 0.3:
+            anchor = "start"
+        elif cos_v < -0.3:
+            anchor = "end"
+        else:
+            anchor = "middle"
+        dname = str(s["domain"])
+        focus = health < 85.0
+        point_color = "#dc2626" if focus else "#6b7280"
+        spider_pts.append(f"{value_x:.2f},{value_y:.2f}")
+        spider_axes.append(
+            {
+                "domain": dname,
+                "health": round(health, 1),
+                "axis_x": round(axis_x, 2),
+                "axis_y": round(axis_y, 2),
+                "point_x": round(value_x, 2),
+                "point_y": round(value_y, 2),
+                "label_x": round(label_x, 2),
+                "label_y": round(label_y, 2),
+                "anchor": anchor,
+                "focus": focus,
+                "color": point_color,
+            }
+        )
+    spider_rings = []
+    for pct_out in (20, 40, 60, 80, 100):
+        # ring 1 (pct_out=20) = 100%, ring 5 (pct_out=100) = outer_health
+        health_mark = 100.0 - ((float(pct_out - 20) / 80.0) * spider_scale_range)
+        spider_rings.append(
+            {
+                "r": round((float(pct_out) / 100.0) * spider_r, 2),
+                "health": round(health_mark, 1),
+            }
+        )
+    spider_focus = [x for x in spider_axes if bool(x["focus"])]
+    return {
+        "width": spider_w,
+        "height": spider_h,
+        "cx": spider_cx,
+        "cy": spider_cy,
+        "r": spider_r,
+        "rings": spider_rings,
+        "axes": spider_axes,
+        "polygon": " ".join(spider_pts),
+        "focus": spider_focus,
+        "outer_health": round(spider_outer_health, 1),
+    }
+
+
+def _viz_pressure_heat(
+    trend_series: list[dict[str, Any]],
+    health_matrix: dict[str, list[float]],
+    hist_days: list[str],
+) -> dict[str, Any]:
+    """Domain-health pressure heat grid."""
+    heat_rows: list[dict[str, Any]] = []
+    for s in trend_series:
+        d = str(s["domain"])
+        vals = health_matrix.get(d, [])
+        cells: list[dict[str, Any]] = []
+        for v in vals:
+            if v >= 95.0:
+                level = "green"
+            elif v >= 80.0:
+                level = "amber"
+            else:
+                level = "red"
+            cells.append({"value": round(v, 1), "level": level})
+        current = round(float(vals[-1]), 1) if vals else 100.0
+        if vals and hist_days:
+            worst_val = min(float(v) for v in vals)
+            worst_idx = next((i for i, v in enumerate(vals) if float(v) == worst_val), 0)
+            worst_day = hist_days[worst_idx] if worst_idx < len(hist_days) else hist_days[-1]
+        else:
+            worst_val = 100.0
+            worst_day = ""
+        heat_rows.append(
+            {
+                "domain": d,
+                "cells": cells,
+                "current": current,
+                "worst": round(worst_val, 1),
+                "worst_day": worst_day,
+            }
+        )
+    heat_focus = sorted([r for r in heat_rows if float(r["current"]) < 95.0], key=lambda x: float(x["current"]))[:3]
+    return {"days": hist_days, "rows": heat_rows, "focus_rows": heat_focus}
+
+
+def _admin_dashboard_visuals(
+    conn: sqlite3.Connection,
+    *,
+    active_domains: list[str],
+    domain_pressure_rows: list[dict[str, Any]],
+    tasks_status: dict[str, int],
+    workflows_status: dict[str, int],
+    assessments_status: dict[str, int],
+    returned_tasks: int,
+    returned_workflows: int,
+    returned_assessments: int,
+    system_health: dict[str, Any],
+    trend_days: int = 14,
+) -> dict[str, Any]:
+    """Build admin-only analytics visuals from existing state/audit tables."""
+    coverage_rank = _viz_coverage_gaps(system_health)
+    pipeline_flow, returns_pie = _viz_pipeline_flow(
+        tasks_status,
+        workflows_status,
+        assessments_status,
+        returned_tasks,
+        returned_workflows,
+        returned_assessments,
+        domain_pressure_rows,
+    )
+    cycle_histogram = _viz_cycle_histogram(conn, trend_days)
 
     # --- Domain health trend + pressure heat grid (daily snapshots) ---
     domain_set = {str(d).strip().lower() for d in active_domains if str(d).strip()}
@@ -2006,7 +2150,7 @@ def _admin_dashboard_visuals(
             (cutoff,),
         ).fetchall()
         for w in w_rows:
-            wdoms = [str(x).strip().lower() for x in (_json_load(w["domains_json"]) or []) if str(x).strip()]
+            wdoms = _normalize_domains(w["domains_json"])
             st = str(w["status"] or "")
             for d in wdoms:
                 if d not in per_domain:
@@ -2040,7 +2184,7 @@ def _admin_dashboard_visuals(
             (cutoff,),
         ).fetchall()
         for a in a_rows:
-            adoms = [str(x).strip().lower() for x in (_json_load(a["domains_json"]) or []) if str(x).strip()]
+            adoms = _normalize_domains(a["domains_json"])
             st = str(a["status"] or "")
             for d in adoms:
                 if d not in per_domain:
@@ -2098,137 +2242,226 @@ def _admin_dashboard_visuals(
     # Keep risky domains first in legend/order.
     trend_series.sort(key=lambda x: (not bool(x["is_focus"]), float(x["current"]), str(x["domain"])))
 
-    # --- Domain spider (current snapshot): first ring=100%, farther out=lower health ---
-    spider_w = 300
-    spider_h = 300
-    spider_cx = 150.0
-    spider_cy = 150.0
-    spider_r = 108.0
-    spider_inner_r = spider_r / 5.0  # first ring = 100% health
-    spider_source = sorted(
-        [{"domain": str(s["domain"]), "current": float(s["current"])} for s in trend_series],
-        key=lambda x: str(x["domain"]),
-    )
-    spider_axes: list[dict[str, Any]] = []
-    spider_pts: list[str] = []
-    axis_count = len(spider_source)
-    spider_outer_health = min([float(x["current"]) for x in spider_source] + [100.0])
-    spider_scale_range = max(0.1, 100.0 - spider_outer_health)
-    for i, s in enumerate(spider_source):
-        ang = (-math.pi / 2.0) + (2.0 * math.pi * float(i) / float(axis_count)) if axis_count else 0.0
-        axis_x = spider_cx + (spider_r * math.cos(ang))
-        axis_y = spider_cy + (spider_r * math.sin(ang))
-        health = float(s["current"])
-        value_r = spider_inner_r + (max(0.0, min(spider_scale_range, (100.0 - health))) / spider_scale_range) * (spider_r - spider_inner_r)
-        value_x = spider_cx + (value_r * math.cos(ang))
-        value_y = spider_cy + (value_r * math.sin(ang))
-        label_x = spider_cx + ((spider_r + 16.0) * math.cos(ang))
-        label_y = spider_cy + ((spider_r + 16.0) * math.sin(ang))
-        cos_v = math.cos(ang)
-        if cos_v > 0.3:
-            anchor = "start"
-        elif cos_v < -0.3:
-            anchor = "end"
-        else:
-            anchor = "middle"
-        dname = str(s["domain"])
-        # Focus is now purely data-driven (health < 85%), not hardcoded.
-        focus = health < 85.0
-        point_color = "#dc2626" if focus else "#6b7280"
-        spider_pts.append(f"{value_x:.2f},{value_y:.2f}")
-        spider_axes.append(
-            {
-                "domain": dname,
-                "health": round(health, 1),
-                "axis_x": round(axis_x, 2),
-                "axis_y": round(axis_y, 2),
-                "point_x": round(value_x, 2),
-                "point_y": round(value_y, 2),
-                "label_x": round(label_x, 2),
-                "label_y": round(label_y, 2),
-                "anchor": anchor,
-                "focus": focus,
-                "color": point_color,
-            }
-        )
-    spider_rings = []
-    for pct_out in (20, 40, 60, 80, 100):
-        # ring 1 (pct_out=20) = 100%, ring 5 (pct_out=100) = outer_health
-        health_mark = 100.0 - ((float(pct_out - 20) / 80.0) * spider_scale_range)
-        spider_rings.append(
-            {
-                "r": round((float(pct_out) / 100.0) * spider_r, 2),
-                "health": round(health_mark, 1),
-            }
-        )
-    spider_focus = [x for x in spider_axes if bool(x["focus"])]
-
-    heat_rows: list[dict[str, Any]] = []
-    for s in trend_series:
-        d = str(s["domain"])
-        vals = health_matrix.get(d, [])
-        cells: list[dict[str, Any]] = []
-        for v in vals:
-            if v >= 95.0:
-                level = "green"
-            elif v >= 80.0:
-                level = "amber"
-            else:
-                level = "red"
-            cells.append({"value": round(v, 1), "level": level})
-        current = round(float(vals[-1]), 1) if vals else 100.0
-        if vals and hist_days:
-            worst_val = min(float(v) for v in vals)
-            worst_idx = next((i for i, v in enumerate(vals) if float(v) == worst_val), 0)
-            worst_day = hist_days[worst_idx] if worst_idx < len(hist_days) else hist_days[-1]
-        else:
-            worst_val = 100.0
-            worst_day = ""
-        heat_rows.append(
-            {
-                "domain": d,
-                "cells": cells,
-                "current": current,
-                "worst": round(worst_val, 1),
-                "worst_day": worst_day,
-            }
-        )
-    heat_focus = sorted([r for r in heat_rows if float(r["current"]) < 95.0], key=lambda x: float(x["current"]))[:3]
+    domain_spider = _viz_domain_spider(trend_series)
+    pressure_heat = _viz_pressure_heat(trend_series, health_matrix, hist_days)
 
     return {
-        "coverage_rank": {"total_gap": int(total_gap), "items": cov_rank},
-        "pipeline_flow": {"stages": flow_stages, "returns": flow_returns},
-        "returns_pie": {
-            "total": return_pie_total,
-            "size": 240,
-            "cx": pie_cx,
-            "cy": pie_cy,
-            "r": pie_r,
-            "slices": pie_slices,
-        },
-        "cycle_histogram": {
-            "avg_hours": cycle_avg,
-            "median_hours": cycle_median,
-            "p90_hours": cycle_p90,
-            "tail_count": cycle_tail_count,
-            "tail_pct": cycle_tail_pct,
-            "sample_count": cycle_total,
-            "groups": cycle_groups,
-        },
-        "domain_spider": {
-            "width": spider_w,
-            "height": spider_h,
-            "cx": spider_cx,
-            "cy": spider_cy,
-            "r": spider_r,
-            "rings": spider_rings,
-            "axes": spider_axes,
-            "polygon": " ".join(spider_pts),
-            "focus": spider_focus,
-            "outer_health": round(spider_outer_health, 1),
-        },
-        "pressure_heat": {"days": hist_days, "rows": heat_rows, "focus_rows": heat_focus},
+        "coverage_rank": coverage_rank,
+        "pipeline_flow": pipeline_flow,
+        "returns_pie": returns_pie,
+        "cycle_histogram": cycle_histogram,
+        "domain_spider": domain_spider,
+        "pressure_heat": pressure_heat,
     }
+
+
+def _compute_admin_panels(conn: sqlite3.Connection, doms: list[str], system_health: dict[str, Any]) -> dict[str, Any]:
+    """Compute all admin dashboard panel data from the active DB connection."""
+    dset: set[str] = {d.strip().lower() for d in doms if d}
+
+    domain_pressure: dict[str, dict[str, Any]] = {d: _empty_pressure_entry() for d in doms}
+
+    # --- Workflows ---
+    workflow_rows = conn.execute(
+        "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id"
+    ).fetchall()
+    awaiting_task_confirmation = 0
+    invalid_workflows = 0
+    for r in workflow_rows:
+        rid = str(r["record_id"])
+        latest_v = int(r["latest_version"])
+        w = conn.execute(
+            "SELECT status, domains_json FROM workflows WHERE record_id=? AND version=?",
+            (rid, latest_v),
+        ).fetchone()
+        refs = conn.execute(
+            "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+            (rid, latest_v),
+        ).fetchall()
+        pairs = [(x["task_record_id"], int(x["task_version"])) for x in refs]
+        readiness = workflow_readiness(conn, pairs)
+        if readiness == "awaiting_task_confirmation":
+            awaiting_task_confirmation += 1
+        elif readiness == "invalid":
+            invalid_workflows += 1
+
+        wdoms = _normalize_domains(w["domains_json"] if w else None)
+        if not wdoms:
+            wdoms = [str(x).strip().lower() for x in (_workflow_domains(conn, pairs) or []) if str(x).strip()]
+        wstatus = str(w["status"] if w else "")
+        for d in wdoms:
+            if d not in domain_pressure:
+                domain_pressure[d] = _empty_pressure_entry()
+            if wstatus == "submitted":
+                domain_pressure[d]["submitted_workflows"] += 1
+                if readiness == "awaiting_task_confirmation":
+                    domain_pressure[d]["blocked_workflows"] += 1
+            elif wstatus == "returned":
+                domain_pressure[d]["returned_total"] += 1
+            elif wstatus == "confirmed":
+                domain_pressure[d]["confirmed_workflows"] += 1
+
+    # --- Tasks ---
+    task_rows = conn.execute(
+        "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id"
+    ).fetchall()
+    tasks_missing_domain = 0
+    for r in task_rows:
+        t = conn.execute(
+            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?",
+            (r["record_id"], int(r["latest_version"])),
+        ).fetchone()
+        if not t or not str(t["domain"] or "").strip():
+            tasks_missing_domain += 1
+        d = str((t["domain"] if t else "") or "").strip().lower()
+        if d:
+            if d not in domain_pressure:
+                domain_pressure[d] = _empty_pressure_entry()
+            if str(t["status"]) == "submitted":
+                domain_pressure[d]["submitted_tasks"] += 1
+            elif str(t["status"]) == "returned":
+                domain_pressure[d]["returned_total"] += 1
+            elif str(t["status"]) == "confirmed":
+                domain_pressure[d]["confirmed_tasks"] += 1
+
+    # --- Assessments ---
+    assessment_rows = conn.execute(
+        "SELECT record_id, MAX(version) AS latest_version FROM assessment_items GROUP BY record_id"
+    ).fetchall()
+    assessments_missing_domain = 0
+    for r in assessment_rows:
+        a = conn.execute(
+            "SELECT status, domains_json FROM assessment_items WHERE record_id=? AND version=?",
+            (r["record_id"], int(r["latest_version"])),
+        ).fetchone()
+        dom_list = _normalize_domains(a["domains_json"] if a else None)
+        if not dom_list:
+            assessments_missing_domain += 1
+        for d in dom_list:
+            if d not in domain_pressure:
+                domain_pressure[d] = _empty_pressure_entry()
+            if str(a["status"]) == "submitted":
+                domain_pressure[d]["submitted_assessments"] += 1
+            elif str(a["status"]) == "returned":
+                domain_pressure[d]["returned_total"] += 1
+            elif str(a["status"]) == "confirmed":
+                domain_pressure[d]["confirmed_assessments"] += 1
+
+    # --- Domain pressure rows ---
+    domain_pressure_rows: list[dict[str, Any]] = []
+    for d, m in domain_pressure.items():
+        total_items = (
+            m["submitted_tasks"] + m["submitted_workflows"] + m["submitted_assessments"] +
+            m["returned_total"] + m["confirmed_tasks"] + m["confirmed_workflows"] + m["confirmed_assessments"]
+        )
+        confirmed_items = m["confirmed_tasks"] + m["confirmed_workflows"] + m["confirmed_assessments"]
+        health_pct = round((confirmed_items / total_items) * 100, 1) if total_items > 0 else 100.0
+        if health_pct >= 95:
+            level = "green"
+        elif health_pct >= 85:
+            level = "amber"
+        else:
+            level = "red"
+        domain_pressure_rows.append({"domain": d, "health_pct": health_pct, "level": level, **m, "href": f"/tasks?status=submitted&domain={d}"})
+    domain_pressure_rows.sort(key=lambda x: (x["health_pct"], x["domain"]))
+
+    # --- Status counts ---
+    tasks_status = {s: _count_entity_status(conn, "tasks", s, "admin", dset) for s in ("draft", "submitted", "returned", "confirmed")}
+    workflows_status = {s: _count_entity_status(conn, "workflows", s, "admin", dset) for s in ("draft", "submitted", "returned", "confirmed")}
+    assessments_status = {s: _count_entity_status(conn, "assessment_items", s, "admin", dset) for s in ("draft", "submitted", "returned", "confirmed")}
+
+    returned_tasks = tasks_status["returned"]
+    returned_workflows = workflows_status["returned"]
+    returned_assessments = assessments_status["returned"]
+
+    admin_panels: dict[str, Any] = {
+        "status_breakdown": [
+            {"title": "Tasks", "href": "/tasks", **tasks_status},
+            {"title": "Workflows", "href": "/workflows", **workflows_status},
+            {"title": "Assessments", "href": "/assessments", **assessments_status},
+        ],
+        "health": [
+            {"title": "Tasks submitted", "value": tasks_status["submitted"], "href": "/tasks?status=submitted"},
+            {"title": "Workflows submitted", "value": workflows_status["submitted"], "href": "/workflows?status=submitted"},
+            {"title": "Assessments submitted", "value": assessments_status["submitted"], "href": "/assessments?status=submitted"},
+        ],
+        "blockers": [
+            {"title": "Workflows blocked by tasks", "value": awaiting_task_confirmation, "href": "/workflows?status=submitted"},
+            {"title": "Returned tasks", "value": returned_tasks, "href": "/tasks?status=returned"},
+            {"title": "Returned workflows", "value": returned_workflows, "href": "/workflows?status=returned"},
+            {"title": "Returned assessments", "value": returned_assessments, "href": "/assessments?status=returned"},
+        ],
+        "blocker_total": int(awaiting_task_confirmation + returned_tasks + returned_workflows + returned_assessments),
+        "integrity": [
+            {"title": "Invalid workflows", "value": invalid_workflows, "href": "/workflows"},
+            {"title": "Tasks missing domain", "value": tasks_missing_domain, "href": "/tasks"},
+            {"title": "Assessments missing domain", "value": assessments_missing_domain, "href": "/assessments"},
+        ],
+        "domain_pressure": domain_pressure_rows,
+        "alert_blocked_workflows": awaiting_task_confirmation,
+        "alert_returned_tasks": returned_tasks,
+        "alert_returned_workflows": returned_workflows,
+        "alert_returned_assessments": returned_assessments,
+        "alert_submitted_workflows": workflows_status["submitted"],
+        "alert_draft_assessments": assessments_status["draft"],
+    }
+    admin_panels["viz"] = _admin_dashboard_visuals(
+        conn,
+        active_domains=doms,
+        domain_pressure_rows=domain_pressure_rows,
+        tasks_status=tasks_status,
+        workflows_status=workflows_status,
+        assessments_status=assessments_status,
+        returned_tasks=returned_tasks,
+        returned_workflows=returned_workflows,
+        returned_assessments=returned_assessments,
+        system_health=system_health,
+    )
+    return admin_panels
+
+
+def _empty_pressure_entry() -> dict[str, int]:
+    return {
+        "submitted_tasks": 0,
+        "submitted_workflows": 0,
+        "submitted_assessments": 0,
+        "returned_total": 0,
+        "blocked_workflows": 0,
+        "confirmed_tasks": 0,
+        "confirmed_workflows": 0,
+        "confirmed_assessments": 0,
+    }
+
+
+def _count_entity_status(conn: sqlite3.Connection, entity: str, status: str, role: str, dset: set[str]) -> int:
+    """Count latest-version records of the given entity type matching the given status.
+
+    Domain filtering is applied for non-admin roles. Tasks use a single `domain` column;
+    workflows and assessment_items use a JSON `domains_json` array.
+    """
+    uses_json_domains = entity in ("workflows", "assessment_items")
+    domain_col = "domains_json" if uses_json_domains else "domain"
+    rows = conn.execute(
+        f"SELECT record_id, MAX(version) AS latest_version FROM {entity} GROUP BY record_id"
+    ).fetchall()
+    c = 0
+    for r in rows:
+        latest = conn.execute(
+            f"SELECT status, {domain_col} FROM {entity} WHERE record_id=? AND version=?",
+            (r["record_id"], int(r["latest_version"])),
+        ).fetchone()
+        if not latest or str(latest["status"]) != status:
+            continue
+        if role == "admin":
+            c += 1
+            continue
+        if uses_json_domains:
+            if dset.intersection(_normalize_domains(latest["domains_json"])):
+                c += 1
+        else:
+            if str(latest["domain"] or "").strip().lower() in dset:
+                c += 1
+    return c
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -2245,308 +2478,29 @@ def home(request: Request):
         dset = {d.strip().lower() for d in doms if d}
         system_health = _system_health_metrics(conn)
 
-        def _count_workflows_by_status(status: str) -> int:
-            rows = conn.execute(
-                "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id"
-            ).fetchall()
-            c = 0
-            for r in rows:
-                latest = conn.execute(
-                    "SELECT status, domains_json FROM workflows WHERE record_id=? AND version=?",
-                    (r["record_id"], int(r["latest_version"])),
-                ).fetchone()
-                if not latest or str(latest["status"]) != status:
-                    continue
-                if role == "admin":
-                    c += 1
-                    continue
-                wdoms = [str(x).strip().lower() for x in (_json_load(latest["domains_json"]) or []) if str(x).strip()]
-                if dset.intersection(wdoms):
-                    c += 1
-            return c
-
-        def _count_assessments_by_status(status: str) -> int:
-            rows = conn.execute(
-                "SELECT record_id, MAX(version) AS latest_version FROM assessment_items GROUP BY record_id"
-            ).fetchall()
-            c = 0
-            for r in rows:
-                latest = conn.execute(
-                    "SELECT status, domains_json FROM assessment_items WHERE record_id=? AND version=?",
-                    (r["record_id"], int(r["latest_version"])),
-                ).fetchone()
-                if not latest or str(latest["status"]) != status:
-                    continue
-                if role == "admin":
-                    c += 1
-                    continue
-                adoms = [str(x).strip().lower() for x in (_json_load(latest["domains_json"]) or []) if str(x).strip()]
-                if dset.intersection(adoms):
-                    c += 1
-            return c
-
-        def _count_tasks_by_status(status: str) -> int:
-            rows = conn.execute(
-                "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id"
-            ).fetchall()
-            c = 0
-            for r in rows:
-                latest = conn.execute(
-                    "SELECT status, domain FROM tasks WHERE record_id=? AND version=?",
-                    (r["record_id"], int(r["latest_version"])),
-                ).fetchone()
-                if not latest or str(latest["status"]) != status:
-                    continue
-                if role == "admin":
-                    c += 1
-                    continue
-                if str(latest["domain"] or "").strip().lower() in dset:
-                    c += 1
-            return c
-
         admin_panels: dict[str, Any] = {}
         domain_breakdown: list[dict[str, Any]] = []
         if role == "reviewer":
             cards = [
-                {"title": "Tasks outstanding for review", "value": _count_tasks_by_status("submitted"), "href": "/review?item_type=task"},
-                {"title": "Workflows outstanding for review", "value": _count_workflows_by_status("submitted"), "href": "/review?item_type=workflow"},
-                {"title": "Assessments outstanding for review", "value": _count_assessments_by_status("submitted"), "href": "/review?item_type=assessment"},
+                {"title": "Tasks outstanding for review", "value": _count_entity_status(conn, "tasks", "submitted", role, dset), "href": "/review?item_type=task"},
+                {"title": "Workflows outstanding for review", "value": _count_entity_status(conn, "workflows", "submitted", role, dset), "href": "/review?item_type=workflow"},
+                {"title": "Assessments outstanding for review", "value": _count_entity_status(conn, "assessment_items", "submitted", role, dset), "href": "/review?item_type=assessment"},
             ]
         elif role == "author":
             cards = [
-                {"title": "Returned Tasks", "value": _count_tasks_by_status("returned"), "href": "/tasks?status=returned"},
-                {"title": "Returned Workflows", "value": _count_workflows_by_status("returned"), "href": "/workflows?status=returned"},
-                {"title": "Returned Assessments", "value": _count_assessments_by_status("returned"), "href": "/assessments?status=returned"},
+                {"title": "Returned Tasks", "value": _count_entity_status(conn, "tasks", "returned", role, dset), "href": "/tasks?status=returned"},
+                {"title": "Returned Workflows", "value": _count_entity_status(conn, "workflows", "returned", role, dset), "href": "/workflows?status=returned"},
+                {"title": "Returned Assessments", "value": _count_entity_status(conn, "assessment_items", "returned", role, dset), "href": "/assessments?status=returned"},
             ]
         elif role == "assessment_author":
             cards = [
-                {"title": "Returned Questions", "value": _count_assessments_by_status("returned"), "href": "/assessments?status=returned"},
-                {"title": "Confirmed Tasks", "value": _count_tasks_by_status("confirmed"), "href": "/tasks?status=confirmed"},
-                {"title": "Confirmed Workflows", "value": _count_workflows_by_status("confirmed"), "href": "/workflows?status=confirmed"},
-                {"title": "Confirmed Assessments", "value": _count_assessments_by_status("confirmed"), "href": "/assessments?status=confirmed"},
+                {"title": "Returned Questions", "value": _count_entity_status(conn, "assessment_items", "returned", role, dset), "href": "/assessments?status=returned"},
+                {"title": "Confirmed Tasks", "value": _count_entity_status(conn, "tasks", "confirmed", role, dset), "href": "/tasks?status=confirmed"},
+                {"title": "Confirmed Workflows", "value": _count_entity_status(conn, "workflows", "confirmed", role, dset), "href": "/workflows?status=confirmed"},
+                {"title": "Confirmed Assessments", "value": _count_entity_status(conn, "assessment_items", "confirmed", role, dset), "href": "/assessments?status=confirmed"},
             ]
         elif role == "admin":
-            domain_pressure: dict[str, dict[str, Any]] = {
-                d: {
-                    "submitted_tasks": 0,
-                    "submitted_workflows": 0,
-                    "submitted_assessments": 0,
-                    "returned_total": 0,
-                    "blocked_workflows": 0,
-                    "confirmed_tasks": 0,
-                    "confirmed_workflows": 0,
-                    "confirmed_assessments": 0,
-                }
-                for d in doms
-            }
-
-            workflow_rows = conn.execute(
-                "SELECT record_id, MAX(version) AS latest_version FROM workflows GROUP BY record_id"
-            ).fetchall()
-            awaiting_task_confirmation = 0
-            invalid_workflows = 0
-            for r in workflow_rows:
-                rid = str(r["record_id"])
-                latest_v = int(r["latest_version"])
-                w = conn.execute(
-                    "SELECT status, domains_json FROM workflows WHERE record_id=? AND version=?",
-                    (rid, latest_v),
-                ).fetchone()
-                refs = conn.execute(
-                    "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
-                    (rid, latest_v),
-                ).fetchall()
-                pairs = [(x["task_record_id"], int(x["task_version"])) for x in refs]
-                readiness = workflow_readiness(conn, pairs)
-                if readiness == "awaiting_task_confirmation":
-                    awaiting_task_confirmation += 1
-                elif readiness == "invalid":
-                    invalid_workflows += 1
-
-                wdoms = [str(x).strip().lower() for x in (_json_load((w["domains_json"] if w else "[]") or "[]") or []) if str(x).strip()]
-                if not wdoms:
-                    wdoms = [str(x).strip().lower() for x in (_workflow_domains(conn, pairs) or []) if str(x).strip()]
-                wstatus = str(w["status"] if w else "")
-                for d in wdoms:
-                    if d not in domain_pressure:
-                        domain_pressure[d] = {
-                            "submitted_tasks": 0,
-                            "submitted_workflows": 0,
-                            "submitted_assessments": 0,
-                            "returned_total": 0,
-                            "blocked_workflows": 0,
-                            "confirmed_tasks": 0,
-                            "confirmed_workflows": 0,
-                            "confirmed_assessments": 0,
-                        }
-                    if wstatus == "submitted":
-                        domain_pressure[d]["submitted_workflows"] += 1
-                        if readiness == "awaiting_task_confirmation":
-                            domain_pressure[d]["blocked_workflows"] += 1
-                    elif wstatus == "returned":
-                        domain_pressure[d]["returned_total"] += 1
-                    elif wstatus == "confirmed":
-                        domain_pressure[d]["confirmed_workflows"] += 1
-
-            task_rows = conn.execute(
-                "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id"
-            ).fetchall()
-            tasks_missing_domain = 0
-            for r in task_rows:
-                t = conn.execute(
-                    "SELECT status, domain FROM tasks WHERE record_id=? AND version=?",
-                    (r["record_id"], int(r["latest_version"])),
-                ).fetchone()
-                if not t or not str(t["domain"] or "").strip():
-                    tasks_missing_domain += 1
-                d = str((t["domain"] if t else "") or "").strip().lower()
-                if d:
-                    if d not in domain_pressure:
-                        domain_pressure[d] = {
-                            "submitted_tasks": 0,
-                            "submitted_workflows": 0,
-                            "submitted_assessments": 0,
-                            "returned_total": 0,
-                            "blocked_workflows": 0,
-                            "confirmed_tasks": 0,
-                            "confirmed_workflows": 0,
-                            "confirmed_assessments": 0,
-                        }
-                    if str(t["status"]) == "submitted":
-                        domain_pressure[d]["submitted_tasks"] += 1
-                    elif str(t["status"]) == "returned":
-                        domain_pressure[d]["returned_total"] += 1
-                    elif str(t["status"]) == "confirmed":
-                        domain_pressure[d]["confirmed_tasks"] += 1
-
-            assessment_rows = conn.execute(
-                "SELECT record_id, MAX(version) AS latest_version FROM assessment_items GROUP BY record_id"
-            ).fetchall()
-            assessments_missing_domain = 0
-            for r in assessment_rows:
-                a = conn.execute(
-                    "SELECT status, domains_json FROM assessment_items WHERE record_id=? AND version=?",
-                    (r["record_id"], int(r["latest_version"])),
-                ).fetchone()
-                dom_list = [str(x).strip().lower() for x in (_json_load(a["domains_json"] or "[]") or [])] if a else []
-                if not dom_list:
-                    assessments_missing_domain += 1
-                for d in dom_list:
-                    if d not in domain_pressure:
-                        domain_pressure[d] = {
-                            "submitted_tasks": 0,
-                            "submitted_workflows": 0,
-                            "submitted_assessments": 0,
-                            "returned_total": 0,
-                            "blocked_workflows": 0,
-                            "confirmed_tasks": 0,
-                            "confirmed_workflows": 0,
-                            "confirmed_assessments": 0,
-                        }
-                    if str(a["status"]) == "submitted":
-                        domain_pressure[d]["submitted_assessments"] += 1
-                    elif str(a["status"]) == "returned":
-                        domain_pressure[d]["returned_total"] += 1
-                    elif str(a["status"]) == "confirmed":
-                        domain_pressure[d]["confirmed_assessments"] += 1
-
-            domain_pressure_rows: list[dict[str, Any]] = []
-            for d, m in domain_pressure.items():
-                # Domain health = % of items confirmed (higher is better)
-                total_items = (
-                    m["submitted_tasks"] + m["submitted_workflows"] + m["submitted_assessments"] +
-                    m["returned_total"] + m["confirmed_tasks"] + m["confirmed_workflows"] + m["confirmed_assessments"]
-                )
-                confirmed_items = m["confirmed_tasks"] + m["confirmed_workflows"] + m["confirmed_assessments"]
-                
-                if total_items > 0:
-                    health_pct = round((confirmed_items / total_items) * 100, 1)
-                else:
-                    health_pct = 100.0
-                
-                # Status thresholds (higher health = better)
-                # green >=95%, amber 85-95%, red <85%
-                if health_pct >= 95:
-                    level = "green"
-                elif health_pct >= 85:
-                    level = "amber"
-                else:
-                    level = "red"
-
-                # Score for sorting (lower health = higher "pressure" priority)
-                pressure_score = 100 - health_pct
-
-                domain_pressure_rows.append(
-                    {
-                        "domain": d,
-                        "health_pct": health_pct,
-                        "level": level,
-                        **m,
-                        "href": f"/tasks?status=submitted&domain={d}",
-                    }
-                )
-            domain_pressure_rows.sort(key=lambda x: (x["health_pct"], x["domain"]))
-
-            tasks_status = {
-                "draft": _count_tasks_by_status("draft"),
-                "submitted": _count_tasks_by_status("submitted"),
-                "returned": _count_tasks_by_status("returned"),
-                "confirmed": _count_tasks_by_status("confirmed"),
-            }
-            workflows_status = {
-                "draft": _count_workflows_by_status("draft"),
-                "submitted": _count_workflows_by_status("submitted"),
-                "returned": _count_workflows_by_status("returned"),
-                "confirmed": _count_workflows_by_status("confirmed"),
-            }
-            assessments_status = {
-                "draft": _count_assessments_by_status("draft"),
-                "submitted": _count_assessments_by_status("submitted"),
-                "returned": _count_assessments_by_status("returned"),
-                "confirmed": _count_assessments_by_status("confirmed"),
-            }
-
-            returned_tasks = tasks_status["returned"]
-            returned_workflows = workflows_status["returned"]
-            returned_assessments = assessments_status["returned"]
-
-            admin_panels = {
-                "status_breakdown": [
-                    {"title": "Tasks", "href": "/tasks", **tasks_status},
-                    {"title": "Workflows", "href": "/workflows", **workflows_status},
-                    {"title": "Assessments", "href": "/assessments", **assessments_status},
-                ],
-                "health": [
-                    {"title": "Tasks submitted", "value": tasks_status["submitted"], "href": "/tasks?status=submitted"},
-                    {"title": "Workflows submitted", "value": workflows_status["submitted"], "href": "/workflows?status=submitted"},
-                    {"title": "Assessments submitted", "value": assessments_status["submitted"], "href": "/assessments?status=submitted"},
-                ],
-                "blockers": [
-                    {"title": "Workflows blocked by tasks", "value": awaiting_task_confirmation, "href": "/workflows?status=submitted"},
-                    {"title": "Returned tasks", "value": returned_tasks, "href": "/tasks?status=returned"},
-                    {"title": "Returned workflows", "value": returned_workflows, "href": "/workflows?status=returned"},
-                    {"title": "Returned assessments", "value": returned_assessments, "href": "/assessments?status=returned"},
-                ],
-                "blocker_total": int(awaiting_task_confirmation + returned_tasks + returned_workflows + returned_assessments),
-                "integrity": [
-                    {"title": "Invalid workflows", "value": invalid_workflows, "href": "/workflows"},
-                    {"title": "Tasks missing domain", "value": tasks_missing_domain, "href": "/tasks"},
-                    {"title": "Assessments missing domain", "value": assessments_missing_domain, "href": "/assessments"},
-                ],
-                "domain_pressure": domain_pressure_rows,
-            }
-            admin_panels["viz"] = _admin_dashboard_visuals(
-                conn,
-                active_domains=doms,
-                domain_pressure_rows=domain_pressure_rows,
-                tasks_status=tasks_status,
-                workflows_status=workflows_status,
-                assessments_status=assessments_status,
-                returned_tasks=returned_tasks,
-                returned_workflows=returned_workflows,
-                returned_assessments=returned_assessments,
-                system_health=system_health,
-            )
+            admin_panels = _compute_admin_panels(conn, doms, system_health)
             cards = []
         elif _domain_agnostic:
             cards = []
@@ -2593,9 +2547,9 @@ def home(request: Request):
                 })
         else:
             cards = [
-                {"title": "Confirmed Tasks", "value": _count_tasks_by_status("confirmed"), "href": "/tasks?status=confirmed"},
-                {"title": "Confirmed Workflows", "value": _count_workflows_by_status("confirmed"), "href": "/workflows?status=confirmed"},
-                {"title": "Confirmed Assessments", "value": _count_assessments_by_status("confirmed"), "href": "/assessments?status=confirmed"},
+                {"title": "Confirmed Tasks", "value": _count_entity_status(conn, "tasks", "confirmed", role, dset), "href": "/tasks?status=confirmed"},
+                {"title": "Confirmed Workflows", "value": _count_entity_status(conn, "workflows", "confirmed", role, dset), "href": "/workflows?status=confirmed"},
+                {"title": "Confirmed Assessments", "value": _count_entity_status(conn, "assessment_items", "confirmed", role, dset), "href": "/assessments?status=confirmed"},
             ]
             domain_breakdown = []
 
@@ -2612,6 +2566,17 @@ def home(request: Request):
             "domain_breakdown": domain_breakdown,
             "system_health": system_health,
             "staleness_days": STALENESS_DAYS,
+            # Role flags — computed here so templates don't embed role logic.
+            "admin_mode": role == "admin",
+            "reviewer_mode": role == "reviewer",
+            "author_mode": role == "author",
+            "assessment_author_mode": role == "assessment_author",
+            "domain_agnostic_mode": role in ("viewer", "audit", "content_publisher"),
+            # Admin alert values — pulled from admin_panels to avoid string-matching in template.
+            "alert_blocked_workflows": admin_panels.get("alert_blocked_workflows", 0),
+            "alert_returned_assessments": admin_panels.get("alert_returned_assessments", 0),
+            "alert_submitted_workflows": admin_panels.get("alert_submitted_workflows", 0),
+            "alert_draft_assessments": admin_panels.get("alert_draft_assessments", 0),
         },
     )
 
@@ -2678,7 +2643,7 @@ def search(request: Request, q: str = ""):
             ).fetchone()
             if not w:
                 continue
-            wdoms = [str(x).strip().lower() for x in (_json_load(w["domains_json"] or "[]") or []) if str(x).strip()]
+            wdoms = _normalize_domains(w["domains_json"])
             if role != "admin" and not dset.intersection(set(wdoms)):
                 continue
             tags = [str(x).strip().lower() for x in (_json_load(w["tags_json"] or "[]") or []) if str(x).strip()]
@@ -2770,7 +2735,7 @@ def pulse(request: Request):
                     w = 0
                     rdset = {d.strip().lower() for d in reviewer_domains if d}
                     for wr in w_rows:
-                        doms = [str(x).strip().lower() for x in (_json_load(wr["domains_json"]) or [])]
+                        doms = _normalize_domains(wr["domains_json"])
                         if rdset.intersection(doms):
                             w += 1
 
@@ -2780,7 +2745,7 @@ def pulse(request: Request):
                     ).fetchall()
                     a = 0
                     for ar in a_rows:
-                        doms = [str(x).strip().lower() for x in (_json_load(ar["domains_json"]) or [])]
+                        doms = _normalize_domains(ar["domains_json"])
                         if rdset.intersection(doms):
                             a += 1
 
@@ -3141,7 +3106,7 @@ def _parse_iso_dt(s: str) -> datetime | None:
         s = s[:-1] + "+00:00"
     try:
         dt = datetime.fromisoformat(s)
-    except Exception:
+    except ValueError:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -3181,7 +3146,8 @@ def _cleanup_export_artifacts(conn: sqlite3.Connection) -> dict[str, int]:
         p = Path(str(r["path"] or ""))
         try:
             p_abs = p.resolve()
-        except Exception:
+        except (ValueError, OSError) as e:
+            logger.warning("Export cleanup: could not resolve path %r: %s", r["path"], e)
             continue
 
         if exports_root not in p_abs.parents and p_abs != exports_root:
@@ -3192,7 +3158,8 @@ def _cleanup_export_artifacts(conn: sqlite3.Connection) -> dict[str, int]:
             try:
                 p_abs.unlink()
                 deleted_files += 1
-            except Exception:
+            except OSError as e:
+                logger.warning("Export cleanup: could not delete %s: %s", p_abs, e)
                 continue
         else:
             missing_files += 1
@@ -3393,7 +3360,7 @@ def review_queue(request: Request, item_type: str = ""):
                 "SELECT record_id, version, title, status, domains_json, created_at FROM workflows WHERE status='submitted'"
             ).fetchall()
             for r in w_rows:
-                wdoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
+                wdoms = _normalize_domains(r["domains_json"])
                 if dset.intersection(wdoms):
                     items.append(
                         {
@@ -3413,7 +3380,7 @@ def review_queue(request: Request, item_type: str = ""):
                 "SELECT record_id, version, stem, status, domains_json, created_at FROM assessment_items WHERE status='submitted'"
             ).fetchall()
             for r in a_rows:
-                adoms = [str(x).strip().lower() for x in (_json_load(r["domains_json"]) or []) if str(x).strip()]
+                adoms = _normalize_domains(r["domains_json"])
                 if dset.intersection(adoms):
                     title = str(r["stem"])[:80]
                     items.append(
@@ -4099,7 +4066,7 @@ def import_json_run(
     raw = upload.file.read()
     try:
         payload = json.loads(raw)
-    except Exception as e:
+    except (ValueError, json.JSONDecodeError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
 
     tasks_in: list[dict[str, Any]] = []
@@ -4505,12 +4472,7 @@ def task_view(request: Request, record_id: str, version: int):
     return_note = None
     if task.get("status") == "returned":
         with db() as conn:
-            rn = conn.execute(
-                "SELECT note, at, actor FROM audit_log WHERE entity_type='task' AND record_id=? AND version=? AND action='return_for_changes' ORDER BY at DESC LIMIT 1",
-                (record_id, version),
-            ).fetchone()
-            if rn and rn["note"]:
-                return_note = {"note": rn["note"], "at": rn["at"], "actor": rn["actor"]}
+            return_note = _fetch_return_note(conn, "task", record_id, version)
 
     return templates.TemplateResponse(
         request,
@@ -4620,11 +4582,8 @@ def task_save(
 
         # If the source version was returned for changes, force the change_note to reference the return note.
         if src["status"] == "returned":
-            rn = conn.execute(
-                "SELECT note, at, actor FROM audit_log WHERE entity_type='task' AND record_id=? AND version=? AND action='return_for_changes' ORDER BY at DESC LIMIT 1",
-                (record_id, version),
-            ).fetchone()
-            if rn and rn["note"]:
+            rn = _fetch_return_note(conn, "task", record_id, version)
+            if rn:
                 prefix = f"Response to return note by {rn['actor']} at {rn['at']}: {rn['note']} | "
                 if prefix not in note:
                     note = prefix + note
@@ -5860,7 +5819,7 @@ def refs_search(request: Request, kind: str = "task", q: str = "", limit: int = 
                     continue
                 if q_norm and q_norm not in (w["title"] or "").lower():
                     continue
-                doms = [str(x).strip().lower() for x in (_json_load(w["domains_json"]) or []) if str(x).strip()]
+                doms = _normalize_domains(w["domains_json"])
                 items.append({"ref_type": "workflow", "record_id": w["record_id"], "version": int(w["version"]), "title": w["title"], "status": w["status"], "domains": doms})
             items.sort(key=lambda it: (it.get("title") or ""))
             return {"items": items[:limit]}
@@ -6038,7 +5997,7 @@ def assessments_list(request: Request, status: str | None = None, q: str | None 
             if claim_norm and (str(latest["claim"] or "").strip().lower() != claim_norm):
                 continue
 
-            doms = [str(d).strip().lower() for d in (_json_load(latest["domains_json"] or "[]") or [])]
+            doms = _normalize_domains(latest["domains_json"])
             if domain_norm and domain_norm not in set(doms):
                 continue
 
@@ -6101,7 +6060,7 @@ def delivery_page(request: Request, q: str | None = None, domain: str | None = N
             if tag_norm and tag_norm not in set(wf_tags):
                 continue
 
-            wf_domains = [str(x).strip().lower() for x in (_json_load(wf["domains_json"]) or []) if str(x).strip()]
+            wf_domains = _normalize_domains(wf["domains_json"])
             if domain_norm and domain_norm not in set(wf_domains):
                 continue
 
@@ -6126,7 +6085,7 @@ def delivery_export(request: Request, workflow_key: str = Form(""), modality: st
     rid, ver_s = wk.split("@", 1)
     try:
         ver = int(ver_s)
-    except Exception:
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid workflow version")
 
     mod = (modality or "docx").strip().lower()
@@ -6186,7 +6145,7 @@ def assessment_new_form(
                 if q_norm and q_norm not in (w["title"] or "").lower():
                     continue
                 wd = dict(w)
-                wd["domains"] = [str(x).strip().lower() for x in (_json_load(w["domains_json"]) or []) if str(x).strip()]
+                wd["domains"] = _normalize_domains(w["domains_json"])
                 workflows.append(wd)
             workflows = workflows[:30]
 
@@ -6246,7 +6205,7 @@ def assessment_create(
         rid_n = (rid or "").strip()
         try:
             ver_i = int(ver)
-        except Exception:
+        except ValueError:
             ver_i = 0
         if rt_n and rid_n and ver_i > 0:
             refs.append({"ref_type": rt_n, "ref_record_id": rid_n, "ref_version": ver_i})
@@ -6331,12 +6290,7 @@ def assessment_view(request: Request, record_id: str, version: int):
     return_note = None
     if item.get("status") == "returned":
         with db() as conn:
-            rn = conn.execute(
-                "SELECT note, at, actor FROM audit_log WHERE entity_type='assessment' AND record_id=? AND version=? AND action='return_for_changes' ORDER BY at DESC LIMIT 1",
-                (record_id, version),
-            ).fetchone()
-            if rn and rn["note"]:
-                return_note = {"note": rn["note"], "at": rn["at"], "actor": rn["actor"]}
+            return_note = _fetch_return_note(conn, "assessment", record_id, version)
 
     return templates.TemplateResponse(request, "assessment_view.html", {"item": item, "return_note": return_note})
 
@@ -6419,7 +6373,7 @@ def assessment_save(
         rid_n = (rid or "").strip()
         try:
             ver_i = int(ver)
-        except Exception:
+        except ValueError:
             ver_i = 0
         if rt_n and rid_n and ver_i > 0:
             refs.append({"ref_type": rt_n, "ref_record_id": rid_n, "ref_version": ver_i})
@@ -6432,11 +6386,8 @@ def assessment_save(
             raise HTTPException(404)
 
         if src["status"] == "returned":
-            rn = conn.execute(
-                "SELECT note, at, actor FROM audit_log WHERE entity_type='assessment' AND record_id=? AND version=? AND action='return_for_changes' ORDER BY at DESC LIMIT 1",
-                (record_id, version),
-            ).fetchone()
-            if rn and rn["note"]:
+            rn = _fetch_return_note(conn, "assessment", record_id, version)
+            if rn:
                 prefix = f"Response to return note by {rn['actor']} at {rn['at']}: {rn['note']} | "
                 if prefix not in note:
                     note = prefix + note
@@ -6523,7 +6474,7 @@ def assessment_submit(request: Request, record_id: str, version: int):
             raise HTTPException(409, detail="Only draft assessments can be submitted")
 
         # Require at least one domain via refs
-        doms = [str(d).strip().lower() for d in (_json_load(row["domains_json"]) or [])]
+        doms = _normalize_domains(row["domains_json"])
         if not doms:
             raise HTTPException(status_code=409, detail="Cannot submit assessment: attach it to at least one task/workflow")
         for d in doms:

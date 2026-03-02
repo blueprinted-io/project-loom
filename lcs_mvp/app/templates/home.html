@@ -1,10 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
-{% set admin_mode = (request.state.role == 'admin') %}
-{% set reviewer_mode = (request.state.role == 'reviewer') %}
-{% set author_mode = (request.state.role == 'author') %}
-{% set assessment_author_mode = (request.state.role == 'assessment_author') %}
-{% set domain_agnostic_mode = (request.state.role in ('viewer', 'audit', 'content_publisher')) %}
 
 <!-- Info Overlay -->
 <div id="info-overlay" class="info-overlay" hidden>
@@ -41,34 +36,24 @@
   {% set cycle = (viz.cycle_histogram or {}) %}
   {% set heat = (viz.pressure_heat or {}) %}
 
-  {% set alert = namespace(returned_assessments=0, blocked_workflows=0, submitted_workflows=0, draft_assessments=0) %}
-  {% for c in (admin_panels.blockers or []) %}
-    {% if c.title == 'Returned assessments' %}{% set alert.returned_assessments = c.value %}{% endif %}
-    {% if c.title == 'Workflows blocked by tasks' %}{% set alert.blocked_workflows = c.value %}{% endif %}
-  {% endfor %}
-  {% for s in (admin_panels.status_breakdown or []) %}
-    {% if s.title == 'Workflows' %}{% set alert.submitted_workflows = s.submitted %}{% endif %}
-    {% if s.title == 'Assessments' %}{% set alert.draft_assessments = s.draft %}{% endif %}
-  {% endfor %}
-
   <section class="dashboard-section admin-alert-layer">
     <div class="section-header">Priority alerts <button type="button" class="info-btn js-info-btn" data-info-title="Priority alerts" data-info-content="Items that need immediate attention. Returned assessments need fixes, submitted workflows await approval, and blocked workflows have tasks preventing progress." aria-label="Explain Priority alerts">i</button></div>
     <div class="admin-alert-grid">
-      <a href="/assessments?status=returned" class="card admin-alert-card critical {% if alert.returned_assessments == 0 %}is-zero{% endif %}">
+      <a href="/assessments?status=returned" class="card admin-alert-card critical {% if alert_returned_assessments == 0 %}is-zero{% endif %}">
         <div class="admin-alert-label">Returned assessments</div>
-        <div class="admin-alert-value">{{ alert.returned_assessments }}</div>
+        <div class="admin-alert-value">{{ alert_returned_assessments }}</div>
       </a>
-      <a href="/workflows?status=submitted" class="card admin-alert-card warning {% if alert.submitted_workflows == 0 %}is-zero{% endif %}">
+      <a href="/workflows?status=submitted" class="card admin-alert-card warning {% if alert_submitted_workflows == 0 %}is-zero{% endif %}">
         <div class="admin-alert-label">Submitted workflows</div>
-        <div class="admin-alert-value">{{ alert.submitted_workflows }}</div>
+        <div class="admin-alert-value">{{ alert_submitted_workflows }}</div>
       </a>
-      <a href="/assessments?status=draft" class="card admin-alert-card warning {% if alert.draft_assessments == 0 %}is-zero{% endif %}">
+      <a href="/assessments?status=draft" class="card admin-alert-card warning {% if alert_draft_assessments == 0 %}is-zero{% endif %}">
         <div class="admin-alert-label">Draft assessments</div>
-        <div class="admin-alert-value">{{ alert.draft_assessments }}</div>
+        <div class="admin-alert-value">{{ alert_draft_assessments }}</div>
       </a>
-      <a href="/workflows?status=submitted" class="card admin-alert-card {% if alert.blocked_workflows > 0 %}warning{% else %}healthy is-zero{% endif %}">
+      <a href="/workflows?status=submitted" class="card admin-alert-card {% if alert_blocked_workflows > 0 %}warning{% else %}healthy is-zero{% endif %}">
         <div class="admin-alert-label">Workflows blocked by tasks</div>
-        <div class="admin-alert-value">{{ alert.blocked_workflows }}</div>
+        <div class="admin-alert-value">{{ alert_blocked_workflows }}</div>
       </a>
     </div>
   </section>
