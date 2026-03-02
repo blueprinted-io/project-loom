@@ -3,7 +3,18 @@
     "allow": [
       "Bash(gh pr list)",
       "Bash(xargs grep -l \"CREATE TABLE\")",
-      "Bash(python -m pytest tests/ -v)"
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -m pytest tests/test_avatar_login_ui.py::test_public_avatar_route_is_accessible_without_auth -q)",
+      "Bash(python -m pytest tests/test_avatar_login_ui.py::test_public_avatar_route_is_accessible_without_auth -q -s)",
+      "Bash(python -m pytest tests/ -x -q)",
+      "Bash(/c/Users/ewan/Desktop/project_loom/project-loom/lcs_mvp/.venv/Scripts/python.exe -:*)",
+      "Bash(/c/Users/ewan/Desktop/project_loom/project-loom/lcs_mvp/.venv/Scripts/python.exe -m pytest tests/ -x -q)",
+      "Bash(/c/Users/ewan/Desktop/project_loom/project-loom/lcs_mvp/.venv/Scripts/python.exe -m pytest tests/test_avatar_login_ui.py::test_public_avatar_serves_image_with_safe_path -x -q -s)",
+      "Bash(/c/Users/ewan/Desktop/project_loom/project-loom/lcs_mvp/.venv/Scripts/python.exe -m pytest tests/ -q)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\ewan\\.claude\\projects\\c--Users-ewan-Desktop-project-loom-project-loom"
     ]
   }
 }

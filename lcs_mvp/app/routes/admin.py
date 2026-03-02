@@ -1,0 +1,324 @@
+from __future__ import annotations
+
+import re
+import sqlite3
+from typing import Any
+
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from ..config import DB_KEY_BLANK, DB_KEY_COOKIE, DB_KEY_DEBIAN, templates
+from ..database import (
+    db, utc_now_iso,
+    _active_domains, _available_db_keys, _create_custom_db_profile,
+    _db_profile_label, _hash_password, _list_custom_db_keys,
+    _normalize_db_key, _user_id,
+)
+from ..audit import audit
+from ..auth import ROLE_ORDER, require, require_admin
+
+router = APIRouter()
+
+_DOMAIN_AGNOSTIC_ROLES = {"viewer", "audit", "content_publisher"}
+
+
+@router.get("/db", response_class=HTMLResponse)
+def db_switch_form(request: Request):
+    require(request.state.role, "db:switch")
+    profiles = [{"key": k, "label": _db_profile_label(k)} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + _list_custom_db_keys()]
+    return templates.TemplateResponse(request, "db_switch.html", {"profiles": profiles})
+
+
+@router.post("/db/switch")
+def db_switch(request: Request, db_key: str = Form(DB_KEY_DEBIAN)):
+    require(request.state.role, "db:switch")
+    key = _normalize_db_key(db_key or DB_KEY_DEBIAN)
+    if key not in _available_db_keys():
+        raise HTTPException(status_code=400, detail="Invalid db_key")
+
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
+    return resp
+
+
+@router.post("/db/create")
+def db_create(request: Request, db_key: str = Form("")):
+    require(request.state.role, "db:switch")
+    key = (db_key or "").strip().lower()
+    if not key:
+        raise HTTPException(status_code=400, detail="db_key is required")
+
+    _create_custom_db_profile(key)
+
+    # Switch to it immediately.
+    resp = RedirectResponse(url="/db", status_code=303)
+    resp.set_cookie(DB_KEY_COOKIE, key, httponly=False, samesite="lax")
+    return resp
+
+
+@router.get("/admin/users", response_class=HTMLResponse)
+def admin_users(request: Request, error: str | None = None):
+    require_admin(request)
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, username, role, COALESCE(demo_password, '') AS demo_password, disabled_at FROM users ORDER BY disabled_at IS NOT NULL, role DESC, username ASC"
+        ).fetchall()
+
+        # Attach per-user domains
+        users: list[dict[str, Any]] = []
+        for r in rows:
+            u = dict(r)
+            doms = conn.execute(
+                "SELECT domain FROM user_domains WHERE user_id=? ORDER BY domain ASC",
+                (int(r["id"]),),
+            ).fetchall()
+            u["domains"] = [str(x["domain"]) for x in doms]
+            users.append(u)
+
+    return templates.TemplateResponse(request, "admin/users.html", {"users": users, "error": error})
+
+
+@router.post("/admin/users/create")
+def admin_users_create(request: Request, username: str = Form(""), role: str = Form("viewer"), password: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    password = password or ""
+    if not username:
+        raise HTTPException(status_code=400, detail="username is required")
+    if role not in ROLE_ORDER:
+        raise HTTPException(status_code=400, detail="invalid role")
+    if not password:
+        raise HTTPException(status_code=400, detail="password is required")
+
+    import secrets
+
+    salt = secrets.token_bytes(16).hex()
+    with db() as conn:
+        try:
+            conn.execute(
+                """
+                INSERT INTO users(username, role, password_salt_hex, password_hash_hex, demo_password, created_at, created_by)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (username, role, salt, _hash_password(password, salt), password, utc_now_iso(), request.state.user),
+            )
+            audit("user", username, 1, "create", request.state.user, note=f"role={role}", conn=conn)
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="username already exists")
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.post("/admin/users/reset")
+def admin_users_reset(request: Request, username: str = Form(""), password: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    password = password or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username and password required")
+
+    import secrets
+
+    salt = secrets.token_bytes(16).hex()
+    with db() as conn:
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user not found")
+        conn.execute(
+            "UPDATE users SET password_salt_hex=?, password_hash_hex=?, demo_password=? WHERE username=?",
+            (salt, _hash_password(password, salt), password, username),
+        )
+        # Revoke sessions
+        conn.execute("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", (utc_now_iso(), int(row["id"])))
+        audit("user", username, 1, "reset_password", request.state.user, conn=conn)
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.post("/admin/users/disable")
+def admin_users_disable(request: Request, username: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+
+    with db() as conn:
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user not found")
+        conn.execute("UPDATE users SET disabled_at=? WHERE username=?", (utc_now_iso(), username))
+        conn.execute("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", (utc_now_iso(), int(row["id"])))
+        audit("user", username, 1, "disable", request.state.user, conn=conn)
+
+    # If you disabled yourself, you'll be bounced to /login on next request.
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.post("/admin/users/enable")
+def admin_users_enable(request: Request, username: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+
+    with db() as conn:
+        row = conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user not found")
+        conn.execute("UPDATE users SET disabled_at=NULL WHERE username=?", (username,))
+        audit("user", username, 1, "enable", request.state.user, conn=conn)
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.post("/admin/users/delete")
+def admin_users_delete(request: Request, username: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+    if username == request.state.user:
+        raise HTTPException(status_code=400, detail="cannot delete the current user")
+
+    with db() as conn:
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user not found")
+        uid = int(row["id"])
+        conn.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM users WHERE id=?", (uid,))
+        audit("user", username, 1, "delete", request.state.user, conn=conn)
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.post("/admin/users/domains")
+def admin_user_domains_form(request: Request, username: str = Form("")):
+    require_admin(request)
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+
+    with db() as conn:
+        u = conn.execute("SELECT id, username, role FROM users WHERE username=?", (username,)).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        if str(u["role"]) in _DOMAIN_AGNOSTIC_ROLES:
+            raise HTTPException(status_code=400, detail=f"Role '{u['role']}' has implicit cross-domain visibility and cannot be assigned domains")
+
+        domains = _active_domains(conn)
+        selected_rows = conn.execute("SELECT domain FROM user_domains WHERE user_id=?", (int(u["id"]),)).fetchall()
+        selected = {str(r["domain"]) for r in selected_rows}
+
+    return templates.TemplateResponse(
+        request,
+        "admin/user_domains.html",
+        {"user": dict(u), "domains": domains, "selected": selected},
+    )
+
+
+@router.post("/admin/users/domains/save")
+def admin_user_domains_save(request: Request, username: str = Form(""), domain: list[str] = Form([])):
+    require_admin(request)
+    username = (username or "").strip()
+    selected = sorted({(d or "").strip().lower() for d in (domain or []) if (d or "").strip()})
+
+    with db() as conn:
+        u = conn.execute("SELECT id, role FROM users WHERE username=?", (username,)).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        if str(u["role"]) in _DOMAIN_AGNOSTIC_ROLES:
+            raise HTTPException(status_code=400, detail=f"Role has implicit cross-domain visibility and cannot be assigned domains")
+
+        allowed = set(_active_domains(conn))
+        for d in selected:
+            if d not in allowed:
+                raise HTTPException(status_code=400, detail=f"Invalid domain '{d}'")
+
+        uid = int(u["id"])
+        conn.execute("DELETE FROM user_domains WHERE user_id=?", (uid,))
+        now = utc_now_iso()
+        for d in selected:
+            conn.execute(
+                "INSERT INTO user_domains(user_id, domain, created_at, created_by) VALUES (?,?,?,?)",
+                (uid, d, now, request.state.user),
+            )
+
+        audit("user", username, 1, "set_domains", request.state.user, note=",".join(selected), conn=conn)
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.get("/admin/domains", response_class=HTMLResponse)
+def admin_domains(request: Request, error: str | None = None):
+    require_admin(request)
+    with db() as conn:
+        rows = conn.execute("SELECT name, created_at, created_by, disabled_at FROM domains ORDER BY name ASC").fetchall()
+    return templates.TemplateResponse(request, "admin/domains.html", {"domains": [dict(r) for r in rows], "error": error})
+
+
+@router.post("/admin/domains/create")
+def admin_domains_create(request: Request, name: str = Form("")):
+    require_admin(request)
+    name_norm = (name or "").strip().lower()
+    if not name_norm:
+        raise HTTPException(status_code=400, detail="name required")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name_norm):
+        raise HTTPException(status_code=400, detail="invalid domain name")
+
+    with db() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO domains(name, created_at, created_by) VALUES (?,?,?)",
+                (name_norm, utc_now_iso(), request.state.user),
+            )
+            audit("domain", name_norm, 1, "create", request.state.user, conn=conn)
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="domain already exists")
+
+    return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+@router.post("/admin/domains/disable")
+def admin_domains_disable(request: Request, name: str = Form("")):
+    require_admin(request)
+    name_norm = (name or "").strip().lower()
+    with db() as conn:
+        row = conn.execute("SELECT 1 FROM domains WHERE name=?", (name_norm,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="domain not found")
+        conn.execute("UPDATE domains SET disabled_at=? WHERE name=?", (utc_now_iso(), name_norm))
+        audit("domain", name_norm, 1, "disable", request.state.user, conn=conn)
+
+    return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+@router.post("/admin/domains/enable")
+def admin_domains_enable(request: Request, name: str = Form("")):
+    require_admin(request)
+    name_norm = (name or "").strip().lower()
+    with db() as conn:
+        row = conn.execute("SELECT 1 FROM domains WHERE name=?", (name_norm,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="domain not found")
+        conn.execute("UPDATE domains SET disabled_at=NULL WHERE name=?", (name_norm,))
+        audit("domain", name_norm, 1, "enable", request.state.user, conn=conn)
+
+    return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+@router.post("/admin/domains/delete")
+def admin_domains_delete(request: Request, name: str = Form("")):
+    require_admin(request)
+    name_norm = (name or "").strip().lower()
+    with db() as conn:
+        row = conn.execute("SELECT 1 FROM domains WHERE name=?", (name_norm,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="domain not found")
+        try:
+            conn.execute("DELETE FROM domains WHERE name=?", (name_norm,))
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="domain is referenced by user entitlements; disable it instead")
+        audit("domain", name_norm, 1, "delete", request.state.user, conn=conn)
+
+    return RedirectResponse(url="/admin/domains", status_code=303)

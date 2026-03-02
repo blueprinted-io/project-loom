@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import contextvars
+import os
+import re
+from typing import Literal
+
+from fastapi.templating import Jinja2Templates
+
+# ---------------------------------------------------------------------------
+# Type aliases
+# ---------------------------------------------------------------------------
+
+Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated", "retired"]
+Role = Literal["viewer", "author", "assessment_author", "content_publisher", "reviewer", "audit", "admin"]
+
+# ---------------------------------------------------------------------------
+# Filesystem paths
+# ---------------------------------------------------------------------------
+
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DB_DEBIAN_PATH = os.path.join(DATA_DIR, "lcs_blueprinted_org.db")
+DB_DEMO_LEGACY_PATH = os.path.join(DATA_DIR, "lcs_demo.db")
+DB_OLD_DEBIAN_PATH = os.path.join(DATA_DIR, "lcs_debian.db")
+DB_BLANK_PATH = os.path.join(DATA_DIR, "lcs_blank.db")
+UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+EXPORTS_DIR = os.path.join(DATA_DIR, "exports")
+
+# ---------------------------------------------------------------------------
+# Database key / profile constants
+# ---------------------------------------------------------------------------
+
+# Per-request DB selection via cookie; defaults to blueprinted_org.
+DB_KEY_COOKIE = "lcs_db"
+DB_KEY_DEBIAN = "blueprinted_org"
+DB_KEY_DEBIAN_ALIAS = "debian"   # backward-compatible alias
+DB_KEY_DEMO_ALIAS = "demo"       # backward-compatible alias
+DB_KEY_BLANK = "blank"
+DB_PATH_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_path", default=DB_DEBIAN_PATH)
+DB_KEY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_key", default=DB_KEY_DEBIAN)
+
+DB_PROFILE_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+
+# ---------------------------------------------------------------------------
+# Domain constants
+# ---------------------------------------------------------------------------
+
+PHASE1_OPERATIONAL_DOMAINS = [
+    "debian",
+    "arch",
+    "kubernetes",
+    "aws",
+    "postgres",
+    "windows",
+    "azure",
+    "gcp",
+    "terraform",
+    "ansible",
+    "vmware",
+]
+
+# ---------------------------------------------------------------------------
+# LM Studio integration
+# ---------------------------------------------------------------------------
+
+LMSTUDIO_BASE_URL = os.environ.get("LCS_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234").rstrip("/")
+LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-instruct-v0.3")
+
+# ---------------------------------------------------------------------------
+# Operational constants
+# ---------------------------------------------------------------------------
+
+STALENESS_DAYS = 90   # confirmed content not reviewed within this threshold is considered stale
+STATIC_ASSET_VERSION = "64"   # bump on each deploy to bust cached JS/CSS
+
+# ---------------------------------------------------------------------------
+# Jinja2 templates singleton (shared across all route modules)
+# ---------------------------------------------------------------------------
+
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)

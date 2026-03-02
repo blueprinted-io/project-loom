@@ -7,7 +7,11 @@ from typing import Callable
 import pytest
 from fastapi.testclient import TestClient
 
+import lcs_mvp.app.database as app_db
 import lcs_mvp.app.main as app_main
+import lcs_mvp.app.routes.auth as app_auth_routes
+import lcs_mvp.app.routes.imports as app_imports_routes
+import lcs_mvp.app.routes.exports as app_exports_routes
 
 
 @pytest.fixture
@@ -22,13 +26,18 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     db_default = data_dir / "lcs_blueprinted_org.db"
     db_blank = data_dir / "lcs_blank.db"
 
-    monkeypatch.setattr(app_main, "DATA_DIR", str(data_dir))
-    monkeypatch.setattr(app_main, "UPLOADS_DIR", str(uploads_dir))
-    monkeypatch.setattr(app_main, "EXPORTS_DIR", str(exports_dir))
-    monkeypatch.setattr(app_main, "DB_DEBIAN_PATH", str(db_default))
-    monkeypatch.setattr(app_main, "DB_BLANK_PATH", str(db_blank))
-    monkeypatch.setattr(app_main, "DB_OLD_DEBIAN_PATH", str(data_dir / "lcs_debian.db"))
-    monkeypatch.setattr(app_main, "DB_DEMO_LEGACY_PATH", str(data_dir / "lcs_demo.db"))
+    for mod in (app_main, app_db):
+        monkeypatch.setattr(mod, "DATA_DIR", str(data_dir))
+        monkeypatch.setattr(mod, "UPLOADS_DIR", str(uploads_dir))
+        monkeypatch.setattr(mod, "EXPORTS_DIR", str(exports_dir))
+        monkeypatch.setattr(mod, "DB_DEBIAN_PATH", str(db_default))
+        monkeypatch.setattr(mod, "DB_BLANK_PATH", str(db_blank))
+        monkeypatch.setattr(mod, "DB_OLD_DEBIAN_PATH", str(data_dir / "lcs_debian.db"))
+        monkeypatch.setattr(mod, "DB_DEMO_LEGACY_PATH", str(data_dir / "lcs_demo.db"))
+    # Route modules have their own local bindings — patch path constants for each.
+    monkeypatch.setattr(app_auth_routes, "UPLOADS_DIR", str(uploads_dir))
+    monkeypatch.setattr(app_imports_routes, "UPLOADS_DIR", str(uploads_dir))
+    monkeypatch.setattr(app_exports_routes, "EXPORTS_DIR", str(exports_dir))
 
     app_main.DB_PATH_CTX.set(str(db_default))
     app_main.DB_KEY_CTX.set(app_main.DB_KEY_DEBIAN)
