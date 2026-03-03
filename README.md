@@ -71,6 +71,10 @@ Cookie-based role switching (not real auth):
 - [Standards context: SCORM, xAPI, cmi5](docs/Standards_SCORM_xAPI_cmi5.md)
 - [Auth + Domains (draft)](docs/Auth_and_Domains_Draft.md)
 
+## Repository
+
+https://github.com/blueprinted-io/core
+
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+GNU Affero General Public License v3.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

@@ -31,5 +31,5 @@ Be respectful. Disagree with reasons, not rage.
 
 ## Legal & licensing
 
-By contributing, you agree your contributions are licensed under Apache-2.0 (see `LICENSE`).
+By contributing, you agree your contributions are licensed under AGPL-3.0 (see `LICENSE`).
 Do not submit proprietary or confidential content.
