@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import shutil
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import HTTPException, Request
@@ -159,6 +161,38 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
         raise ValueError(f"_column_exists: unknown table {table!r}")
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return any(r["name"] == column for r in rows)
+
+
+def _relink_avatars(conn: sqlite3.Connection) -> None:
+    """Re-link avatar_path for users whose column is NULL/empty but whose
+    avatar file already exists in UPLOADS_DIR/avatars/.
+
+    Matches files named avatar__{safe_username}__*.{ext} — the same pattern
+    used by profile_save. Picks the lexicographically latest file (timestamps
+    embedded in the name sort correctly). Safe to run on every startup.
+    """
+    avatars_dir = Path(UPLOADS_DIR) / "avatars"
+    if not avatars_dir.exists():
+        return
+
+    rows = conn.execute(
+        "SELECT id, username FROM users WHERE COALESCE(avatar_path, '') = ''"
+    ).fetchall()
+    if not rows:
+        return
+
+    for row in rows:
+        safe_user = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(row["username"]))[:48]
+        prefix = f"avatar__{safe_user}__"
+        matches = sorted(
+            f for f in avatars_dir.iterdir()
+            if f.is_file() and f.name.startswith(prefix)
+        )
+        if matches:
+            conn.execute(
+                "UPDATE users SET avatar_path=? WHERE id=?",
+                (str(matches[-1].resolve()), int(row["id"])),
+            )
 
 
 def init_db_path(db_path: str) -> None:
@@ -462,6 +496,7 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE sessions ADD COLUMN expires_at TEXT")
 
         _backfill_workflow_domains(conn)
+        _relink_avatars(conn)
 
 
 # ---------------------------------------------------------------------------
