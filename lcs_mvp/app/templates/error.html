@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }} — blueprinted.io</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}" />
+  <style>
+    .error-shell{
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      padding:40px 20px;
+      text-align:center;
+    }
+    .error-wordmark{
+      font-size:13px;
+      font-weight:700;
+      letter-spacing:.04em;
+      color:var(--muted);
+      text-decoration:none;
+      margin-bottom:48px;
+      display:block;
+    }
+    .error-wordmark:hover{ color:var(--ink); text-decoration:none; }
+    .error-code{
+      font-size:clamp(72px, 14vw, 120px);
+      font-weight:900;
+      line-height:1;
+      letter-spacing:-.04em;
+      color:color-mix(in oklab, var(--accent) 18%, var(--bg));
+      margin-bottom:8px;
+      user-select:none;
+    }
+    .error-title{
+      font-size:clamp(20px, 4vw, 28px);
+      font-weight:800;
+      letter-spacing:-.02em;
+      margin:0 0 12px;
+      color:var(--ink);
+    }
+    .error-message{
+      font-size:15px;
+      color:var(--muted);
+      max-width:440px;
+      line-height:1.65;
+      margin:0 auto 32px;
+    }
+    .error-actions{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    {% if detail %}
+    .error-detail{
+      margin-top:32px;
+      font-size:12px;
+      color:color-mix(in oklab, var(--muted) 70%, transparent);
+      font-family:monospace;
+      max-width:520px;
+    }
+    {% endif %}
+  </style>
+  <script>
+    (function(){
+      var saved = 'light';
+      try{ saved = localStorage.getItem('theme') || 'light'; }catch(e){}
+      if(saved === 'dark') document.documentElement.setAttribute('data-theme','dark');
+    })();
+  </script>
+</head>
+<body>
+  <div class="error-shell">
+    <a href="/" class="error-wordmark">blueprinted.io</a>
+
+    <div class="error-code" aria-hidden="true">{{ status_code }}</div>
+    <h1 class="error-title">{{ title }}</h1>
+    <p class="error-message">{{ message }}</p>
+
+    <div class="error-actions">
+      <a href="/" class="btn">Go to dashboard</a>
+      <button class="btn secondary" onclick="history.back()">Go back</button>
+    </div>
+
+    {% if detail %}
+    <p class="error-detail">{{ detail }}</p>
+    {% endif %}
+  </div>
+</body>
+</html>

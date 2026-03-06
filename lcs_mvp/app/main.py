@@ -41,6 +41,49 @@ async def _lifespan(application: FastAPI):
 app = FastAPI(title="Learning Content System MVP", lifespan=_lifespan)
 
 
+_ERROR_COPY: dict[int, tuple[str, str]] = {
+    400: (
+        "That didn't work",
+        "Something about that request wasn't quite right. "
+        "Check what you submitted and try again.",
+    ),
+    403: (
+        "Access denied",
+        "You don't have permission to view this. "
+        "If you think you should, contact your administrator.",
+    ),
+    404: (
+        "Nothing here",
+        "That page or record doesn't exist — it may have been moved, "
+        "deleted, or you followed a stale link.",
+    ),
+    429: (
+        "Slow down",
+        "Too many failed attempts in a short window. "
+        "Wait a few minutes and try again.",
+    ),
+    500: (
+        "Something went wrong",
+        "An unexpected error occurred on our end. "
+        "The issue has been logged. If it keeps happening, contact your administrator.",
+    ),
+}
+_ERROR_DEFAULT = (
+    "Unexpected error",
+    "Something went wrong. Please try again or contact your administrator.",
+)
+
+
+def _html_error_response(request: Request, status_code: int, detail: str | None = None):
+    title, message = _ERROR_COPY.get(status_code, _ERROR_DEFAULT)
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {"status_code": status_code, "title": title, "message": message, "detail": detail},
+        status_code=status_code,
+    )
+
+
 def _import_error_response(request: Request, detail: str, status_code: int):
     """Render the appropriate import form with an error message."""
     path = str(request.url.path)
@@ -55,29 +98,26 @@ def _import_error_response(request: Request, detail: str, status_code: int):
 
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
-    """Prefer HTML error details for browser flows."""
     accept = (request.headers.get("accept") or "").lower()
-    if "text/html" in accept and (
-        str(request.url.path).startswith("/import/pdf")
-        or str(request.url.path).startswith("/import/json")
-    ):
+    if "text/html" not in accept:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    path = str(request.url.path)
+    if path.startswith("/import/pdf") or path.startswith("/import/json"):
         return _import_error_response(request, str(exc.detail), exc.status_code)
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return _html_error_response(request, exc.status_code)
 
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception):
-    """Catch-all so browser users get some error text instead of a blank 500 page."""
     import traceback
-
     traceback.print_exc()
     accept = (request.headers.get("accept") or "").lower()
-    if "text/html" in accept and (
-        str(request.url.path).startswith("/import/pdf")
-        or str(request.url.path).startswith("/import/json")
-    ):
+    if "text/html" not in accept:
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
+    path = str(request.url.path)
+    if path.startswith("/import/pdf") or path.startswith("/import/json"):
         return _import_error_response(request, "An unexpected error occurred.", 500)
-    return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
+    return _html_error_response(request, 500)
 
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")

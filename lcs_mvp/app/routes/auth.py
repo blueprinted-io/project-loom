@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -23,6 +25,40 @@ from ..achievements import get_user_achievements
 
 router = APIRouter()
 
+# ---------------------------------------------------------------------------
+# Login rate limiting (in-memory, per username)
+# ---------------------------------------------------------------------------
+
+_RATE_WINDOW = 300   # seconds (5 minutes)
+_RATE_MAX    = 5     # max failures before 429
+
+_login_failures: dict[str, list[float]] = {}
+_login_failures_lock = threading.Lock()
+
+
+def _check_rate_limit(username: str) -> None:
+    now = time.monotonic()
+    with _login_failures_lock:
+        recent = [t for t in _login_failures.get(username, []) if now - t < _RATE_WINDOW]
+        _login_failures[username] = recent
+        if len(recent) >= _RATE_MAX:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed login attempts. Please wait a few minutes before trying again.",
+            )
+
+
+def _record_failure(username: str) -> None:
+    with _login_failures_lock:
+        _login_failures.setdefault(username, []).append(time.monotonic())
+
+
+def _clear_failures(username: str) -> None:
+    with _login_failures_lock:
+        _login_failures.pop(username, None)
+
+
+# ---------------------------------------------------------------------------
 
 @router.get("/login", response_class=HTMLResponse)
 def login_form(request: Request):
@@ -58,6 +94,13 @@ def login_run(request: Request, username: str = Form(""), password: str = Form("
     if not username:
         raise HTTPException(status_code=400, detail="username is required")
 
+    _check_rate_limit(username)
+
+    # Avoid raising inside `with db()` — sqlite3 context manager rolls back on
+    # exception, which would discard the audit write. Collect outcome first.
+    failure_note: str | None = None
+    token: str | None = None
+
     with db() as conn:
         u = conn.execute(
             """
@@ -67,16 +110,26 @@ def login_run(request: Request, username: str = Form(""), password: str = Form("
             """,
             (username,),
         ).fetchone()
-        if not u:
-            raise HTTPException(status_code=403, detail="Invalid credentials")
-        if not _verify_password(password, str(u["password_salt_hex"]), str(u["password_hash_hex"])):
-            raise HTTPException(status_code=403, detail="Invalid credentials")
 
-        token = _new_session_token()
-        conn.execute(
-            "INSERT INTO sessions(token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
-            (token, int(u["id"]), utc_now_iso(), session_expires_iso()),
-        )
+        if not u:
+            failure_note = "user not found"
+        elif not _verify_password(password, str(u["password_salt_hex"]), str(u["password_hash_hex"])):
+            failure_note = "invalid password"
+
+        if failure_note:
+            audit("auth", username, 0, "login_failure", username, note=failure_note, conn=conn)
+        else:
+            _clear_failures(username)
+            token = _new_session_token()
+            conn.execute(
+                "INSERT INTO sessions(token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+                (token, int(u["id"]), utc_now_iso(), session_expires_iso()),  # type: ignore[index]
+            )
+            audit("auth", username, 0, "login_success", username, note="session created", conn=conn)
+
+    if failure_note:
+        _record_failure(username)
+        raise HTTPException(status_code=403, detail="Invalid credentials")
 
     resp = RedirectResponse(url="/", status_code=303)
     resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax")
