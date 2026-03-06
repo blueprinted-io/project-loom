@@ -545,7 +545,9 @@ body.spa-v1.rail-collapsed .rail-profile,
 body.spa-v1.rail-collapsed .sidebar-title,
 body.spa-v1.rail-collapsed .sidebar-foot,
 body.spa-v1.rail-collapsed .sidebar-flag,
-body.spa-v1.rail-collapsed .navtext{display:none}
+body.spa-v1.rail-collapsed .navtext,
+body.spa-v1.rail-collapsed .sidebar-logo{display:none}
+body.spa-v1.rail-collapsed .sidebar-header{justify-content:center}
 /* Collapsed rail: remove grouped section spacing; even icon rhythm */
 body.spa-v1.rail-collapsed .sidebar-section{margin:0}
 body.spa-v1.rail-collapsed .navlink{justify-content:center;padding:10px 8px;margin:6px 0}
@@ -1330,6 +1332,8 @@ body.spa-v1 .detail-inline-card{padding:10px;margin:0}
   body.spa-v1.rail-collapsed .sidebar-title,
   body.spa-v1.rail-collapsed .sidebar-foot,
   body.spa-v1.rail-collapsed .sidebar-flag,
-  body.spa-v1.rail-collapsed .navtext{display:initial}
+  body.spa-v1.rail-collapsed .navtext,
+  body.spa-v1.rail-collapsed .sidebar-logo{display:initial}
+  body.spa-v1.rail-collapsed .sidebar-header{justify-content:space-between}
   body.spa-v1.rail-collapsed .navlink{justify-content:flex-start;padding:10px 12px}
 }
