@@ -60,19 +60,71 @@ def import_pdf_form(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# PDF import — step 1: upload, scanned check, chunk, redirect to section list
+# PDF import — step 1: upload, hash, create record, fire chunking background task
 # ---------------------------------------------------------------------------
+
+def _run_chunking_background(ingestion_id: str, out_path: str, db_path: str) -> None:
+    """Background task: parse PDF, scanned check, chunk, store results."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        pages = _pdf_extract_pages(out_path)
+
+        if _pdf_is_scanned(pages):
+            conn.execute(
+                "UPDATE ingestions SET job_status='failed', note=? WHERE id=?",
+                ("This PDF does not contain extractable text — it may be a scanned document. Please supply a text-based PDF.", ingestion_id),
+            )
+            conn.commit()
+            return
+
+        outline = _pdf_extract_outline(out_path)
+        chunks = _chunk_by_structure(pages, outline) if outline else _chunk_text(pages, max_chars=12000)
+
+        now = utc_now_iso()
+        for idx, ch in enumerate(chunks):
+            conn.execute(
+                "INSERT OR REPLACE INTO ingestion_chunks"
+                "(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at, section_title, selected, chunk_status) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    ingestion_id, idx,
+                    json.dumps(ch.get("pages", [])),
+                    ch.get("text", ""),
+                    None, now,
+                    ch.get("section_title") or None,
+                    0, "pending",
+                ),
+            )
+        conn.execute(
+            "UPDATE ingestions SET job_status='pending' WHERE id=?",
+            (ingestion_id,),
+        )
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.execute(
+                "UPDATE ingestions SET job_status='failed', note=? WHERE id=?",
+                (f"Document parsing failed: {e}", ingestion_id),
+            )
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
 
 @router.post("/import/pdf/prepare")
 def import_pdf_prepare(
     request: Request,
+    background_tasks: BackgroundTasks,
     pdf: UploadFile = File(...),
     actor_note: str = Form("Imported from PDF"),
 ):
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
-    # Save upload
+    # Save upload and compute hash — this is the only synchronous work
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", pdf.filename or "upload.pdf")
     file_id = str(uuid.uuid4())
@@ -80,25 +132,9 @@ def import_pdf_prepare(
     file_bytes = pdf.file.read()
     with open(out_path, "wb") as f:
         f.write(file_bytes)
-
     sha = _sha256_bytes(file_bytes)
 
-    # Extract pages first so we can run the scanned check before touching the DB
-    pages = _pdf_extract_pages(out_path)
-    if _pdf_is_scanned(pages):
-        os.remove(out_path)
-        return templates.TemplateResponse(
-            request,
-            "import_pdf.html",
-            {
-                "ingestions": [],
-                "error": (
-                    "This PDF does not contain extractable text — it may be a scanned document. "
-                    "Please supply a text-based PDF or copy the content into a manual import."
-                ),
-            },
-            status_code=400,
-        )
+    db_path = DB_PATH_CTX.get()
 
     with db() as conn:
         existing = conn.execute(
@@ -108,48 +144,31 @@ def import_pdf_prepare(
 
         if existing:
             ingestion_id = str(existing["id"])
-            # If job already complete or running, go straight to the right page
             job_status = existing["job_status"]
             if job_status == "complete":
                 return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
             if job_status == "running":
                 return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
+            # Already chunked (pending/chunking) — go to sections
+            has_chunks = conn.execute(
+                "SELECT 1 FROM ingestion_chunks WHERE ingestion_id=? LIMIT 1", (ingestion_id,)
+            ).fetchone()
+            if has_chunks:
+                return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
+            # Otherwise fall through and re-fire chunking
         else:
             ingestion_id = str(uuid.uuid4())
             conn.execute(
                 "INSERT INTO ingestions(id, source_type, source_sha256, filename, created_by, created_at, status, cursor_chunk, max_tasks_per_run, note, job_status) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (ingestion_id, "pdf", sha, safe_name, actor, utc_now_iso(), "draft", 0, 5, actor_note.strip() or "Imported from PDF", "pending"),
+                (ingestion_id, "pdf", sha, safe_name, actor, utc_now_iso(), "draft", 0, 5, actor_note.strip() or "Imported from PDF", "chunking"),
             )
 
-        # Chunk and store if not already done
-        cached = conn.execute(
-            "SELECT 1 FROM ingestion_chunks WHERE ingestion_id=? LIMIT 1",
-            (ingestion_id,),
-        ).fetchone()
+        conn.execute(
+            "UPDATE ingestions SET job_status='chunking' WHERE id=?", (ingestion_id,)
+        )
 
-        if not cached:
-            outline = _pdf_extract_outline(out_path)
-            if outline:
-                chunks = _chunk_by_structure(pages, outline)
-            else:
-                chunks = _chunk_text(pages, max_chars=12000)
-            now = utc_now_iso()
-            for idx, ch in enumerate(chunks):
-                conn.execute(
-                    "INSERT OR REPLACE INTO ingestion_chunks"
-                    "(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at, section_title, selected, chunk_status) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
-                    (
-                        ingestion_id, idx,
-                        _json_dump(ch.get("pages", [])),
-                        ch.get("text", ""),
-                        None, now,
-                        ch.get("section_title") or None,
-                        0, "pending",
-                    ),
-                )
-
+    background_tasks.add_task(_run_chunking_background, ingestion_id, out_path, db_path)
     return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
 
 
@@ -217,6 +236,7 @@ def import_pdf_sections(request: Request, ingestion_id: str):
             "sections": sections,
             "has_toc": has_toc,
             "ingestion_id": ingestion_id,
+            "job_status": job_status,
         },
     )
 
@@ -230,16 +250,13 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
-    system_msg = {
-        "role": "system",
-        "content": (
-            "You are extracting governed learning Tasks from technical documentation. "
-            "Follow the schema strictly. Do not invent steps not supported by the source. "
-            "Every step MUST include a concrete, observable completion check. "
-            "Return JSON ONLY — no markdown, no commentary."
-        ),
-    }
+    # System instructions are merged into the user turn for compatibility with
+    # local LLM servers (e.g. LM Studio) that reject the 'system' role.
     user_tpl = (
+        "You are extracting governed learning Tasks from technical documentation. "
+        "Follow the schema strictly. Do not invent steps not supported by the source. "
+        "Every step MUST include a concrete, observable completion check. "
+        "Return JSON ONLY — no markdown, no commentary.\n\n"
         "From the following SOURCE TEXT, propose up to {per_chunk} Task records.\n\n"
         "Rules:\n"
         "- A Task is one atomic outcome.\n"
@@ -296,7 +313,7 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
             )
 
             try:
-                raw = _llm_chat([system_msg, {"role": "user", "content": user_prompt}], cfg)
+                raw = _llm_chat([{"role": "user", "content": user_prompt}], cfg)
                 data = json.loads(raw)
                 conn.execute(
                     "UPDATE ingestion_chunks SET chunk_status='done', llm_result_json=? "

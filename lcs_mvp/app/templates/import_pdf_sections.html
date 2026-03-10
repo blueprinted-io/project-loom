@@ -3,6 +3,28 @@
 <h1>Select Sections to Import</h1>
 <p class="muted">{{ ing.filename }}</p>
 
+{% if job_status == 'chunking' %}
+{# ── Still parsing in the background ── #}
+<div class="card" style="display:flex; align-items:center; gap:16px; padding:24px">
+  <div class="spinner" style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--primary,#2563eb);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
+  <div>
+    <div style="font-weight:600">Analysing document structure…</div>
+    <div class="muted" style="font-size:0.85em; margin-top:2px">Large files can take a minute. This page will update automatically.</div>
+  </div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<script>setTimeout(() => location.reload(), 3000);</script>
+
+{% elif job_status == 'failed' %}
+{# ── Parse or scanned-check failed ── #}
+<div class="callout danger">
+  <b>Could not process this document.</b><br>
+  {{ ing.note or "An unexpected error occurred during document parsing." }}
+</div>
+<a class="btn secondary" href="/import/pdf" style="margin-top:12px">← Back to imports</a>
+
+{% else %}
+{# ── Ready: show section checklist ── #}
 {% if not has_toc %}
 <div class="callout warn">
   <b>No table of contents detected.</b> This document has no bookmarks — sections below are split by character count. The first line of each chunk is used as its label.
@@ -88,4 +110,5 @@ function toggleRow(idx) {
 
 updateCount();
 </script>
+{% endif %}
 {% endblock %}
