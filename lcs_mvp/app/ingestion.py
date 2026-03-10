@@ -16,6 +16,18 @@ from .linting import _normalize_steps
 # PDF extraction
 # ---------------------------------------------------------------------------
 
+def _pdf_is_scanned(pages: list[dict[str, Any]], threshold_chars_per_page: int = 50) -> bool:
+    """Return True if the PDF appears to be scanned (image-only, no extractable text).
+
+    Checks average character count across all pages against a threshold.
+    A genuine text PDF will have well over 50 chars/page on average.
+    """
+    if not pages:
+        return True
+    total = sum(len((p.get("text") or "").strip()) for p in pages)
+    return (total / len(pages)) < threshold_chars_per_page
+
+
 def _pdf_extract_pages(pdf_path: str) -> list[dict[str, Any]]:
     reader = PdfReader(pdf_path)
     pages: list[dict[str, Any]] = []

@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from ..config import templates, UPLOADS_DIR
+from ..config import templates, UPLOADS_DIR, DB_PATH_CTX
 from ..database import db, utc_now_iso, _workflow_domains, enforce_workflow_ref_rules, _get_llm_config
 from ..linting import _normalize_steps, _validate_steps_required
 from ..audit import audit
@@ -17,8 +18,9 @@ from ..auth import require
 from ..ingestion import (
     _llm_probe, _llm_chat,
     _sha256_bytes, _task_fingerprint, _near_duplicate_score,
-    _pdf_extract_pages, _chunk_text, _pdf_extract_outline, _chunk_by_structure,
+    _pdf_extract_pages, _pdf_is_scanned, _chunk_text, _pdf_extract_outline, _chunk_by_structure,
 )
+from ..notifications import _notify_ingestion_complete
 from ..utils import _json_dump, _json_load
 
 router = APIRouter()
@@ -34,6 +36,10 @@ def llm_status(request: Request):
     return {"ok": bool(probe.get("ok")), "detail": str(probe.get("detail")), "model": model}
 
 
+# ---------------------------------------------------------------------------
+# PDF import — landing page
+# ---------------------------------------------------------------------------
+
 @router.get("/import/pdf", response_class=HTMLResponse)
 def import_pdf_form(request: Request):
     require(request.state.role, "import:pdf")
@@ -41,26 +47,21 @@ def import_pdf_form(request: Request):
 
     with db() as conn:
         rows = conn.execute(
-            "SELECT id, filename, created_at, status, cursor_chunk FROM ingestions WHERE source_type='pdf' AND created_by=? ORDER BY created_at DESC LIMIT 50",
+            "SELECT id, filename, created_at, status, job_status FROM ingestions "
+            "WHERE source_type='pdf' AND created_by=? ORDER BY created_at DESC LIMIT 50",
             (actor,),
         ).fetchall()
-
-    with db() as conn:
-        cfg = _get_llm_config(conn)
-    probe = _llm_probe(cfg["llm_base_url"], cfg["llm_api_key"])
 
     return templates.TemplateResponse(
         request,
         "import_pdf.html",
-        {
-            "llm_ok": bool(probe.get("ok")),
-            "llm_detail": str(probe.get("detail")),
-            "llm_model": cfg.get("llm_model") or "",
-            "llm_configured": bool(cfg.get("llm_base_url")),
-            "ingestions": [dict(r) for r in rows],
-        },
+        {"ingestions": [dict(r) for r in rows]},
     )
 
+
+# ---------------------------------------------------------------------------
+# PDF import — step 1: upload, scanned check, chunk, redirect to section list
+# ---------------------------------------------------------------------------
 
 @router.post("/import/pdf/prepare")
 def import_pdf_prepare(
@@ -71,16 +72,7 @@ def import_pdf_prepare(
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
-    with db() as conn:
-        cfg = _get_llm_config(conn)
-
-    probe = _llm_probe(cfg["llm_base_url"], cfg["llm_api_key"])
-    if not probe.get("ok"):
-        raise HTTPException(status_code=502, detail=f"LLM is not reachable: {probe.get('detail')}. Ask an admin to configure the LLM provider at /admin/llm.")
-
-    max_tasks = cfg["llm_max_tasks_per_chunk"]
-
-    # Save upload + compute hash identity
+    # Save upload
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", pdf.filename or "upload.pdf")
     file_id = str(uuid.uuid4())
@@ -91,70 +83,84 @@ def import_pdf_prepare(
 
     sha = _sha256_bytes(file_bytes)
 
+    # Extract pages first so we can run the scanned check before touching the DB
+    pages = _pdf_extract_pages(out_path)
+    if _pdf_is_scanned(pages):
+        os.remove(out_path)
+        return templates.TemplateResponse(
+            request,
+            "import_pdf.html",
+            {
+                "ingestions": [],
+                "error": (
+                    "This PDF does not contain extractable text — it may be a scanned document. "
+                    "Please supply a text-based PDF or copy the content into a manual import."
+                ),
+            },
+            status_code=400,
+        )
+
     with db() as conn:
         existing = conn.execute(
-            "SELECT * FROM ingestions WHERE source_type='pdf' AND source_sha256=? AND created_by=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, job_status FROM ingestions WHERE source_type='pdf' AND source_sha256=? AND created_by=? ORDER BY created_at DESC LIMIT 1",
             (sha, actor),
         ).fetchone()
 
         if existing:
             ingestion_id = str(existing["id"])
+            # If job already complete or running, go straight to the right page
+            job_status = existing["job_status"]
+            if job_status == "complete":
+                return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
+            if job_status == "running":
+                return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
         else:
             ingestion_id = str(uuid.uuid4())
             conn.execute(
-                "INSERT INTO ingestions(id, source_type, source_sha256, filename, created_by, created_at, status, cursor_chunk, max_tasks_per_run, note) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (ingestion_id, "pdf", sha, safe_name, actor, utc_now_iso(), "draft", 0, max_tasks, actor_note.strip() or "Imported from PDF"),
+                "INSERT INTO ingestions(id, source_type, source_sha256, filename, created_by, created_at, status, cursor_chunk, max_tasks_per_run, note, job_status) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (ingestion_id, "pdf", sha, safe_name, actor, utc_now_iso(), "draft", 0, 5, actor_note.strip() or "Imported from PDF", "pending"),
             )
 
-        # If we don't have cached chunks yet, extract + store now.
+        # Chunk and store if not already done
         cached = conn.execute(
             "SELECT 1 FROM ingestion_chunks WHERE ingestion_id=? LIMIT 1",
             (ingestion_id,),
         ).fetchone()
 
         if not cached:
-            pages = _pdf_extract_pages(out_path)
             outline = _pdf_extract_outline(out_path)
             if outline:
                 chunks = _chunk_by_structure(pages, outline)
             else:
                 chunks = _chunk_text(pages, max_chars=12000)
-            if not chunks:
-                raise HTTPException(status_code=400, detail="No extractable text found in PDF")
             now = utc_now_iso()
             for idx, ch in enumerate(chunks):
                 conn.execute(
-                    "INSERT OR REPLACE INTO ingestion_chunks(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at, section_title) VALUES (?,?,?,?,?,?,?)",
-                    (ingestion_id, idx, _json_dump(ch.get("pages", [])), ch.get("text", ""), None, now, ch.get("section_title") or None),
+                    "INSERT OR REPLACE INTO ingestion_chunks"
+                    "(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at, section_title, selected, chunk_status) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        ingestion_id, idx,
+                        _json_dump(ch.get("pages", [])),
+                        ch.get("text", ""),
+                        None, now,
+                        ch.get("section_title") or None,
+                        0, "pending",
+                    ),
                 )
 
-    return RedirectResponse(url=f"/import/pdf/run?ingestion_id={ingestion_id}", status_code=303)
+    return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
 
 
-@router.get("/import/pdf/run", response_class=HTMLResponse)
-def import_pdf_run(request: Request, ingestion_id: str):
+# ---------------------------------------------------------------------------
+# PDF import — step 2: section selection checklist
+# ---------------------------------------------------------------------------
+
+@router.get("/import/pdf/sections/{ingestion_id}", response_class=HTMLResponse)
+def import_pdf_sections(request: Request, ingestion_id: str):
     require(request.state.role, "import:pdf")
     actor = request.state.user
-
-    with db() as conn:
-        cfg = _get_llm_config(conn)
-
-    probe = _llm_probe(cfg["llm_base_url"], cfg["llm_api_key"])
-    if not probe.get("ok"):
-        return templates.TemplateResponse(
-            request,
-            "import_pdf_preview.html",
-            {
-                "ingestion": {"id": ingestion_id, "cursor_chunk": "?", "filename": "(unknown)"},
-                "candidates": [],
-                "workflows": [],
-                "error": f"LLM is not reachable: {probe.get('detail')}. Ask an admin to configure it at /admin/llm.",
-                "done": False,
-            },
-        )
-
-    max_tasks = cfg["llm_max_tasks_per_chunk"]
-    max_chunks = cfg["llm_max_chunks_per_run"]
 
     with db() as conn:
         ing = conn.execute(
@@ -164,24 +170,307 @@ def import_pdf_run(request: Request, ingestion_id: str):
         if not ing:
             raise HTTPException(404)
 
-        cursor = int(ing["cursor_chunk"])
-        chunk_rows = conn.execute(
-            "SELECT chunk_index, pages_json, text, llm_result_json, section_title FROM ingestion_chunks WHERE ingestion_id=? AND chunk_index>=? ORDER BY chunk_index ASC LIMIT ?",
-            (ingestion_id, cursor, max_chunks),
+        # If already queued/running/complete, redirect to the appropriate page
+        job_status = ing["job_status"]
+        if job_status == "running":
+            return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
+        if job_status == "complete":
+            return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
+
+        chunks = conn.execute(
+            "SELECT chunk_index, pages_json, text, section_title, selected, chunk_status "
+            "FROM ingestion_chunks WHERE ingestion_id=? ORDER BY chunk_index ASC",
+            (ingestion_id,),
         ).fetchall()
 
-        if not chunk_rows:
-            return templates.TemplateResponse(
-                request,
-                "import_pdf_preview.html",
-                {
-                    "ingestion": dict(ing),
-                    "candidates": [],
-                    "workflows": [],
-                    "error": None,
-                    "done": True,
-                },
+    has_toc = any((r["section_title"] or "").strip() for r in chunks)
+
+    sections = []
+    for r in chunks:
+        text = (r["text"] or "").strip()
+        word_count = len(text.split())
+        pages = _json_load(r["pages_json"]) or []
+        page_label = f"p.{pages[0]}" if len(pages) == 1 else (f"pp.{pages[0]}–{pages[-1]}" if pages else "")
+        title = (r["section_title"] or "").strip()
+        if not title:
+            # Use first non-empty line as a fallback label
+            first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+            title = (first_line[:80] + "…") if len(first_line) > 80 else first_line or f"Chunk {r['chunk_index'] + 1}"
+        preview = text[:200].replace("\n", " ").strip()
+        if len(text) > 200:
+            preview += "…"
+        sections.append({
+            "chunk_index": r["chunk_index"],
+            "title": title,
+            "page_label": page_label,
+            "word_count": word_count,
+            "preview": preview,
+            "sparse": word_count < 40,
+            "selected": bool(r["selected"]),
+        })
+
+    return templates.TemplateResponse(
+        request,
+        "import_pdf_sections.html",
+        {
+            "ing": dict(ing),
+            "sections": sections,
+            "has_toc": has_toc,
+            "ingestion_id": ingestion_id,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# PDF import — step 3: queue selected sections, fire background task
+# ---------------------------------------------------------------------------
+
+def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) -> None:
+    """Background task: LLM-processes all queued chunks for an ingestion job."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    system_msg = {
+        "role": "system",
+        "content": (
+            "You are extracting governed learning Tasks from technical documentation. "
+            "Follow the schema strictly. Do not invent steps not supported by the source. "
+            "Every step MUST include a concrete, observable completion check. "
+            "Return JSON ONLY — no markdown, no commentary."
+        ),
+    }
+    user_tpl = (
+        "From the following SOURCE TEXT, propose up to {per_chunk} Task records.\n\n"
+        "Rules:\n"
+        "- A Task is one atomic outcome.\n"
+        "- Provide: title, outcome, facts[], concepts[], dependencies[], procedure_name.\n"
+        "- Each step: text (one concrete action, starts with a verb), completion (observable), optional actions[].\n"
+        "- Do NOT include troubleshooting steps.\n"
+        "- Return JSON ONLY: {{\"tasks\": [ ... ]}}\n\n"
+        "{section_header}"
+        "SOURCE TEXT:\n{source}\n"
+    )
+
+    try:
+        # Load config
+        cfg_rows = conn.execute("SELECT key, value FROM system_settings WHERE key LIKE 'llm_%'").fetchall()
+        raw_cfg = {r["key"]: r["value"] for r in cfg_rows}
+        cfg: dict[str, Any] = {
+            "llm_base_url": raw_cfg.get("llm_base_url", ""),
+            "llm_api_key": raw_cfg.get("llm_api_key", ""),
+            "llm_model": raw_cfg.get("llm_model", ""),
+            "llm_max_tokens": int(raw_cfg.get("llm_max_tokens", 2000)),
+            "llm_temperature": float(raw_cfg.get("llm_temperature", 0.2)),
+            "llm_timeout_seconds": float(raw_cfg.get("llm_timeout_seconds", 120)),
+            "llm_max_tasks_per_chunk": int(raw_cfg.get("llm_max_tasks_per_chunk", 5)),
+        }
+        max_tasks = cfg["llm_max_tasks_per_chunk"]
+
+        conn.execute(
+            "UPDATE ingestions SET job_status='running', status='in_progress' WHERE id=?",
+            (ingestion_id,),
+        )
+        conn.commit()
+
+        chunks = conn.execute(
+            "SELECT chunk_index, pages_json, text, section_title FROM ingestion_chunks "
+            "WHERE ingestion_id=? AND selected=1 AND chunk_status='queued' ORDER BY chunk_index ASC",
+            (ingestion_id,),
+        ).fetchall()
+
+        for cr in chunks:
+            chunk_index = int(cr["chunk_index"])
+            conn.execute(
+                "UPDATE ingestion_chunks SET chunk_status='processing' WHERE ingestion_id=? AND chunk_index=?",
+                (ingestion_id, chunk_index),
             )
+            conn.commit()
+
+            section_title = (cr["section_title"] or "").strip()
+            section_header = f"SECTION: {section_title}\n\n" if section_title else ""
+            user_prompt = (
+                user_tpl
+                .replace("{per_chunk}", str(max_tasks))
+                .replace("{section_header}", section_header)
+                .replace("{source}", cr["text"])
+            )
+
+            try:
+                raw = _llm_chat([system_msg, {"role": "user", "content": user_prompt}], cfg)
+                data = json.loads(raw)
+                conn.execute(
+                    "UPDATE ingestion_chunks SET chunk_status='done', llm_result_json=? "
+                    "WHERE ingestion_id=? AND chunk_index=?",
+                    (json.dumps(data), ingestion_id, chunk_index),
+                )
+            except HTTPException as e:
+                status = "timeout" if e.status_code == 504 else "error"
+                conn.execute(
+                    "UPDATE ingestion_chunks SET chunk_status=?, llm_result_json=? "
+                    "WHERE ingestion_id=? AND chunk_index=?",
+                    (status, json.dumps({"error": str(e.detail)}), ingestion_id, chunk_index),
+                )
+            except Exception as e:
+                conn.execute(
+                    "UPDATE ingestion_chunks SET chunk_status='error', llm_result_json=? "
+                    "WHERE ingestion_id=? AND chunk_index=?",
+                    (json.dumps({"error": str(e)}), ingestion_id, chunk_index),
+                )
+            conn.commit()
+
+        conn.execute(
+            "UPDATE ingestions SET job_status='complete', status='done' WHERE id=?",
+            (ingestion_id,),
+        )
+        conn.commit()
+        _notify_ingestion_complete(ingestion_id, username, db_path)
+
+    except Exception:
+        try:
+            conn.execute(
+                "UPDATE ingestions SET job_status='failed' WHERE id=?",
+                (ingestion_id,),
+            )
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+
+@router.post("/import/pdf/queue/{ingestion_id}")
+def import_pdf_queue(
+    request: Request,
+    ingestion_id: str,
+    background_tasks: BackgroundTasks,
+    chunk_index: list[int] = Form([]),
+):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    if not chunk_index:
+        return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}?error=none_selected", status_code=303)
+
+    db_path = DB_PATH_CTX.get()
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT * FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+
+        # Mark selected chunks as queued; deselect everything else
+        conn.execute(
+            "UPDATE ingestion_chunks SET selected=0, chunk_status='pending' WHERE ingestion_id=?",
+            (ingestion_id,),
+        )
+        for idx in chunk_index:
+            conn.execute(
+                "UPDATE ingestion_chunks SET selected=1, chunk_status='queued' WHERE ingestion_id=? AND chunk_index=?",
+                (ingestion_id, idx),
+            )
+        conn.execute(
+            "UPDATE ingestions SET job_status='pending' WHERE id=?",
+            (ingestion_id,),
+        )
+
+    background_tasks.add_task(_run_ingestion_background, ingestion_id, db_path, actor)
+    return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# PDF import — step 4: status / progress page + polling endpoint
+# ---------------------------------------------------------------------------
+
+@router.get("/import/pdf/status/{ingestion_id}", response_class=HTMLResponse)
+def import_pdf_status_page(request: Request, ingestion_id: str):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT * FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+
+    return templates.TemplateResponse(
+        request,
+        "import_pdf_status.html",
+        {"ing": dict(ing), "ingestion_id": ingestion_id},
+    )
+
+
+@router.get("/import/pdf/status/{ingestion_id}/json")
+def import_pdf_status_json(request: Request, ingestion_id: str):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT * FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+
+        chunks = conn.execute(
+            "SELECT chunk_index, section_title, chunk_status, pages_json "
+            "FROM ingestion_chunks WHERE ingestion_id=? AND selected=1 ORDER BY chunk_index ASC",
+            (ingestion_id,),
+        ).fetchall()
+
+    total = len(chunks)
+    done_statuses = {"done", "error", "timeout", "skipped"}
+    done = sum(1 for c in chunks if c["chunk_status"] in done_statuses)
+
+    return JSONResponse({
+        "job_status": ing["job_status"],
+        "filename": ing["filename"],
+        "total": total,
+        "done": done,
+        "chunks": [
+            {
+                "chunk_index": c["chunk_index"],
+                "title": (c["section_title"] or f"Chunk {c['chunk_index'] + 1}").strip(),
+                "status": c["chunk_status"],
+                "pages": _json_load(c["pages_json"]) or [],
+            }
+            for c in chunks
+        ],
+    })
+
+
+# ---------------------------------------------------------------------------
+# PDF import — step 5: review candidates and commit
+# ---------------------------------------------------------------------------
+
+@router.get("/import/pdf/review/{ingestion_id}", response_class=HTMLResponse)
+def import_pdf_review(request: Request, ingestion_id: str):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT * FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+
+        chunk_rows = conn.execute(
+            "SELECT chunk_index, pages_json, text, llm_result_json, section_title, chunk_status "
+            "FROM ingestion_chunks WHERE ingestion_id=? AND selected=1 AND chunk_status='done' ORDER BY chunk_index ASC",
+            (ingestion_id,),
+        ).fetchall()
+
+        errored = conn.execute(
+            "SELECT COUNT(*) AS n FROM ingestion_chunks WHERE ingestion_id=? AND selected=1 AND chunk_status IN ('error','timeout')",
+            (ingestion_id,),
+        ).fetchone()["n"]
 
         # Build existing task signatures for dedupe
         latest_rows = conn.execute(
@@ -193,142 +482,41 @@ def import_pdf_run(request: Request, ingestion_id: str):
                 "SELECT title, outcome, steps_json FROM tasks WHERE record_id=? AND version=?",
                 (r["record_id"], int(r["v"])),
             ).fetchone()
-            if not row:
-                continue
-            existing_tasks.append(
-                {
+            if row:
+                existing_tasks.append({
                     "record_id": r["record_id"],
                     "title": row["title"],
                     "outcome": row["outcome"],
                     "steps": _json_load(row["steps_json"]) or [],
-                }
-            )
-
-    system = {
-        "role": "system",
-        "content": (
-            "You are extracting governed learning Tasks from technical documentation. "
-            "You MUST follow the schema strictly. Do not invent steps that are not supported by the provided source. "
-            "If uncertain, omit. Every step MUST include a completion check. "
-            "Concepts are best-effort and should be minimal."
-        ),
-    }
-
-    user_prompt_tpl = (
-        "From the following SOURCE TEXT (with page markers), propose up to {per_chunk} Task records.\n\n"
-        "Rules:\n"
-        "- A Task is one atomic outcome.\n"
-        "- Provide: title, outcome, facts[], concepts[], dependencies[], procedure_name.\n"
-        "- Provide steps[] where each step has: text, completion, and optional actions[].\n"
-        "- Steps and completion MUST be concrete and verifiable.\n"
-        "- Do NOT include troubleshooting.\n"
-        "- Return JSON ONLY: {{\"tasks\": [ ... ]}} (no markdown, no commentary).\n\n"
-        "{section_header}"
-        "SOURCE TEXT:\n{source}\n"
-    )
+                })
 
     candidates: list[dict[str, Any]] = []
-    skipped_chunks: list[int] = []
-    fatal_error: str | None = None
-
     for cr in chunk_rows:
-        chunk_index = int(cr["chunk_index"])
-        cached_raw = (cr["llm_result_json"] or "").strip()
-
-        # Skip previously timed-out chunks
-        if cached_raw == '"timeout"':
-            skipped_chunks.append(chunk_index)
+        if not cr["llm_result_json"]:
             continue
-
-        if cached_raw:
-            try:
-                data = json.loads(cached_raw)
-            except Exception:
-                data = None
-        else:
-            section_title = (cr["section_title"] or "").strip()
-            section_header = f"SECTION: {section_title}\n\n" if section_title else ""
-            user_prompt = (
-                user_prompt_tpl
-                .replace("{per_chunk}", str(max_tasks))
-                .replace("{section_header}", section_header)
-                .replace("{source}", cr["text"])
-            )
-            try:
-                raw = _llm_chat(
-                    [system, {"role": "user", "content": user_prompt}],
-                    cfg,
-                )
-                try:
-                    data = json.loads(raw)
-                except Exception:
-                    fatal_error = f"Model returned non-JSON for chunk {chunk_index}"
-                    break
-
-                with db() as conn:
-                    conn.execute(
-                        "UPDATE ingestion_chunks SET llm_result_json=? WHERE ingestion_id=? AND chunk_index=?",
-                        (_json_dump(data), ingestion_id, chunk_index),
-                    )
-            except HTTPException as e:
-                if e.status_code == 504:
-                    # Timeout: mark chunk as skipped and continue
-                    skipped_chunks.append(chunk_index)
-                    with db() as conn:
-                        conn.execute(
-                            "UPDATE ingestion_chunks SET llm_result_json=? WHERE ingestion_id=? AND chunk_index=?",
-                            ('"timeout"', ingestion_id, chunk_index),
-                        )
-                    continue
-                fatal_error = str(e.detail)
-                break
-            except Exception as e:
-                fatal_error = str(e)
-                break
-
-        if data is None:
+        try:
+            data = json.loads(cr["llm_result_json"])
+        except Exception:
             continue
-        tasks = data.get("tasks") if isinstance(data, dict) else None
+        tasks = data.get("tasks") if isinstance(data, dict) else []
         if not isinstance(tasks, list):
             continue
-
         for t in tasks:
             if not isinstance(t, dict):
                 continue
             title = str(t.get("title", "")).strip()
             if not title:
                 continue
-            candidates.append({
-                "chunk_index": chunk_index,
-                "pages": _json_load(cr["pages_json"]) or [],
-                "task": t,
-            })
+            candidates.append({"chunk_index": int(cr["chunk_index"]), "pages": _json_load(cr["pages_json"]) or [], "task": t})
 
-    if fatal_error:
-        return templates.TemplateResponse(
-            request,
-            "import_pdf_preview.html",
-            {
-                "ingestion": {"id": ingestion_id, "cursor_chunk": cursor, "filename": ing["filename"]},
-                "candidates": [],
-                "workflows": [],
-                "error": fatal_error,
-                "done": False,
-            },
-        )
-
-    # Merge + cap to max_tasks
-    # De-dupe within candidate list by fingerprint
+    # Dedupe within candidates by fingerprint
     out: list[dict[str, Any]] = []
     seen_fp: set[str] = set()
     for c in candidates:
         fp = _task_fingerprint(c["task"])
-        if fp in seen_fp:
-            continue
-        seen_fp.add(fp)
-        out.append(c)
-        if len(out) >= max_tasks:
-            break
+        if fp not in seen_fp:
+            seen_fp.add(fp)
+            out.append(c)
 
     # Attach dup flags
     flagged: list[dict[str, Any]] = []
@@ -345,62 +533,26 @@ def import_pdf_run(request: Request, ingestion_id: str):
             if score >= 0.72:
                 near_matches.append({"record_id": ex["record_id"], "kind": "near", "score": round(score, 3)})
         near_matches = sorted(near_matches, key=lambda x: x["score"], reverse=True)[:3]
+        flagged.append({
+            "id": _sha256_bytes((fp + str(c["chunk_index"])).encode("utf-8"))[:16],
+            "title": str(t.get("title", "")).strip(),
+            "chunk_index": c["chunk_index"],
+            "pages": c["pages"],
+            "dup_matches": near_matches,
+        })
 
-        flagged.append(
-            {
-                "id": _sha256_bytes((fp + str(c["chunk_index"])).encode("utf-8"))[:16],
-                "title": str(t.get("title", "")).strip(),
-                "chunk_index": c["chunk_index"],
-                "pages": c["pages"],
-                "dup_matches": near_matches,
-            }
-        )
-
-    # Propose workflows from candidate titles (optional, best-effort)
-    wf_candidates: list[dict[str, Any]] = []
-    if flagged:
-        titles = [x["title"] for x in flagged]
-        wf_system = {"role": "system", "content": "You propose small Workflows from a list of Task titles. Return JSON only."}
-        wf_user = (
-            "Given these Task titles, propose up to 3 Workflow candidates.\n"
-            "Return JSON ONLY: {\"workflows\": [{\"title\":...,\"objective\":...,\"task_titles\":[...] }]}\n"
-            "Rules: a workflow must reference 2-6 tasks by exact title; do not invent titles.\n\n"
-            + _json_dump({"task_titles": titles})
-        )
-        try:
-            raw = _llm_chat([wf_system, {"role": "user", "content": wf_user}], cfg)
-            wf_data = json.loads(raw)
-            wfs = wf_data.get("workflows") if isinstance(wf_data, dict) else None
-            if isinstance(wfs, list):
-                for wf in wfs[:3]:
-                    if not isinstance(wf, dict):
-                        continue
-                    wt = str(wf.get("title", "")).strip()
-                    obj = str(wf.get("objective", "")).strip()
-                    tts = wf.get("task_titles") or []
-                    if not wt or not obj or not isinstance(tts, list):
-                        continue
-                    wf_candidates.append({
-                        "id": _sha256_bytes((wt + obj).encode("utf-8"))[:16],
-                        "title": wt,
-                        "objective": obj,
-                        "task_titles": [str(x) for x in tts if str(x).strip() in titles],
-                    })
-        except Exception:
-            pass  # Workflow suggestions are optional; don't fail the whole run
-
-    skipped_note = f" ({len(skipped_chunks)} chunk(s) timed out and were skipped)" if skipped_chunks else ""
+    skipped_note = f"{errored} section(s) could not be processed (timeout or error)." if errored else ""
 
     return templates.TemplateResponse(
         request,
         "import_pdf_preview.html",
         {
-            "ingestion": {"id": ingestion_id, "cursor_chunk": int(ing["cursor_chunk"]), "filename": ing["filename"]},
+            "ingestion": dict(ing),
             "candidates": flagged,
-            "workflows": wf_candidates,
+            "workflows": [],
             "error": None,
             "skipped_note": skipped_note,
-            "done": False,
+            "done": True,
         },
     )
 
@@ -415,18 +567,15 @@ def import_pdf_commit(
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
-    # Load last run candidates from cached llm results for current cursor window.
     with db() as conn:
         ing = conn.execute("SELECT * FROM ingestions WHERE id=? AND created_by=?", (ingestion_id, actor)).fetchone()
         if not ing:
             raise HTTPException(404)
 
-        cursor = int(ing["cursor_chunk"])
-        cfg = _get_llm_config(conn)
-        max_chunks = cfg["llm_max_chunks_per_run"]
         chunk_rows = conn.execute(
-            "SELECT chunk_index, pages_json, text, llm_result_json FROM ingestion_chunks WHERE ingestion_id=? AND chunk_index>=? ORDER BY chunk_index ASC LIMIT ?",
-            (ingestion_id, cursor, max_chunks),
+            "SELECT chunk_index, pages_json, text, llm_result_json FROM ingestion_chunks "
+            "WHERE ingestion_id=? AND selected=1 AND chunk_status='done' ORDER BY chunk_index ASC",
+            (ingestion_id,),
         ).fetchall()
 
         if not chunk_rows:
@@ -561,13 +710,6 @@ def import_pdf_commit(
                         order += 1
 
                     audit("workflow", wf_rid, wf_ver, "create", actor, note="import:pdf")
-
-        # Advance cursor if commit happened (clean, deterministic)
-        if reconstructed:
-            conn.execute(
-                "UPDATE ingestions SET cursor_chunk=cursor_chunk+? , status='in_progress' WHERE id=?",
-                (len(chunk_rows), ingestion_id),
-            )
 
     return RedirectResponse(url="/tasks?status=draft", status_code=303)
 

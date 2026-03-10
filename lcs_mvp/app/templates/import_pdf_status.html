@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Processing Sections</h1>
+<p class="muted" id="filename">{{ ing.filename }}</p>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="row" style="align-items:center; gap:16px; margin-bottom:12px">
+    <div style="flex:1">
+      <div style="font-weight:600" id="status-label">Starting…</div>
+      <div class="muted" style="font-size:0.85em; margin-top:2px" id="status-detail">Sending sections to LLM</div>
+    </div>
+    <div id="status-pill"><span class="badge">processing</span></div>
+  </div>
+
+  <div style="background:var(--border); border-radius:4px; height:8px; overflow:hidden">
+    <div id="progress-bar" style="background:var(--primary,#2563eb); height:100%; width:0%; transition:width 0.4s ease"></div>
+  </div>
+  <div class="muted" style="font-size:0.8em; margin-top:6px" id="progress-text">0 / 0 sections</div>
+</div>
+
+<div class="card" style="padding:0; overflow:hidden">
+  <table class="table" style="margin:0" id="chunk-table">
+    <thead>
+      <tr>
+        <th>Section</th>
+        <th style="width:110px">Status</th>
+      </tr>
+    </thead>
+    <tbody id="chunk-tbody">
+      <tr><td colspan="2" class="muted">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div id="done-actions" style="display:none; margin-top:16px">
+  <a class="btn" id="review-link" href="/import/pdf/review/{{ ingestion_id }}">Review results →</a>
+</div>
+
+<div id="failed-notice" style="display:none; margin-top:16px">
+  <div class="callout danger">
+    <b>Processing failed.</b> The background job encountered an unexpected error. Please try again or contact an admin.
+  </div>
+</div>
+
+<script>
+const INGESTION_ID = {{ ingestion_id | tojson }};
+const STATUS_URL = '/import/pdf/status/' + INGESTION_ID + '/json';
+const REVIEW_URL = '/import/pdf/review/' + INGESTION_ID;
+
+const PILL_CLASS = {
+  queued:     'badge',
+  processing: 'badge badge-submitted',
+  done:       'badge badge-confirmed',
+  error:      'badge badge-warn',
+  timeout:    'badge badge-warn',
+  skipped:    'badge',
+  pending:    'badge',
+};
+
+const PILL_LABEL = {
+  queued:     'queued',
+  processing: 'processing…',
+  done:       'done',
+  error:      'error',
+  timeout:    'timed out',
+  skipped:    'skipped',
+  pending:    'pending',
+};
+
+let pollHandle = null;
+
+function renderChunks(chunks) {
+  const tbody = document.getElementById('chunk-tbody');
+  if (!chunks.length) {
+    tbody.innerHTML = '<tr><td colspan="2" class="muted">No sections selected.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = chunks.map(c => {
+    const cls = PILL_CLASS[c.status] || 'badge';
+    const lbl = PILL_LABEL[c.status] || c.status;
+    const page = c.pages && c.pages.length
+      ? '<span class="muted" style="font-size:0.8em; margin-left:8px">p.' + (c.pages.length === 1 ? c.pages[0] : c.pages[0] + '–' + c.pages[c.pages.length-1]) + '</span>'
+      : '';
+    return '<tr><td>' + escHtml(c.title) + page + '</td><td><span class="' + cls + '">' + lbl + '</span></td></tr>';
+  }).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function poll() {
+  fetch(STATUS_URL, {headers: {'Accept': 'application/json'}})
+    .then(r => r.json())
+    .then(d => {
+      const total = d.total || 0;
+      const done = d.done || 0;
+      const pct = total ? Math.round(done / total * 100) : 0;
+
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('progress-text').textContent = done + ' / ' + total + ' sections';
+
+      renderChunks(d.chunks || []);
+
+      if (d.job_status === 'complete') {
+        clearInterval(pollHandle);
+        document.getElementById('progress-bar').style.background = 'var(--green,#16a34a)';
+        document.getElementById('progress-bar').style.width = '100%';
+        document.getElementById('status-label').textContent = 'Complete';
+        document.getElementById('status-detail').textContent = done + ' section' + (done === 1 ? '' : 's') + ' processed';
+        document.getElementById('status-pill').innerHTML = '<span class="badge badge-confirmed">done</span>';
+        document.getElementById('done-actions').style.display = '';
+      } else if (d.job_status === 'failed') {
+        clearInterval(pollHandle);
+        document.getElementById('status-label').textContent = 'Failed';
+        document.getElementById('status-pill').innerHTML = '<span class="badge badge-danger">failed</span>';
+        document.getElementById('failed-notice').style.display = '';
+      } else {
+        document.getElementById('status-label').textContent = 'Processing…';
+        document.getElementById('status-detail').textContent = done + ' / ' + total + ' sections done';
+      }
+    })
+    .catch(() => {
+      // Network hiccup — keep polling
+    });
+}
+
+poll();
+pollHandle = setInterval(poll, 3000);
+</script>
+{% endblock %}

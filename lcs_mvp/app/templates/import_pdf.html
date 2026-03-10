@@ -1,93 +1,49 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Import Tasks from PDF (AI-assisted)</h1>
+<h1>Import Tasks from PDF</h1>
+<p class="muted">Upload a text-based PDF. The system will extract its table of contents, let you choose which sections to import, then process them in the background using AI.</p>
 
 {% if error %}
 <div class="callout danger">
-  <b>Import failed:</b> {{ error }}
+  <b>Upload failed:</b> {{ error }}
 </div>
 {% endif %}
 
 <div class="callout warn">
-  <b>Trust boundary:</b> Imported Tasks are always created as <b>draft</b> and flagged for review. Nothing is auto-confirmed.
+  <b>Trust boundary:</b> All imported Tasks are created as <b>draft</b> and flagged for review. Nothing is auto-confirmed.
 </div>
-
-<div class="card">
-  <div class="row" style="align-items:center; gap:16px">
-    <div style="flex:1">
-      <b>LLM provider</b>
-      <div class="muted" style="margin-top:4px" id="llm-detail">Checking…</div>
-    </div>
-    <div>
-      <span class="badge" id="llm-pill" style="opacity:0.5">…</span>
-    </div>
-    {% if request.state.role == 'admin' %}
-    <div>
-      <a class="btn secondary" href="/admin/llm">Configure</a>
-    </div>
-    {% endif %}
-  </div>
-</div>
-
-<div id="llm-gate-msg" style="display:none">
-  <div class="callout" style="border-left:4px solid var(--danger);background:color-mix(in oklab,var(--danger) 8%,var(--panel))">
-    <b>LLM not reachable</b>
-    <div class="muted" style="margin-top:6px">
-      The ingestion pipeline requires a configured and reachable LLM provider.
-      {% if request.state.role == 'admin' %}
-        <a href="/admin/llm">Configure LLM provider</a>.
-      {% else %}
-        Contact an admin to set up the LLM provider.
-      {% endif %}
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  function setLlmOk(ok, detail, model){
-    const pill = document.getElementById('llm-pill');
-    const detailEl = document.getElementById('llm-detail');
-    const gateMsg = document.getElementById('llm-gate-msg');
-    const submitBtn = document.getElementById('llm-submit-btn');
-    if(pill){
-      pill.style.opacity = '1';
-      if(ok){
-        pill.className = 'badge badge-confirmed';
-        pill.textContent = 'LLM: reachable';
-      } else {
-        pill.className = 'badge badge-warn';
-        pill.textContent = 'LLM: not reachable';
-      }
-    }
-    if(detailEl){
-      detailEl.textContent = model ? 'Model: ' + model : (detail || '');
-    }
-    if(gateMsg) gateMsg.style.display = ok ? 'none' : '';
-    if(submitBtn) submitBtn.disabled = !ok;
-  }
-
-  fetch('/_llm/status', {headers:{'Accept':'application/json'}})
-    .then(r => r.json())
-    .then(d => setLlmOk(!!d.ok, d.detail || '', d.model || ''))
-    .catch(e => setLlmOk(false, String(e), ''));
-})();
-</script>
 
 {% if ingestions %}
 <div class="card">
-  <h2 style="margin-top:0">Previous ingestions</h2>
-  <p class="muted">Resume from where you left off. Progress is keyed by document hash, not filename.</p>
+  <h2 style="margin-top:0">Previous imports</h2>
+  <p class="muted">Re-uploading the same file will resume from where you left off — progress is keyed by document hash, not filename.</p>
   <table class="table">
-    <thead><tr><th>File</th><th>Created</th><th>Status</th><th>Cursor</th><th></th></tr></thead>
+    <thead><tr><th>File</th><th>Started</th><th>State</th><th></th></tr></thead>
     <tbody>
       {% for i in ingestions %}
       <tr>
         <td>{{ i.filename }}</td>
-        <td class="muted">{{ i.created_at }}</td>
-        <td><span class="badge">{{ i.status }}</span></td>
-        <td class="muted">chunk {{ i.cursor_chunk }}</td>
-        <td><a class="btn" href="/import/pdf/run?ingestion_id={{ i.id }}">Resume</a></td>
+        <td class="muted" style="font-size:0.85em">{{ i.created_at }}</td>
+        <td>
+          {% if i.job_status == 'complete' %}
+            <span class="badge badge-confirmed">complete</span>
+          {% elif i.job_status == 'running' %}
+            <span class="badge badge-submitted">processing…</span>
+          {% elif i.job_status == 'failed' %}
+            <span class="badge badge-danger">failed</span>
+          {% else %}
+            <span class="badge">{{ i.job_status or 'pending' }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if i.job_status == 'complete' %}
+            <a class="btn secondary" href="/import/pdf/review/{{ i.id }}">Review</a>
+          {% elif i.job_status == 'running' %}
+            <a class="btn secondary" href="/import/pdf/status/{{ i.id }}">View progress</a>
+          {% else %}
+            <a class="btn secondary" href="/import/pdf/sections/{{ i.id }}">Continue</a>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -96,14 +52,21 @@
 {% endif %}
 
 <form method="post" action="/import/pdf/prepare" enctype="multipart/form-data" class="card">
-  <label>PDF file</label>
-  <input type="file" name="pdf" accept="application/pdf" required />
+  <h2 style="margin-top:0">New import</h2>
 
-  <label>Import note</label>
-  <input name="actor_note" value="Imported from PDF" />
+  <div>
+    <label>PDF file</label>
+    <input type="file" name="pdf" accept="application/pdf" required />
+    <div class="muted" style="font-size:0.8em; margin-top:4px">Text-based PDFs only. Scanned documents are not supported.</div>
+  </div>
 
-  <button class="btn" type="submit" id="llm-submit-btn" disabled>Generate candidates</button>
+  <div style="margin-top:12px">
+    <label>Import note</label>
+    <input name="actor_note" value="Imported from PDF" style="width:100%; max-width:400px" />
+  </div>
+
+  <div style="margin-top:16px">
+    <button class="btn" type="submit">Upload and analyse →</button>
+  </div>
 </form>
-
-<p class="muted">MVP notes: author/admin only. Import creates a candidate list first; nothing is written until you select items.</p>
 {% endblock %}

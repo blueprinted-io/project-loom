@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Select Sections to Import</h1>
+<p class="muted">{{ ing.filename }}</p>
+
+{% if not has_toc %}
+<div class="callout warn">
+  <b>No table of contents detected.</b> This document has no bookmarks — sections below are split by character count. The first line of each chunk is used as its label.
+</div>
+{% endif %}
+
+<div class="callout">
+  Tick the sections you want processed by AI. Only selected sections will be sent to the LLM — everything else is ignored.
+</div>
+
+<form method="post" action="/import/pdf/queue/{{ ingestion_id }}">
+  <div class="card" style="padding:0; overflow:hidden">
+    <div class="row" style="padding:12px 16px; border-bottom:1px solid var(--border); align-items:center; gap:12px">
+      <div style="flex:1; font-weight:600">{{ sections|length }} section{{ 's' if sections|length != 1 else '' }} found</div>
+      <button type="button" class="btn secondary" style="font-size:0.8em; padding:4px 10px" onclick="toggleAll(true)">Select all</button>
+      <button type="button" class="btn secondary" style="font-size:0.8em; padding:4px 10px" onclick="toggleAll(false)">Deselect all</button>
+      <span id="sel-count" class="muted" style="font-size:0.85em">0 selected</span>
+    </div>
+
+    <table class="table" style="margin:0">
+      <thead>
+        <tr>
+          <th style="width:36px"></th>
+          <th>Section</th>
+          <th style="width:90px">Pages</th>
+          <th style="width:80px">Words</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sections %}
+        <tr class="section-row{% if s.sparse %} muted{% endif %}" style="cursor:pointer" onclick="toggleRow({{ s.chunk_index }})">
+          <td style="text-align:center" onclick="event.stopPropagation()">
+            <input type="checkbox" name="chunk_index" value="{{ s.chunk_index }}"
+              id="chk-{{ s.chunk_index }}"
+              onchange="updateCount()"
+              {% if s.selected %}checked{% endif %}>
+          </td>
+          <td>
+            <div style="font-weight:500">{{ s.title }}</div>
+            {% if s.preview %}
+            <div class="muted" style="font-size:0.8em; margin-top:2px">{{ s.preview }}</div>
+            {% endif %}
+            {% if s.sparse %}
+            <div style="font-size:0.75em; color:var(--yellow,#b45309); margin-top:2px">Sparse — may not yield useful tasks</div>
+            {% endif %}
+          </td>
+          <td class="muted" style="font-size:0.85em; white-space:nowrap">{{ s.page_label }}</td>
+          <td class="muted" style="font-size:0.85em">{{ s.word_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="row" style="margin-top:16px; gap:12px; align-items:center">
+    <button class="btn" type="submit" id="submit-btn" disabled>Process selected sections</button>
+    <a class="btn secondary" href="/import/pdf">Cancel</a>
+    <span class="muted" style="font-size:0.85em">Results will be processed in the background. You'll be taken to a progress page.</span>
+  </div>
+</form>
+
+<script>
+function updateCount() {
+  const boxes = document.querySelectorAll('input[name="chunk_index"]');
+  const n = Array.from(boxes).filter(b => b.checked).length;
+  document.getElementById('sel-count').textContent = n + ' selected';
+  document.getElementById('submit-btn').disabled = n === 0;
+  document.getElementById('submit-btn').textContent = n > 0
+    ? 'Process ' + n + ' section' + (n === 1 ? '' : 's') + ' →'
+    : 'Process selected sections';
+}
+
+function toggleAll(state) {
+  document.querySelectorAll('input[name="chunk_index"]').forEach(b => b.checked = state);
+  updateCount();
+}
+
+function toggleRow(idx) {
+  const cb = document.getElementById('chk-' + idx);
+  cb.checked = !cb.checked;
+  updateCount();
+}
+
+updateCount();
+</script>
+{% endblock %}
