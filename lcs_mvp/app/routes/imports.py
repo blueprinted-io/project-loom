@@ -763,7 +763,7 @@ def import_pdf_commit(
                     "AI-imported: check for duplicates and correctness",
                 ),
             )
-            audit("task", record_id, version, "create", actor, note="import:pdf")
+            audit("task", record_id, version, "create", actor, note="import:pdf", conn=conn)
             created_tasks[title] = (record_id, version)
 
         # Insert workflows selected
