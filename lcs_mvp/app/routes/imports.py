@@ -163,7 +163,7 @@ def import_pdf_prepare(
         if existing:
             ingestion_id = str(existing["id"])
             job_status = existing["job_status"]
-            if job_status == "complete":
+            if job_status in ("complete", "partial"):
                 return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
             if job_status == "running":
                 return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
@@ -211,7 +211,7 @@ def import_pdf_sections(request: Request, ingestion_id: str):
         job_status = ing["job_status"]
         if job_status == "running":
             return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
-        if job_status == "complete":
+        if job_status in ("complete", "partial"):
             return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
 
         chunks = conn.execute(
@@ -366,10 +366,12 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
                 )
             conn.commit()
 
-        # Only 'complete' when every chunk in the document has been processed;
-        # otherwise 'partial' so the user can return and process more sections.
+        # Complete when every *selected* chunk has a terminal status.
+        # Unselected chunks remain 'pending' and are intentionally ignored.
         unprocessed = conn.execute(
-            "SELECT COUNT(*) AS n FROM ingestion_chunks WHERE ingestion_id=? AND chunk_status='pending'",
+            "SELECT COUNT(*) AS n FROM ingestion_chunks "
+            "WHERE ingestion_id=? AND selected=1 "
+            "AND chunk_status NOT IN ('done','error','timeout','skipped')",
             (ingestion_id,),
         ).fetchone()["n"]
         final_status = "complete" if unprocessed == 0 else "partial"

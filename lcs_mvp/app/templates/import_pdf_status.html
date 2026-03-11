@@ -161,7 +161,7 @@ function poll() {
       trackChunkChanges(d.chunks || []);
       renderChunks(d.chunks || []);
 
-      if (d.job_status === 'complete') {
+      if (d.job_status === 'complete' || d.job_status === 'partial') {
         clearInterval(pollHandle);
         document.getElementById('progress-bar').style.background = 'var(--green,#16a34a)';
         document.getElementById('progress-bar').style.width = '100%';
