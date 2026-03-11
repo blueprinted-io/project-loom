@@ -473,7 +473,7 @@ def import_pdf_status_json(request: Request, ingestion_id: str):
             raise HTTPException(404)
 
         chunks = conn.execute(
-            "SELECT chunk_index, section_title, chunk_status, pages_json "
+            "SELECT chunk_index, section_title, chunk_status, pages_json, llm_result_json "
             "FROM ingestion_chunks WHERE ingestion_id=? AND selected=1 ORDER BY chunk_index ASC",
             (ingestion_id,),
         ).fetchall()
@@ -481,6 +481,17 @@ def import_pdf_status_json(request: Request, ingestion_id: str):
     total = len(chunks)
     done_statuses = {"done", "error", "timeout", "skipped"}
     done = sum(1 for c in chunks if c["chunk_status"] in done_statuses)
+
+    def _chunk_error(c) -> str | None:
+        """Extract human-readable error string from llm_result_json, if any."""
+        raw = c["llm_result_json"]
+        if not raw:
+            return None
+        try:
+            parsed = json.loads(raw)
+            return str(parsed.get("error")) if "error" in parsed else None
+        except Exception:
+            return None
 
     return JSONResponse({
         "job_status": ing["job_status"],
@@ -493,6 +504,7 @@ def import_pdf_status_json(request: Request, ingestion_id: str):
                 "title": (c["section_title"] or f"Chunk {c['chunk_index'] + 1}").strip(),
                 "status": c["chunk_status"],
                 "pages": _json_load(c["pages_json"]) or [],
+                "error": _chunk_error(c),
             }
             for c in chunks
         ],
