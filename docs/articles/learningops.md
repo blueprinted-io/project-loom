@@ -139,7 +139,7 @@ LearningOps isn’t theory. It’s a direct application of what already works.
 | Dev environments          | Safe-to-fail learning pilots             |
 
 This isn’t metaphor.  
-If L&D operated like product teams, content wouldn’t be something you launch and forget. It’d be something you maintain, monitor, and improve — all the time.
+If L&D operated like product teams, content wouldn’t be something you launch and forget. It’d be something you maintain, monitor, and improve continuously.
 
 ---
 
@@ -157,7 +157,7 @@ You need structure.
    No vague objectives. No fluff.
 
 3. **Delivery-Agnostic Tools**  
-   Assets live in LMS, Slack, Teams, SharePoint — wherever people are.
+   Assets live in LMS, Slack, Teams, SharePoint, or wherever people are.
 
 4. **Feedback Loop**  
    Each asset tracks whether it worked.  

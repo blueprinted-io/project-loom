@@ -70,7 +70,7 @@ xAPI is powerful, but it’s *a toolset, not a solution*. You get raw capability
 
 ---
 
-## cmi5 (Computer Managed Instruction — 5th attempt)
+## cmi5 (Computer Managed Instruction, 5th attempt)
 
 ### What It Is
 
@@ -88,8 +88,8 @@ cmi5 is a specification built on top of xAPI (technically it's a _profile_ of xA
 ### What You *Don’t* Get
 
 - SCORM backward compatibility (you’ll need new content)  
-- A silver bullet — your learning content still needs to be modular and well-structured, the requirement for reimagining learning strategy from xAPI still remains  
-- Broad adoption — cmi5 is emerging, but not yet universal and is often implemented in name only.
+- A silver bullet. Your learning content still needs to be modular and well-structured, and the need to reimagine learning strategy around xAPI still remains.  
+- Broad adoption. cmi5 is emerging, but not yet universal and is often implemented in name only.
 
 cmi5 is the spec xAPI should’ve shipped with. It closes the gaps and gives you the structure needed for real-world implementation but requires a different approach to learning scoping, development, implementation, evaluation and understanding.
 
@@ -191,4 +191,4 @@ If your team is exploring these standards, don’t just ask *what* they do, ask 
 
 ---
 
-*This article is part of a practical series on learning standards and infrastructure. If you're trying to move beyond buzzwords into meaningful learning tech decisions — you're in the right place.*
+*This article is part of a practical series on learning standards and infrastructure. If you're trying to move beyond buzzwords into meaningful learning tech decisions, you're in the right place.*
