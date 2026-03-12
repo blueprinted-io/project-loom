@@ -9,7 +9,7 @@ This one looks at the deeper patterns, ideas that keep resurfacing with new lang
 
 ---
 
-## Why Learning Theory Has Stalled
+## Why Learning Theory Has Effectively Stalled
 
 One of the most important realities behind the surface of modern L&D trends is this: **learning theory as a field has effectively stalled**.  
 
