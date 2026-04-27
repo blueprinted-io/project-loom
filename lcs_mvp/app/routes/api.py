@@ -1651,7 +1651,7 @@ def api_primer_generate_all_levels(request: Request, record_id: str, version: in
         ).fetchone()
         if not src:
             raise HTTPException(404)
-        cfg = _get_llm_config(conn)
+        cfg = _get_llm_config(conn, pipeline="output")
     levels = _llm_generate_all_levels(src["explanation"], src["title"], cfg)
     with db() as conn:
         conn.execute(

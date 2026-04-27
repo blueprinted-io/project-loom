@@ -937,16 +937,8 @@ def _run_changelog_screening(run_id: str, db_path: str) -> None:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
-        cfg_rows = conn.execute("SELECT key, value FROM system_settings WHERE key LIKE 'llm_%'").fetchall()
-        raw_cfg = {r["key"]: r["value"] for r in cfg_rows}
-        cfg = {
-            "llm_base_url": raw_cfg.get("llm_base_url", ""),
-            "llm_api_key": raw_cfg.get("llm_api_key", ""),
-            "llm_model": raw_cfg.get("llm_model", ""),
-            "llm_max_tokens": int(raw_cfg.get("llm_max_tokens", 2000)),
-            "llm_temperature": float(raw_cfg.get("llm_temperature", 0.2)),
-            "llm_timeout_seconds": float(raw_cfg.get("llm_timeout_seconds", 120)),
-        }
+        from .database import _get_llm_config as _glc
+        cfg = _glc(conn, pipeline="extraction")
 
         conn.execute("UPDATE changelog_runs SET job_status='screening' WHERE id=?", (run_id,))
         conn.commit()
@@ -1016,16 +1008,8 @@ def _run_changelog_proposing(run_id: str, db_path: str) -> None:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
-        cfg_rows = conn.execute("SELECT key, value FROM system_settings WHERE key LIKE 'llm_%'").fetchall()
-        raw_cfg = {r["key"]: r["value"] for r in cfg_rows}
-        cfg = {
-            "llm_base_url": raw_cfg.get("llm_base_url", ""),
-            "llm_api_key": raw_cfg.get("llm_api_key", ""),
-            "llm_model": raw_cfg.get("llm_model", ""),
-            "llm_max_tokens": int(raw_cfg.get("llm_max_tokens", 2000)),
-            "llm_temperature": float(raw_cfg.get("llm_temperature", 0.2)),
-            "llm_timeout_seconds": float(raw_cfg.get("llm_timeout_seconds", 120)),
-        }
+        from .database import _get_llm_config as _glc
+        cfg = _glc(conn, pipeline="extraction")
 
         conn.execute("UPDATE changelog_runs SET job_status='proposing' WHERE id=?", (run_id,))
         conn.commit()

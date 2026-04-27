@@ -577,6 +577,8 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN triage_reason TEXT")
         if "task_group" not in chunk_cols:
             conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN task_group INTEGER")
+        if "llm_profile_used" not in chunk_cols:
+            conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN llm_profile_used TEXT")
 
         # ingestions: overall async job state + stored file path for deletion
         rows = conn.execute("PRAGMA table_info(ingestions)").fetchall()
@@ -683,6 +685,22 @@ def init_db_path(db_path: str) -> None:
                 (_key, _default, now_iso, "system"),
             )
 
+        # Migrate: seed per-pipeline LLM profile keys from legacy shared keys.
+        # INSERT OR IGNORE — never overwrite settings an admin has already configured per-profile.
+        _old_llm = {
+            "base_url":        _get_system_setting(conn, "llm_base_url", "") or "",
+            "api_key":         _get_system_setting(conn, "llm_api_key",  "") or "",
+            "model":           _get_system_setting(conn, "llm_model",    "") or "",
+            "timeout_seconds": _get_system_setting(conn, "llm_timeout_seconds", "120") or "120",
+        }
+        for _pipeline in ("triage", "extraction", "output"):
+            for _field, _val in _old_llm.items():
+                conn.execute(
+                    "INSERT INTO system_settings(key, value, updated_at, updated_by) VALUES(?,?,?,?) "
+                    "ON CONFLICT(key) DO NOTHING",
+                    (f"llm_{_pipeline}_{_field}", _val, now_iso, "system"),
+                )
+
         _backfill_workflow_domains(conn)
         _relink_avatars(conn)
 
@@ -705,20 +723,32 @@ def _set_system_setting(conn: sqlite3.Connection, key: str, value: str, updated_
     )
 
 
-def _get_llm_config(conn: sqlite3.Connection) -> dict:
-    """Return LLM provider config as a typed dict with safe defaults."""
+def _get_llm_config(conn: sqlite3.Connection, pipeline: str = "extraction") -> dict:
+    """Return LLM provider config for a named pipeline with safe defaults.
+
+    Per-pipeline keys (llm_{pipeline}_{field}) take precedence; falls back to
+    the legacy shared keys (llm_{field}) so existing deployments keep working
+    until per-pipeline settings are explicitly saved.
+
+    Pipelines: 'triage', 'extraction', 'output'.
+    """
     def _s(k: str, default: str = "") -> str:
         return _get_system_setting(conn, k, default) or default
 
+    def _pf(field: str, default: str = "") -> str:
+        v = _s(f"llm_{pipeline}_{field}")
+        return v if v else _s(f"llm_{field}", default)
+
     return {
-        "llm_base_url":          _s("llm_base_url"),
-        "llm_api_key":           _s("llm_api_key"),
-        "llm_model":             _s("llm_model", ""),
-        "llm_max_tokens":        int(_s("llm_max_tokens", "2000")),
-        "llm_temperature":       float(_s("llm_temperature", "0.2")),
-        "llm_timeout_seconds":   int(_s("llm_timeout_seconds", "120")),
+        "llm_base_url":            _pf("base_url"),
+        "llm_api_key":             _pf("api_key"),
+        "llm_model":               _pf("model"),
+        "llm_timeout_seconds":     int(_pf("timeout_seconds", "120")),
+        "llm_max_tokens":          int(_s("llm_max_tokens", "2000")),
+        "llm_temperature":         float(_s("llm_temperature", "0.2")),
         "llm_max_tasks_per_chunk": int(_s("llm_max_tasks_per_chunk", "5")),
-        "llm_max_chunks_per_run": int(_s("llm_max_chunks_per_run", "8")),
+        "llm_max_chunks_per_run":  int(_s("llm_max_chunks_per_run", "8")),
+        "_pipeline":               pipeline,
     }
 
 

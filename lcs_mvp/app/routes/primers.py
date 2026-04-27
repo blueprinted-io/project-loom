@@ -483,7 +483,7 @@ def primer_generate_all_levels(request: Request, record_id: str, version: int):
             raise HTTPException(404)
         if src["status"] not in ("draft", "returned"):
             raise HTTPException(409, detail="Levels can only be generated for draft or returned primers")
-        cfg = _get_llm_config(conn)
+        cfg = _get_llm_config(conn, pipeline="output")
 
     levels = _llm_generate_all_levels(src["explanation"], src["title"], cfg)
 

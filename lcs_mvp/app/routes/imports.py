@@ -371,18 +371,8 @@ def import_pdf_sections(request: Request, ingestion_id: str, mode: str = Query("
 # PDF import — step 3: triage background task + queue/extraction
 # ---------------------------------------------------------------------------
 
-def _load_llm_cfg_from_conn(conn) -> dict[str, Any]:
-    cfg_rows = conn.execute("SELECT key, value FROM system_settings WHERE key LIKE 'llm_%'").fetchall()
-    raw_cfg = {r["key"]: r["value"] for r in cfg_rows}
-    return {
-        "llm_base_url": raw_cfg.get("llm_base_url", ""),
-        "llm_api_key": raw_cfg.get("llm_api_key", ""),
-        "llm_model": raw_cfg.get("llm_model", ""),
-        "llm_max_tokens": int(raw_cfg.get("llm_max_tokens", 2000)),
-        "llm_temperature": float(raw_cfg.get("llm_temperature", 0.2)),
-        "llm_timeout_seconds": float(raw_cfg.get("llm_timeout_seconds", 120)),
-        "llm_max_tasks_per_chunk": int(raw_cfg.get("llm_max_tasks_per_chunk", 5)),
-    }
+def _load_llm_cfg_from_conn(conn, pipeline: str = "extraction") -> dict[str, Any]:
+    return _get_llm_config(conn, pipeline=pipeline)
 
 
 def _run_triage_background(ingestion_id: str, db_path: str, username: str) -> None:
@@ -392,7 +382,7 @@ def _run_triage_background(ingestion_id: str, db_path: str, username: str) -> No
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
-        cfg = _load_llm_cfg_from_conn(conn)
+        cfg = _load_llm_cfg_from_conn(conn, pipeline="triage")
         conn.execute("UPDATE ingestions SET job_status='triaging' WHERE id=?", (ingestion_id,))
         conn.commit()
 
@@ -409,10 +399,16 @@ def _run_triage_background(ingestion_id: str, db_path: str, username: str) -> No
                 (cr["section_title"] or "").strip(),
                 cfg,
             )
+            provenance = json.dumps({
+                "pipeline": "triage",
+                "base_url": cfg.get("llm_base_url", ""),
+                "model": cfg.get("llm_model", ""),
+                "processed_at": utc_now_iso(),
+            })
             conn.execute(
-                "UPDATE ingestion_chunks SET chunk_type=?, triage_confidence=?, triage_reason=? "
+                "UPDATE ingestion_chunks SET chunk_type=?, triage_confidence=?, triage_reason=?, llm_profile_used=? "
                 "WHERE ingestion_id=? AND chunk_index=?",
-                (result["type"], result["confidence"], result["reason"], ingestion_id, int(cr["chunk_index"])),
+                (result["type"], result["confidence"], result["reason"], provenance, ingestion_id, int(cr["chunk_index"])),
             )
             conn.commit()
 
@@ -491,7 +487,7 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
     conn.execute("PRAGMA busy_timeout = 30000")
 
     try:
-        cfg = _load_llm_cfg_from_conn(conn)
+        cfg = _load_llm_cfg_from_conn(conn, pipeline="extraction")
 
         conn.execute(
             "UPDATE ingestions SET job_status='running', status='in_progress' WHERE id=?",
@@ -586,10 +582,16 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
                     ]
 
                 update_pages = json.dumps(merged_pages) if merged_pages is not None else lead["pages_json"]
+                provenance = json.dumps({
+                    "pipeline": "extraction",
+                    "base_url": cfg.get("llm_base_url", ""),
+                    "model": cfg.get("llm_model", ""),
+                    "processed_at": utc_now_iso(),
+                })
                 conn.execute(
-                    "UPDATE ingestion_chunks SET chunk_status='done', llm_result_json=?, pages_json=? "
+                    "UPDATE ingestion_chunks SET chunk_status='done', llm_result_json=?, pages_json=?, llm_profile_used=? "
                     "WHERE ingestion_id=? AND chunk_index=?",
-                    (json.dumps(data), update_pages, ingestion_id, chunk_index),
+                    (json.dumps(data), update_pages, provenance, ingestion_id, chunk_index),
                 )
                 # Mark children as merged so they don't appear as separate candidates
                 for ci in child_indices:

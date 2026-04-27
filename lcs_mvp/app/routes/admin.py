@@ -332,18 +332,29 @@ def admin_domains_delete(request: Request, name: str = Form("")):
 def admin_llm(request: Request):
     require_admin(request)
     with db() as conn:
-        cfg = _get_llm_config(conn)
-    api_key_set = bool((cfg.get("llm_api_key") or "").strip())
-    return templates.TemplateResponse(request, "admin/llm.html", {"cfg": cfg, "api_key_set": api_key_set})
+        profiles = {p: _get_llm_config(conn, pipeline=p) for p in ("triage", "extraction", "output")}
+        shared = _get_llm_config(conn)  # for shared pipeline-behaviour fields
+    return templates.TemplateResponse(request, "admin/llm.html", {
+        "profiles": profiles,
+        "shared": shared,
+    })
 
 
 @router.post("/admin/llm/save")
 def admin_llm_save(
     request: Request,
-    llm_base_url: str = Form(""),
-    llm_api_key: str = Form(""),
-    llm_model: str = Form(""),
-    llm_timeout_seconds: str = Form("120"),
+    triage_base_url: str = Form(""),
+    triage_api_key: str = Form(""),
+    triage_model: str = Form(""),
+    triage_timeout_seconds: str = Form("120"),
+    extraction_base_url: str = Form(""),
+    extraction_api_key: str = Form(""),
+    extraction_model: str = Form(""),
+    extraction_timeout_seconds: str = Form("120"),
+    output_base_url: str = Form(""),
+    output_api_key: str = Form(""),
+    output_model: str = Form(""),
+    output_timeout_seconds: str = Form("120"),
     llm_max_tokens: str = Form("2000"),
     llm_max_tasks_per_chunk: str = Form("5"),
     llm_max_chunks_per_run: str = Form("8"),
@@ -351,25 +362,33 @@ def admin_llm_save(
     require_admin(request)
     actor = request.state.user
     with db() as conn:
-        _set_system_setting(conn, "llm_base_url", llm_base_url.strip(), actor)
-        _set_system_setting(conn, "llm_model", llm_model.strip(), actor)
-        _set_system_setting(conn, "llm_timeout_seconds", llm_timeout_seconds.strip() or "120", actor)
+        # Per-profile keys (old shared keys kept as fallback — not modified here)
+        for pipeline, base_url, api_key, model, timeout in (
+            ("triage",     triage_base_url,     triage_api_key,     triage_model,     triage_timeout_seconds),
+            ("extraction", extraction_base_url, extraction_api_key, extraction_model, extraction_timeout_seconds),
+            ("output",     output_base_url,     output_api_key,     output_model,     output_timeout_seconds),
+        ):
+            _set_system_setting(conn, f"llm_{pipeline}_base_url", base_url.strip(), actor)
+            _set_system_setting(conn, f"llm_{pipeline}_model", model.strip(), actor)
+            _set_system_setting(conn, f"llm_{pipeline}_timeout_seconds", timeout.strip() or "120", actor)
+            if api_key.strip():
+                _set_system_setting(conn, f"llm_{pipeline}_api_key", api_key.strip(), actor)
+        # Shared pipeline-behaviour keys
         _set_system_setting(conn, "llm_max_tokens", llm_max_tokens.strip() or "2000", actor)
         _set_system_setting(conn, "llm_max_tasks_per_chunk", llm_max_tasks_per_chunk.strip() or "5", actor)
         _set_system_setting(conn, "llm_max_chunks_per_run", llm_max_chunks_per_run.strip() or "8", actor)
-        if llm_api_key.strip():
-            _set_system_setting(conn, "llm_api_key", llm_api_key.strip(), actor)
     return RedirectResponse(url="/admin/llm", status_code=303)
 
 
 @router.get("/admin/llm/probe")
-def admin_llm_probe(request: Request, base_url: str = "", api_key: str = ""):
+def admin_llm_probe(request: Request, base_url: str = "", api_key: str = "", pipeline: str = "extraction"):
     """Probe the LLM endpoint. Accepts optional base_url/api_key query params
-    so the admin can test values before saving. Falls back to saved config."""
+    so the admin can test values before saving. Falls back to saved config for
+    the given pipeline."""
     from fastapi.responses import JSONResponse
     require_admin(request)
     with db() as conn:
-        cfg = _get_llm_config(conn)
+        cfg = _get_llm_config(conn, pipeline=pipeline)
     bu = base_url.strip() or cfg["llm_base_url"]
     key = api_key.strip() or cfg["llm_api_key"]
     result = _llm_probe(bu, key)
@@ -377,18 +396,17 @@ def admin_llm_probe(request: Request, base_url: str = "", api_key: str = ""):
 
 
 @router.get("/admin/llm/models")
-def admin_llm_models(request: Request, base_url: str = "", api_key: str = ""):
+def admin_llm_models(request: Request, base_url: str = "", api_key: str = "", pipeline: str = "extraction"):
     """Fetch available model IDs from the configured LLM endpoint.
 
     base_url and api_key can be passed as query params (pre-save preview).
-    If api_key is blank, falls back to the saved key so the admin doesn't
-    have to re-enter a key they've already stored.
+    If api_key is blank, falls back to the saved key for the given pipeline.
     """
     from fastapi.responses import JSONResponse
     import httpx as _httpx
     require_admin(request)
     with db() as conn:
-        cfg = _get_llm_config(conn)
+        cfg = _get_llm_config(conn, pipeline=pipeline)
 
     bu = (base_url.strip() or cfg["llm_base_url"]).rstrip("/")
     key = api_key.strip() or cfg["llm_api_key"]
