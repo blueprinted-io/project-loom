@@ -195,6 +195,9 @@ def primer_view(request: Request, record_id: str, version: int):
     levels_raw = _json_load(primer.get("levels_json") or "{}")
     levels = levels_raw if isinstance(levels_raw, dict) else {}
 
+    with db() as conn:
+        all_domains = _active_domains(conn)
+
     return templates.TemplateResponse(
         request,
         "primer_view.html",
@@ -205,6 +208,7 @@ def primer_view(request: Request, record_id: str, version: int):
             "workflows_using": workflows_using,
             "all_versions": [dict(r) for r in all_versions],
             "levels": levels,
+            "all_domains": all_domains,
         },
     )
 
@@ -327,6 +331,66 @@ def primer_submit(request: Request, record_id: str, version: int):
         )
     audit("primer", record_id, version, "submit", actor)
     return RedirectResponse(url=f"/primers/{record_id}/{version}", status_code=303)
+
+
+@router.post("/primers/{record_id}/{version}/assign-domain")
+def primer_assign_domain(
+    request: Request,
+    record_id: str,
+    version: int,
+    domain: str = Form(""),
+):
+    """Assign a domain to a domain-less draft primer, creating a new version, then submit it."""
+    require(request.state.role, "primer:submit")
+    actor = request.state.user
+    domain_norm = domain.strip().lower()
+    if not domain_norm:
+        raise HTTPException(400, detail="Domain is required")
+
+    with db() as conn:
+        src = conn.execute(
+            "SELECT * FROM primers WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not src:
+            raise HTTPException(404)
+        if src["status"] != "draft":
+            raise HTTPException(409, detail="Only draft primers can have a domain assigned this way")
+        if (src["domain"] or "").strip():
+            raise HTTPException(409, detail="Primer already has a domain — edit it directly to change")
+        all_domains = _active_domains(conn)
+        if domain_norm not in all_domains:
+            raise HTTPException(400, detail=f"Unknown domain '{domain_norm}'")
+        if not _user_has_domain(conn, actor, domain_norm):
+            raise HTTPException(403, detail=f"Forbidden: you are not authorized for domain '{domain_norm}'")
+
+        latest_v = get_latest_version(conn, "primers", record_id) or version
+        new_v = latest_v + 1
+        now = utc_now_iso()
+
+        conn.execute(
+            """
+            INSERT INTO primers(
+              record_id, version, status,
+              title, summary, explanation, analogies, media_json,
+              domain, levels_json,
+              created_at, updated_at, created_by, updated_by,
+              reviewed_at, reviewed_by, change_note,
+              needs_review_flag, needs_review_note
+            ) SELECT
+              record_id, ?, 'submitted',
+              title, summary, explanation, analogies, media_json,
+              ?, levels_json,
+              created_at, ?, created_by, ?,
+              NULL, NULL, 'domain added',
+              needs_review_flag, needs_review_note
+            FROM primers WHERE record_id=? AND version=?
+            """,
+            (new_v, domain_norm, now, actor, record_id, version),
+        )
+
+    audit("primer", record_id, new_v, "new_version", actor, note=f"from v{version}: domain added")
+    audit("primer", record_id, new_v, "submit", actor)
+    return RedirectResponse(url=f"/primers/{record_id}/{new_v}", status_code=303)
 
 
 @router.post("/primers/{record_id}/{version}/force-submit")
