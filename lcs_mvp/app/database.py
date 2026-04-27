@@ -664,6 +664,7 @@ def init_db_path(db_path: str) -> None:
         for _key, _default in [
             ("auth_mode", "demo"),
             ("auto_submit_on_import", "false"),
+            ("assessments_enabled", "true"),
         ]:
             conn.execute(
                 "INSERT INTO system_settings(key, value, updated_at, updated_by) VALUES(?,?,?,?) "
@@ -715,6 +716,7 @@ def _get_app_settings(conn: sqlite3.Connection) -> dict:
     return {
         "auto_submit_on_import": (_get_system_setting(conn, "auto_submit_on_import", "false") or "false") == "true",
         "import_select_all": (_get_system_setting(conn, "import_select_all", "false") or "false") == "true",
+        "assessments_enabled": (_get_system_setting(conn, "assessments_enabled", "true") or "true") == "true",
     }
 
 

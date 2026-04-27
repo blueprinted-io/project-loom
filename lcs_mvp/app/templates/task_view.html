@@ -190,7 +190,7 @@
       <a class="btn" href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Revise</a>
     {% endif %}
 
-    {% if can(request.state.role, 'assessment:create') %}
+    {% if request.state.assessments_enabled and can(request.state.role, 'assessment:create') %}
       <a class="btn secondary" href="/assessments/new?task_record_id={{ task.record_id }}&task_version={{ task.version }}">New assessment</a>
     {% endif %}
 

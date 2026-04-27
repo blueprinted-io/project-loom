@@ -325,6 +325,8 @@ def refs_peek(request: Request, ref_type: str, record_id: str, version: int, com
 
 @router.get("/assessments", response_class=HTMLResponse)
 def assessments_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, claim: str | None = None):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     q_norm = (q or "").strip().lower()
     domain_norm = (domain or "").strip().lower() or None
     claim_norm = (claim or "").strip().lower() or None
@@ -463,6 +465,8 @@ def assessment_new_form(
     ref_record_id: str | None = None,
     ref_version: int | None = None,
 ):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     require(request.state.role, "assessment:create")
 
     # Support older task_* params, and newer generic ref_* params.
@@ -541,6 +545,8 @@ def assessment_create(
     ref_record_id: list[str] = Form([]),
     ref_version: list[int] = Form([]),
 ):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     require(request.state.role, "assessment:create")
     actor = request.state.user
 
@@ -628,6 +634,8 @@ def assessment_create(
 
 @router.get("/assessments/{record_id}/{version}", response_class=HTMLResponse)
 def assessment_view(request: Request, record_id: str, version: int):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     with db() as conn:
         row = conn.execute(
             "SELECT * FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)
@@ -653,6 +661,8 @@ def assessment_view(request: Request, record_id: str, version: int):
 
 @router.get("/assessments/{record_id}/{version}/edit", response_class=HTMLResponse)
 def assessment_edit_form(request: Request, record_id: str, version: int):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     require(request.state.role, "assessment:revise")
     with db() as conn:
         row = conn.execute(
@@ -708,6 +718,8 @@ def assessment_save(
     ref_record_id: list[str] = Form([]),
     ref_version: list[int] = Form([]),
 ):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     """Immutable records: saving creates a NEW VERSION (draft) with required change_note."""
     require(request.state.role, "assessment:revise")
     actor = request.state.user
@@ -816,6 +828,8 @@ def assessment_save(
 
 @router.post("/assessments/{record_id}/{version}/submit")
 def assessment_submit(request: Request, record_id: str, version: int):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     require(request.state.role, "assessment:submit")
     actor = request.state.user
 
@@ -862,6 +876,8 @@ def assessment_return_for_changes(
     note: str = Form(""),
     severity: str = Form("warning"),
 ):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     require(request.state.role, "assessment:confirm")
     actor = request.state.user
     msg = (note or "").strip()
@@ -895,6 +911,8 @@ def assessment_return_for_changes(
 
 @router.post("/assessments/{record_id}/{version}/confirm")
 def assessment_confirm(request: Request, record_id: str, version: int):
+    if not request.state.assessments_enabled:
+        raise HTTPException(status_code=404)
     require(request.state.role, "assessment:confirm")
     actor = request.state.user
 

@@ -11,7 +11,7 @@
   <a href="/review" class="pill {{ 'active' if not item_type else '' }}">All</a>
   <a href="/review?item_type=task" class="pill {{ 'active' if item_type=='task' else '' }}">Tasks</a>
   <a href="/review?item_type=workflow" class="pill {{ 'active' if item_type=='workflow' else '' }}">Workflows</a>
-  <a href="/review?item_type=assessment" class="pill {{ 'active' if item_type=='assessment' else '' }}">Assessments</a>
+  {% if request.state.assessments_enabled %}<a href="/review?item_type=assessment" class="pill {{ 'active' if item_type=='assessment' else '' }}">Assessments</a>{% endif %}
 </div>
 
 {% if domains %}

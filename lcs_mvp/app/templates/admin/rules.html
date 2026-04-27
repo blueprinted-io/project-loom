@@ -26,6 +26,19 @@
     </label>
   </div>
 
+  <div class="card" style="margin-bottom:16px">
+    <h2 style="margin-top:0">Features</h2>
+    <p class="muted" style="margin-bottom:12px">Enable or disable major feature areas. Disabling a feature hides all related UI and blocks direct URL access. Existing records in the database are preserved and can be restored by re-enabling.</p>
+
+    <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer">
+      <input type="checkbox" name="assessments_enabled" value="true" {% if settings.assessments_enabled %}checked{% endif %} style="margin-top:3px; flex-shrink:0; width:auto" />
+      <span>
+        <strong>Enable assessments</strong>
+        <span class="muted" style="display:block; font-size:0.875em">When off, all assessment content is hidden across the app — nav links, dashboard cards, review queue tab, and the "New assessment" buttons on tasks and workflows. Direct URLs to <code>/assessments</code> return 404.</span>
+      </span>
+    </label>
+  </div>
+
   <div>
     <button class="btn" type="submit">Save</button>
   </div>

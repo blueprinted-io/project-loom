@@ -40,7 +40,7 @@
           <span class="pulse-title">Governance pulse</span>
           <span class="pulse-item" id="pulse-workflows">Workflows: …</span>
           <span class="pulse-item" id="pulse-tasks">Tasks: …</span>
-          <span class="pulse-item" id="pulse-assessments">Assessments: …</span>
+          {% if request.state.assessments_enabled %}<span class="pulse-item" id="pulse-assessments">Assessments: …</span>{% endif %}
           <span class="pulse-item" id="pulse-primers">Primers: …</span>
           <span class="pulse-item" id="pulse-review" style="display:none">Review: …</span>
         </div>
@@ -126,7 +126,7 @@
           }
 
           const asEl = document.getElementById('pulse-assessments');
-          if(asEl) asEl.textContent = `Assessments: ${asmt.draft||0} draft · ${asmt.submitted||0} submitted · ${asmt.confirmed||0} confirmed`;
+          if(asEl && data.assessments) asEl.textContent = `Assessments: ${asmt.draft||0} draft · ${asmt.submitted||0} submitted · ${asmt.confirmed||0} confirmed`;
 
           const pri = data.primers || {};
           const priEl = document.getElementById('pulse-primers');
@@ -364,7 +364,7 @@
         <div class="sidebar-section">
           <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
-          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+          {% if request.state.assessments_enabled %}<a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>{% endif %}
         </div>
 
         <div class="sidebar-section">
@@ -416,7 +416,7 @@
         <div class="sidebar-section">
           <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
-          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+          {% if request.state.assessments_enabled %}<a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>{% endif %}
         </div>
 
       {% elif role == 'audit' %}
@@ -442,14 +442,14 @@
         <div class="sidebar-section">
           <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
-          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+          {% if request.state.assessments_enabled %}<a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>{% endif %}
         </div>
 
       {% elif role == 'content_publisher' %}
         <div class="sidebar-section">
           <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
-          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+          {% if request.state.assessments_enabled %}<a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>{% endif %}
         </div>
 
         <div class="sidebar-section">
@@ -471,7 +471,7 @@
         <div class="sidebar-section">
           <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
-          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+          {% if request.state.assessments_enabled %}<a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>{% endif %}
         </div>
 
         <div class="sidebar-section">
@@ -486,7 +486,7 @@
         <div class="sidebar-section">
           <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
-          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+          {% if request.state.assessments_enabled %}<a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>{% endif %}
         </div>
 
         <div class="sidebar-section">

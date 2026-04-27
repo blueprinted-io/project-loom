@@ -8,7 +8,7 @@ from .config import (
     Role,
     DB_KEY_CTX, DB_PATH_CTX,
 )
-from .database import db, _selected_db_key, _db_path_for_key
+from .database import db, _selected_db_key, _db_path_for_key, _get_system_setting
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +152,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Default unauth state (used by /login rendering).
         request.state.user = ""
         request.state.role = DEFAULT_ROLE
+        request.state.assessments_enabled = True  # safe default; overridden below
 
         if _require_login(request):
             token = (request.cookies.get(SESSION_COOKIE) or "").strip()
@@ -177,5 +178,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     return RedirectResponse(url="/login", status_code=303)
                 # Don't raise inside middleware (can produce noisy exception groups).
                 return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+        # Load feature flags from DB (safe: defaults already set above)
+        try:
+            import sqlite3 as _sqlite3
+            _fc = _sqlite3.connect(request.state.db_path)
+            _fc.row_factory = _sqlite3.Row
+            request.state.assessments_enabled = (
+                _get_system_setting(_fc, "assessments_enabled", "true") or "true"
+            ) == "true"
+            _fc.close()
+        except Exception:
+            pass
 
         return await call_next(request)

@@ -18,6 +18,7 @@ router = APIRouter()
 def home(request: Request):
     role = request.state.role
     user = request.state.user
+    assessments_on = request.state.assessments_enabled
 
     cards: list[dict[str, Any]] = []
     with db() as conn:
@@ -47,11 +48,12 @@ def home(request: Request):
             }
         elif role == "assessment_author":
             cards = [
-                {"title": "Returned Questions", "value": _count_entity_status(conn, "assessment_items", "returned", role, dset), "href": "/assessments?status=returned"},
                 {"title": "Confirmed Tasks", "value": _count_entity_status(conn, "tasks", "confirmed", role, dset), "href": "/tasks?status=confirmed"},
                 {"title": "Confirmed Workflows", "value": _count_entity_status(conn, "workflows", "confirmed", role, dset), "href": "/workflows?status=confirmed"},
-                {"title": "Confirmed Assessments", "value": _count_entity_status(conn, "assessment_items", "confirmed", role, dset), "href": "/assessments?status=confirmed"},
             ]
+            if assessments_on:
+                cards.insert(0, {"title": "Returned Questions", "value": _count_entity_status(conn, "assessment_items", "returned", role, dset), "href": "/assessments?status=returned"})
+                cards.append({"title": "Confirmed Assessments", "value": _count_entity_status(conn, "assessment_items", "confirmed", role, dset), "href": "/assessments?status=confirmed"})
         elif role == "admin":
             admin_panels = _compute_admin_panels(conn, doms, system_health)
             cards = []
@@ -80,30 +82,32 @@ def home(request: Request):
                     (d_lower,),
                 ).fetchone()[0]
 
-                as_count = conn.execute(
-                    """SELECT COUNT(*) FROM (
-                        SELECT record_id, MAX(version) AS v FROM assessment_items GROUP BY record_id
-                    ) sub JOIN assessment_items a ON a.record_id=sub.record_id AND a.version=sub.v,
-                    json_each(COALESCE(a.domains_json,'[]')) je
-                    WHERE a.status='confirmed' AND LOWER(TRIM(je.value))=?""",
-                    (d_lower,),
-                ).fetchone()[0]
-
-                domain_breakdown.append({
+                row: dict[str, Any] = {
                     "domain": d,
                     "tasks": task_count,
                     "workflows": wf_count,
-                    "assessments": as_count,
                     "tasks_href": f"/tasks?status=confirmed&domain={d}",
                     "workflows_href": f"/workflows?status=confirmed&domain={d}",
-                    "assessments_href": f"/assessments?status=confirmed&domain={d}",
-                })
+                }
+                if assessments_on:
+                    as_count = conn.execute(
+                        """SELECT COUNT(*) FROM (
+                            SELECT record_id, MAX(version) AS v FROM assessment_items GROUP BY record_id
+                        ) sub JOIN assessment_items a ON a.record_id=sub.record_id AND a.version=sub.v,
+                        json_each(COALESCE(a.domains_json,'[]')) je
+                        WHERE a.status='confirmed' AND LOWER(TRIM(je.value))=?""",
+                        (d_lower,),
+                    ).fetchone()[0]
+                    row["assessments"] = as_count
+                    row["assessments_href"] = f"/assessments?status=confirmed&domain={d}"
+                domain_breakdown.append(row)
         else:
             cards = [
                 {"title": "Confirmed Tasks", "value": _count_entity_status(conn, "tasks", "confirmed", role, dset), "href": "/tasks?status=confirmed"},
                 {"title": "Confirmed Workflows", "value": _count_entity_status(conn, "workflows", "confirmed", role, dset), "href": "/workflows?status=confirmed"},
-                {"title": "Confirmed Assessments", "value": _count_entity_status(conn, "assessment_items", "confirmed", role, dset), "href": "/assessments?status=confirmed"},
             ]
+            if assessments_on:
+                cards.append({"title": "Confirmed Assessments", "value": _count_entity_status(conn, "assessment_items", "confirmed", role, dset), "href": "/assessments?status=confirmed"})
             domain_breakdown = []
 
         last_audit = conn.execute("SELECT at, actor, action FROM audit_log ORDER BY at DESC LIMIT 1").fetchone()
@@ -120,6 +124,7 @@ def home(request: Request):
             "domain_breakdown": domain_breakdown,
             "system_health": system_health,
             "staleness_days": STALENESS_DAYS,
+            "assessments_enabled": assessments_on,
             # Role flags — computed here so templates don't embed role logic.
             "admin_mode": role == "admin",
             "contributor_mode": role == "contributor",
@@ -127,9 +132,9 @@ def home(request: Request):
             "domain_agnostic_mode": role in ("viewer", "audit", "content_publisher"),
             # Admin alert values — pulled from admin_panels to avoid string-matching in template.
             "alert_blocked_workflows": admin_panels.get("alert_blocked_workflows", 0),
-            "alert_returned_assessments": admin_panels.get("alert_returned_assessments", 0),
+            "alert_returned_assessments": admin_panels.get("alert_returned_assessments", 0) if assessments_on else 0,
             "alert_submitted_workflows": admin_panels.get("alert_submitted_workflows", 0),
-            "alert_draft_assessments": admin_panels.get("alert_draft_assessments", 0),
+            "alert_draft_assessments": admin_panels.get("alert_draft_assessments", 0) if assessments_on else 0,
         },
     )
 
@@ -244,6 +249,7 @@ def pulse(request: Request):
     """
     role = request.state.role
     user = request.state.user
+    assessments_on = request.state.assessments_enabled
 
     with db() as conn:
         # Task counts
@@ -261,12 +267,13 @@ def pulse(request: Request):
             reviewer_domains = _user_domains(conn, user)
 
             if role == "admin":
+                as_clause = " + (SELECT COUNT(*) FROM assessment_items WHERE status='submitted')" if assessments_on else ""
                 reviewer_pending = int(
                     conn.execute(
                         "SELECT ("
                         " (SELECT COUNT(*) FROM tasks WHERE status='submitted') +"
-                        " (SELECT COUNT(*) FROM workflows WHERE status='submitted') +"
-                        " (SELECT COUNT(*) FROM assessment_items WHERE status='submitted')"
+                        " (SELECT COUNT(*) FROM workflows WHERE status='submitted')"
+                        f"{as_clause}"
                         ") AS c"
                     ).fetchone()["c"]
                 )
@@ -286,10 +293,12 @@ def pulse(request: Request):
                     ).fetchall()
                     w = sum(1 for wr in w_rows if rdset.intersection(_normalize_domains(wr["domains_json"])))
 
-                    a_rows = conn.execute(
-                        "SELECT domains_json FROM assessment_items WHERE status='submitted'"
-                    ).fetchall()
-                    a = sum(1 for ar in a_rows if rdset.intersection(_normalize_domains(ar["domains_json"])))
+                    a = 0
+                    if assessments_on:
+                        a_rows = conn.execute(
+                            "SELECT domains_json FROM assessment_items WHERE status='submitted'"
+                        ).fetchall()
+                        a = sum(1 for ar in a_rows if rdset.intersection(_normalize_domains(ar["domains_json"])))
 
                     reviewer_pending = t + w + a
                     role_scoped_submitted = {"tasks": t, "workflows": w, "assessments": a}
@@ -322,11 +331,13 @@ def pulse(request: Request):
             for r in conn.execute("SELECT status, COUNT(*) AS c FROM workflows GROUP BY status").fetchall()
         }
 
-        # Assessment counts
-        as_counts = {
-            r["status"]: int(r["c"])
-            for r in conn.execute("SELECT status, COUNT(*) AS c FROM assessment_items GROUP BY status").fetchall()
-        }
+        # Assessment counts (only when enabled)
+        as_counts: dict[str, int] = {}
+        if assessments_on:
+            as_counts = {
+                r["status"]: int(r["c"])
+                for r in conn.execute("SELECT status, COUNT(*) AS c FROM assessment_items GROUP BY status").fetchall()
+            }
 
         # Primer counts
         primer_counts = {
@@ -351,7 +362,7 @@ def pulse(request: Request):
             "draft": as_counts.get("draft", 0),
             "submitted": as_counts.get("submitted", 0),
             "confirmed": as_counts.get("confirmed", 0),
-        },
+        } if assessments_on else None,
         "primers": {
             "draft": primer_counts.get("draft", 0),
             "submitted": primer_counts.get("submitted", 0),
@@ -363,6 +374,7 @@ def pulse(request: Request):
         },
         "role_scoped": role_scoped_submitted,
         "role": role,
+        "assessments_enabled": assessments_on,
         "audit": {
             "last": dict(last_audit) if last_audit else None,
         },
