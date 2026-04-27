@@ -1236,9 +1236,14 @@ def _commit_schema10_payload(
         title = str(t.get("title", "")).strip() or procedure_name
         outcome = str(t.get("outcome", "")).strip()
         procedure_name = procedure_name or title
-        facts = t.get("facts") or []
-        concepts = t.get("concepts") or []
-        deps = t.get("dependencies") or []
+        def _coerce_list(v: Any) -> list:
+            if isinstance(v, str):
+                return [v] if v else []
+            return v if isinstance(v, list) else []
+
+        facts = _coerce_list(t.get("facts"))
+        concepts = _coerce_list(t.get("concepts"))
+        deps = _coerce_list(t.get("dependencies"))
         steps = t.get("steps") or []
         steps_norm = _normalize_steps(steps)
         if not steps_norm:
