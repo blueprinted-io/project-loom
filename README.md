@@ -8,6 +8,17 @@ It defines work as structured, governed records (Tasks + Workflows) so content d
 
 ![blueprinted.io workflow](lcs_mvp/app/static/blueprinted-diagram.svg)
 
+---
+
+> **Status: MVP complete — active development has moved on.**
+>
+> This repository is the working proof-of-concept that validated the model: governed Tasks, Workflows, and Primers with a review lifecycle, PDF ingestion, and export to multiple training formats. It runs on SQLite with a FastAPI backend and is fully functional.
+>
+> The production platform is a ground-up rebuild on proper foundations — PostgreSQL + pgvector, real OIDC authentication, an API-first architecture, a redesigned ingestion pipeline, and a companion frontend. The governance model and record types are unchanged; the rebuild is about foundations, not a redesign. That work is private and in active development.
+>
+> This repo remains the best way to run blueprinted.io locally and understand the core model.
+
+---
 
 ## Why (LearningOps)
 
