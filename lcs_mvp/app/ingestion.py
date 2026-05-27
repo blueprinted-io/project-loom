@@ -33,12 +33,15 @@ def _pdf_is_scanned(pages: list[dict[str, Any]], threshold_chars_per_page: int =
     return (total / len(pages)) < threshold_chars_per_page
 
 
-def _pdf_extract_pages(pdf_path: str) -> list[dict[str, Any]]:
+def _pdf_extract_pages(pdf_path: str, on_page=None) -> list[dict[str, Any]]:
     reader = PdfReader(pdf_path)
+    total = len(reader.pages)
     pages: list[dict[str, Any]] = []
     for idx, page in enumerate(reader.pages, start=1):
         text = page.extract_text() or ""
         pages.append({"page": idx, "text": text})
+        if on_page:
+            on_page(idx, total)
     return pages
 
 
@@ -613,8 +616,8 @@ _TRIAGE_SYSTEM = """Classify this section of technical documentation as exactly 
 - "primer": conceptual or explanatory material, covering how something works, why it behaves that way, trade-off analysis, or guidance on when to choose one approach over another. No imperative steps; declarative, not instructional.
 - "ignore": administrative, introductory, legal, appendix, glossary, index, or no actionable content
 
-Do not use em dashes (—) in any output. Use commas, colons, or rewrite instead.
-Return JSON only — no markdown, no commentary:
+Do not use em dashes (—) in any output. Hard rule, no exceptions. Use commas, colons, or rewrite instead.
+Return JSON only. No markdown, no commentary:
 {"type": "task|primer|ignore", "confidence": 0.0, "reason": "one sentence"}"""
 
 _EXTRACT_TASK_SYSTEM = """You are extracting structured task records from a section of technical documentation.
@@ -627,21 +630,21 @@ title: A concise noun phrase (5–10 words) naming the task from the operator's 
 
 outcome: A single sentence in passive voice describing the observable end state after all steps are complete. Specific to this procedure.
 
-facts: Background knowledge the learner needs about the subject matter before they can make sense of this task. The "what" — what are the components involved, what do they do, what are they for. This is not technical reference data (commands and port numbers belong in steps); it is the definitional understanding a learner needs so they are not confused about what they are working with. Can be short for simple tasks, long for complex ones. Write each as a complete sentence.
-  Good: "Veeam Agent for Microsoft Windows is a backup agent installed locally on each Windows machine that Veeam will protect." / "iscsid is the iSCSI daemon that manages active iSCSI sessions on the local machine." / "open-iscsi is the Linux iSCSI initiator stack — the complete set of kernel modules and userspace tools that allow a Linux machine to connect to iSCSI targets."
+facts: Background knowledge the learner needs about the subject matter before they can make sense of this task. The "what": what are the components involved, what do they do, what are they for. This is not technical reference data (commands and port numbers belong in steps); it is the definitional understanding a learner needs so they are not confused about what they are working with. Can be short for simple tasks, long for complex ones. Write each as a complete sentence.
+  Good: "Veeam Agent for Microsoft Windows is a backup agent installed locally on each Windows machine that Veeam will protect." / "iscsid is the iSCSI daemon that manages active iSCSI sessions on the local machine." / "open-iscsi is the Linux iSCSI initiator stack, comprising the complete set of kernel modules and userspace tools that allow a Linux machine to connect to iSCSI targets."
   Bad: "The default iSCSI port is 3260." (technical trivia, not definitional knowledge) / "Run sudo apt install open-iscsi." (belongs in steps)
 
-concepts: The specific reason THIS task must be performed — not a general description of the technology. Every task in a product has a different concept; if the concept you write could apply equally to a different task in the same product, it is too generic and must be rewritten. Ask: what specifically breaks, fails, or cannot happen if this particular task is skipped? Write in plain English. A substantive explanation of one or two paragraphs is expected; do not summarise to a single line. Implementation details and "by the way" information belong in step notes, not here.
-  Good (for "Install Veeam Agent"): a paragraph explaining that Veeam uses an agent-based architecture — the Veeam server cannot back up a Windows machine unless an agent is running locally on it, because the agent is the only component that can interface with that machine's VSS and OS-level APIs. Without this installation step, no backup jobs targeting this machine can run.
-  Good (for "Configure a backup job"): a paragraph explaining that installing the agent alone does not protect any data — the agent is passive until a job explicitly defines what to back up, where to store it, and when to run. Without a configured job, the machine remains unprotected even with the agent installed.
-  Bad: any sentence that describes what the product does in general ("Veeam Agent provides backup and recovery capabilities...") — this would be true regardless of which task is being performed and tells the learner nothing about why this specific task is necessary.
+concepts: The specific reason THIS task must be performed, not a general description of the technology. Every task in a product has a different concept; if the concept you write could apply equally to a different task in the same product, it is too generic and must be rewritten. Ask: what specifically breaks, fails, or cannot happen if this particular task is skipped? Write in plain English. A substantive explanation of one or two paragraphs is expected; do not summarise to a single line. Implementation details and "by the way" information belong in step notes, not here.
+  Good (for "Install Veeam Agent"): a paragraph explaining that Veeam uses an agent-based architecture: the Veeam server cannot back up a Windows machine unless an agent is running locally on it, because the agent is the only component that can interface with that machine's VSS and OS-level APIs. Without this installation step, no backup jobs targeting this machine can run.
+  Good (for "Configure a backup job"): a paragraph explaining that installing the agent alone does not protect any data; the agent is passive until a job explicitly defines what to back up, where to store it, and when to run. Without a configured job, the machine remains unprotected even with the agent installed.
+  Bad: any sentence that describes what the product does in general ("Veeam Agent provides backup and recovery capabilities..."), because this would be true regardless of which task is being performed and tells the learner nothing about why this specific task is necessary.
 
 dependencies: Specific preconditions that must be true before the operator can start. Full sentences.
   Good: "Ubuntu machine is accessible with sudo privileges." / "No backup jobs are currently running."
 
 software_name: The name of the software product this content relates to, as it appears in the source document (e.g. "Veeam Agent for Microsoft Windows", "Ubuntu", "PostgreSQL"). null if not determinable.
 
-software_version: The version of that software this content was written for, exactly as it appears in the source document — in headers, titles, footers, or version declarations (e.g. "6.1", "22.04 LTS", "v3.2.1"). null if the document does not state a version.
+software_version: The version of that software this content was written for, exactly as it appears in the source document: in headers, titles, footers, or version declarations (e.g. "6.1", "22.04 LTS", "v3.2.1"). null if the document does not state a version.
 
 procedure_name: A short imperative phrase naming the method used, distinct from the task title.
   Example: title "Upgrade Veeam Agent for Microsoft Windows" → procedure_name "Interactive upgrade via Control Panel"
@@ -653,11 +656,11 @@ steps: Each step is a single physical or digital action.
   - Do NOT start with abstract verbs: configure, manage, set up, ensure, handle, prepare, edit.
   - One action only. If the step contains "and", "then", or "also", split it into two consecutive steps.
   - text: the instruction itself.
-  - completion: observable confirmation the step is done. Specific — not "Step is complete." or "Done."
+  - completion: observable confirmation the step is done. Specific, not "Step is complete." or "Done."
       Good: "Terminal shows 'OK'." / "Wizard advances to the License Agreement screen."
       Bad: "Software is installed." / "Step is complete."
-  - actions: array of substeps giving the concrete method — menu navigation paths, exact CLI commands, keyboard shortcuts. Empty array [] if the step text is self-explanatory.
-  - notes: "oh by the way" information from the source — edge cases, uncommon configurations, or conditional caveats that don't always apply. Extract from callouts, notes, or asides in the source text. null if none.
+  - actions: array of substeps giving the concrete method: menu navigation paths, exact CLI commands, keyboard shortcuts. Empty array [] if the step text is self-explanatory.
+  - notes: "oh by the way" information from the source: edge cases, uncommon configurations, or conditional caveats that don't always apply. Extract from callouts, notes, or asides in the source text. null if none.
 
 ## Output rules
 
@@ -669,7 +672,7 @@ steps: Each step is a single physical or digital action.
 
 ## Example
 
-{"tasks":[{"id":"T001","title":"Install the iSCSI initiator utilities","outcome":"The open-iscsi package is installed and the iscsid service is running on the Ubuntu machine.","software_name":"open-iscsi","software_version":null,"procedure_name":"Install open-iscsi via apt","facts":["open-iscsi is the Linux iSCSI initiator stack — the complete set of kernel modules and userspace tools that allow a Linux machine to discover, connect to, and maintain sessions with iSCSI targets.","iscsid is the iSCSI daemon process; it runs in the background and manages all active iSCSI sessions on the local machine.","iscsiadm is the command-line management interface for iSCSI on Linux; it is installed as part of open-iscsi and is used for all subsequent iSCSI configuration and discovery operations."],"concepts":["Without open-iscsi installed, a Linux machine cannot participate in iSCSI at all — there is no driver to make connections, no daemon to manage sessions, and no tooling to configure targets. This is not a general statement about what iSCSI is; it is the specific reason this installation task must come first in any iSCSI workflow: every subsequent task (discovery, login, persistence, mounting) depends on this stack being present and running. Skipping or deferring this task makes all other iSCSI tasks impossible to perform."],"dependencies":["Ubuntu machine is accessible with sudo privileges.","Machine has internet or local repository access."],"irreversible":false,"steps":[{"text":"Update the package index.","completion":"Completes without error.","actions":["sudo apt update"],"notes":null},{"text":"Install the open-iscsi package.","completion":"Completes without error, confirming open-iscsi and iscsiadm are installed.","actions":["sudo apt install open-iscsi"],"notes":"If open-iscsi is already installed, apt will report 'open-iscsi is already the newest version' and no further action is required."},{"text":"Enable the iscsid service to start on boot.","completion":"Returns a symlink confirmation line.","actions":["sudo systemctl enable iscsid"],"notes":"On some Ubuntu versions, open-iscsi enables iscsid automatically on installation — if so, this command returns without output and no further action is needed."},{"text":"Start the iscsid service.","completion":"Returns to prompt without error.","actions":["sudo systemctl start iscsid"],"notes":null},{"text":"Confirm the service is active.","completion":"Output shows Active: active (running).","actions":["sudo systemctl status iscsid"],"notes":"On some minimal Ubuntu installations the service may show as 'inactive (dead)' immediately after install — if so, repeat the start command and check again."}]}]}"""
+{"tasks":[{"id":"T001","title":"Install the iSCSI initiator utilities","outcome":"The open-iscsi package is installed and the iscsid service is running on the Ubuntu machine.","software_name":"open-iscsi","software_version":null,"procedure_name":"Install open-iscsi via apt","facts":["open-iscsi is the Linux iSCSI initiator stack, comprising the complete set of kernel modules and userspace tools that allow a Linux machine to discover, connect to, and maintain sessions with iSCSI targets.","iscsid is the iSCSI daemon process; it runs in the background and manages all active iSCSI sessions on the local machine.","iscsiadm is the command-line management interface for iSCSI on Linux; it is installed as part of open-iscsi and is used for all subsequent iSCSI configuration and discovery operations."],"concepts":["Without open-iscsi installed, a Linux machine cannot participate in iSCSI at all: there is no driver to make connections, no daemon to manage sessions, and no tooling to configure targets. This is not a general statement about what iSCSI is; it is the specific reason this installation task must come first in any iSCSI workflow: every subsequent task (discovery, login, persistence, mounting) depends on this stack being present and running. Skipping or deferring this task makes all other iSCSI tasks impossible to perform."],"dependencies":["Ubuntu machine is accessible with sudo privileges.","Machine has internet or local repository access."],"irreversible":false,"steps":[{"text":"Update the package index.","completion":"Completes without error.","actions":["sudo apt update"],"notes":null},{"text":"Install the open-iscsi package.","completion":"Completes without error, confirming open-iscsi and iscsiadm are installed.","actions":["sudo apt install open-iscsi"],"notes":"If open-iscsi is already installed, apt will report 'open-iscsi is already the newest version' and no further action is required."},{"text":"Enable the iscsid service to start on boot.","completion":"Returns a symlink confirmation line.","actions":["sudo systemctl enable iscsid"],"notes":"On some Ubuntu versions, open-iscsi enables iscsid automatically on installation; if so, this command returns without output and no further action is needed."},{"text":"Start the iscsid service.","completion":"Returns to prompt without error.","actions":["sudo systemctl start iscsid"],"notes":null},{"text":"Confirm the service is active.","completion":"Output shows Active: active (running).","actions":["sudo systemctl status iscsid"],"notes":"On some minimal Ubuntu installations the service may show as 'inactive (dead)' immediately after install; if so, repeat the start command and check again."}]}]}"""
 
 
 def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
@@ -767,7 +770,7 @@ def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) 
 
 _EXTRACT_PRIMER_SYSTEM = """You are extracting structured primer records from conceptual technical documentation.
 
-A primer is a standalone conceptual document that explains *why* and *how* — not *what to do*.
+A primer is a standalone conceptual document that explains *why* and *how*, not *what to do*.
 
 ## Fields
 
@@ -809,7 +812,7 @@ def _llm_generate_all_levels(explanation: str, title: str, cfg: dict) -> dict[st
     results: dict[str, Any] = {}
     for level_key, level_def in _LEVEL_DEFINITIONS.items():
         user_msg = (
-            f"TARGET LEVEL: {level_key} — {level_def}\n\n"
+            f"TARGET LEVEL: {level_key}: {level_def}\n\n"
             f"TITLE: {title}\n\n"
             f"SOURCE CONTENT:\n{explanation}"
         )
@@ -883,7 +886,7 @@ def _version_gte(task_ver: str, changelog_ver: str) -> bool:
 
 _CHANGELOG_TRIAGE_SYSTEM = """You are doing a fast first-pass filter to identify which task titles could plausibly be affected by a software changelog.
 
-Given a list of tasks by ID and title, return only the IDs of tasks whose title describes a procedure that the changelog explicitly changes. Exclude tasks whose titles are unrelated to any area mentioned in the changelog. You are not doing detailed analysis — just filtering out tasks that are clearly unrelated.
+Given a list of tasks by ID and title, return only the IDs of tasks whose title describes a procedure that the changelog explicitly changes. Exclude tasks whose titles are unrelated to any area mentioned in the changelog. You are not doing detailed analysis, just filtering out tasks that are clearly unrelated.
 
 Exclude a task if its title covers a completely different area than anything in the changelog.
 Include a task if its title names a procedure, feature, or component that the changelog explicitly mentions changing.
@@ -969,7 +972,7 @@ Output rules:
 1. Output valid JSON only. No preamble, no markdown fences.
 2. Every field must be present even if unchanged.
 3. Do not invent content not supported by the changelog.
-4. Do not use em dashes. Use commas, colons, or rewrite instead.
+4. Do not use em dashes (—) anywhere. Hard rule, no exceptions. Use commas, colons, or rewrite instead.
 
 {"title":"...","outcome":"...","procedure_name":"...","software_name":null,"software_version":null,"facts":[],"concepts":[],"dependencies":[],"irreversible":false,"steps":[{"text":"...","completion":"...","actions":[],"notes":null}]}"""
 

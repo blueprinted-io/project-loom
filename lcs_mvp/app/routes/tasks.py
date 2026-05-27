@@ -775,10 +775,11 @@ def task_confirm(request: Request, record_id: str, version: int):
                     ),
                 )
 
-        # Deprecate any previously confirmed version
+        # Deprecate any previously confirmed or still-submitted versions superseded by this one
         conn.execute(
-            "UPDATE tasks SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
-            (utc_now_iso(), actor, record_id),
+            "UPDATE tasks SET status='deprecated', updated_at=?, updated_by=?"
+            " WHERE record_id=? AND status IN ('confirmed', 'submitted') AND version != ?",
+            (utc_now_iso(), actor, record_id, version),
         )
 
         conn.execute(
@@ -821,10 +822,11 @@ def task_force_confirm(request: Request, record_id: str, version: int):
         # Still enforce: you can't confirm an empty/bad record (structure checks are enforced earlier).
         # Admin override is for lifecycle, not semantics.
 
-        # Deprecate any previously confirmed version
+        # Deprecate any previously confirmed or still-submitted versions superseded by this one
         conn.execute(
-            "UPDATE tasks SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
-            (utc_now_iso(), actor, record_id),
+            "UPDATE tasks SET status='deprecated', updated_at=?, updated_by=?"
+            " WHERE record_id=? AND status IN ('confirmed', 'submitted') AND version != ?",
+            (utc_now_iso(), actor, record_id, version),
         )
 
         conn.execute(

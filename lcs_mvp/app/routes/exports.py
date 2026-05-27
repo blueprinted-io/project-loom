@@ -973,7 +973,7 @@ def _build_presentation_payload(conn, workflow_record_id: str, workflow_version:
 
 
 # ---------------------------------------------------------------------------
-# Export package (ZIP) — format-specific LLM prompt bundles
+# Export package (ZIP): format-specific LLM prompt bundles
 # ---------------------------------------------------------------------------
 
 _EXPORT_FORMATS: dict[str, str] = {
@@ -985,16 +985,16 @@ _EXPORT_FORMATS: dict[str, str] = {
 
 _FORMAT_PROMPTS: dict[str, str] = {
     "ilt_slides": """\
-# Export Package — ILT Slides
+# Export Package: ILT Slides
 
 You are generating a slide deck for an instructor-led training (ILT) session from a Blueprinted workflow export package.
 
 This ZIP contains:
-- `data.json` — full structured workflow and task content
-- `images/` — screenshots and diagrams (referenced by task_record_id)
-- `logos/` — client logo file (e.g. `client-logo.png`); use it if present
-- `styles.md` — visual design specification (colours, typography, spacing, buttons)
-- `editorial.md` — writing rules, product name spelling, and tone guidance
+- `data.json`: full structured workflow and task content
+- `images/`: screenshots and diagrams (referenced by task_record_id)
+- `logos/`: client logo file (e.g. `client-logo.png`); use it if present
+- `styles.md`: visual design specification (colours, typography, spacing, buttons)
+- `editorial.md`: writing rules, product name spelling, and tone guidance
 
 Read `styles.md` and `editorial.md` before generating output. They are authoritative. Where any instruction in this prompt conflicts with those files, the guidance in those files takes precedence.
 
@@ -1010,11 +1010,11 @@ Before generating output, understand what each entity is.
 
 A Workflow is a composite outcome made of ordered Tasks. It has:
 
-- `title` — learner-facing name
-- `objective` — the organisation-defined outcome the workflow produces
-- `record_id` — unique identifier
-- `version` — content version number
-- `tasks[]` — ordered list of Task references
+- `title`: learner-facing name
+- `objective`: the organisation-defined outcome the workflow produces
+- `record_id`: unique identifier
+- `version`: content version number
+- `tasks[]`: ordered list of Task references
 
 Task order is strict and reflects capability dependencies only.
 
@@ -1022,15 +1022,15 @@ Task order is strict and reflects capability dependencies only.
 
 A Task is an atomic, self-contained unit of performance. It produces exactly one observable outcome. A Task has:
 
-- `title` — verb-driven learner-facing name
-- `outcome` — the observable result when the task is complete
-- `facts[]` — literal information the learner must know before executing the task (discrete, verifiable statements)
-- `concepts[]` — the mental models required to understand WHY the steps work
-- `procedure_name` — the name of the step sequence
-- `steps[]` — ordered atomic instructions
-- `dependencies[]` — conditions or access requirements that must be true before this task can be executed
-- `task_assets[]` — optional media objects (see Media below)
-- `irreversible` — boolean; true means the task cannot be undone
+- `title`: verb-driven learner-facing name
+- `outcome`: the observable result when the task is complete
+- `facts[]`: literal information the learner must know before executing the task (discrete, verifiable statements)
+- `concepts[]`: the mental models required to understand WHY the steps work
+- `procedure_name`: the name of the step sequence
+- `steps[]`: ordered atomic instructions
+- `dependencies[]`: conditions or access requirements that must be true before this task can be executed
+- `task_assets[]`: optional media objects (see Media below)
+- `irreversible`: boolean; true means the task cannot be undone
 
 Facts without Concepts produce rote behaviour. Concepts without Facts produce abstraction. Neither produces capability without the Procedure. Present all three.
 
@@ -1038,11 +1038,11 @@ Facts without Concepts produce rote behaviour. Concepts without Facts produce ab
 
 Each Step inside a Task has:
 
-- `text` — (required) the primary action in imperative form
-- `actions[]` — (optional) sub-steps describing HOW to execute the step
-- `completion` — (required) the observable signal confirming the step is complete
-- `notes` — (optional) additional context or warnings
-- `screenshots[]` — (optional) image filenames in `images/{task_record_id}/`
+- `text`: (required) the primary action in imperative form
+- `actions[]`: (optional) sub-steps describing HOW to execute the step
+- `completion`: (required) the observable signal confirming the step is complete
+- `notes`: (optional) additional context or warnings
+- `screenshots[]`: (optional) image filenames in `images/{task_record_id}/`
 
 ### Primer
 
@@ -1056,9 +1056,9 @@ Primers establish orientation and context before the learner encounters task pro
 
 Each task asset object has:
 
-- `url` — fully-qualified external URL
-- `type` — one of: `video`, `demo`, `image`, `audio`, `module`, `link`
-- `label` — short descriptive label
+- `url`: fully-qualified external URL
+- `type`: one of: `video`, `demo`, `image`, `audio`, `module`, `link`
+- `label`: short descriptive label
 
 Reference media assets as clearly labelled links with the `label` text. Do not attempt to embed external URLs. For `type: demo` (Storylane), note it as an interactive demo link. For `type: video`, note it as a video resource. Include media references on the context or procedure slide for the relevant task.
 
@@ -1066,13 +1066,13 @@ Reference media assets as clearly labelled links with the `label` text. Do not a
 
 ## Visual-first design principle
 
-Slides must lead with visuals, not text. Every time you can replace a bullet list with a diagram, icon grid, visual grouping, or table layout — do it. Learners in a live session respond to visual stimuli, not walls of text. Apply this principle slide by slide:
+Slides must lead with visuals, not text. Every time you can replace a bullet list with a diagram, icon grid, visual grouping, or table layout: do it. Learners in a live session respond to visual stimuli, not walls of text. Apply this principle slide by slide:
 
 - **Facts**: do not list them as plain bullets. Represent them as a grid of labelled cards or a two-column icon-plus-text layout. If there are 3 or more facts, use a card grid (3-up or 4-up). Each card: short label at top, fact statement below.
-- **Concepts**: use a visual metaphor where possible — a simple diagram, a before/after comparison, or a cause-effect layout. If the concept is abstract, a labelled diagram with arrows is better than a paragraph.
+- **Concepts**: use a visual metaphor where possible: a simple diagram, a before/after comparison, or a cause-effect layout. If the concept is abstract, a labelled diagram with arrows is better than a paragraph.
 - **Primers** (pre-reading slide): render each primer as a distinct visual card showing title and one-line summary. Never list them as plain text.
 - **Procedures**: use a numbered step flow (horizontal or vertical) rather than a plain numbered list. Show step number, action, and completion signal as three discrete visual zones per step. Split across slides if more than 4 steps.
-- **Summary slide**: use a visual timeline or numbered card row showing each task title — not a plain bullet list.
+- **Summary slide**: use a visual timeline or numbered card row showing each task title: not a plain bullet list.
 - Slide text should act as a label for a visual, not as the primary content. If a slide has more than 25 words of body text, redesign it.
 
 Express all visual layouts in Markdown using tables, block structures, or clearly labelled ASCII layout diagrams so a human or tool can recreate them faithfully in PowerPoint.
@@ -1084,26 +1084,26 @@ Express all visual layouts in Markdown using tables, block structures, or clearl
 Produce a complete slide deck in Markdown format (one `---` separator per slide).
 Use the following structure:
 
-1. **Title slide** — workflow title; client logo if present in `logos/` (top corner, native aspect ratio); and a visually prominent **social contract statement**: "By the end of this session you will have [workflow.objective]" — this must be large, standalone, and impossible to miss; include a simple visual motif (e.g. a relevant icon or abstract shape description)
-2. **Learning objectives slide** — task outcomes as a visual card row, not a plain bullet list; one card per task showing the outcome in one line
-3. **Pre-reading slide** (if primers present) — one visual card per primer showing title and one-line summary
+1. **Title slide**: workflow title; client logo if present in `logos/` (top corner, native aspect ratio); and a visually prominent **social contract statement**: "By the end of this session you will have [workflow.objective]": this must be large, standalone, and impossible to miss; include a simple visual motif (e.g. a relevant icon or abstract shape description)
+2. **Learning objectives slide**: task outcomes as a visual card row, not a plain bullet list; one card per task showing the outcome in one line
+3. **Pre-reading slide** (if primers present): one visual card per primer showing title and one-line summary
 4. For each task in order:
-   a. **Section divider slide** — task title only, large centred heading; include a brief visual context cue (e.g. icon, colour block description, or thematic illustration note)
-   b. **Context slide** — facts as a card grid or icon-list layout; one line of concept framing below; list any dependencies as a short visual checklist; include media asset references if present
-   c. **Procedure slide(s)** — steps as a numbered visual flow; split across slides if more than 4 steps; note irreversible steps with a caution marker; include `actions` as indented sub-items
-   d. **Screenshot slide(s)** — one slide per screenshot image if present; caption with the step it relates to; reference path: `images/{task_record_id}/{filename}`; always insert images at their native aspect ratio — never stretch, crop, or scale to fill the slide; use "fit" sizing with centred alignment and empty space around the image if needed
-   e. **Completion slide** — "How do you know you're done?" — render completion signals as a visual checklist, not a plain bullet list
-5. **Summary slide** — task titles in a visual numbered card row or timeline layout
-6. **Closing slide** — a visually prominent **closing statement**: "You have just [workflow.objective]" — large, standalone, and distinct from the summary slide; this is the closing of the social contract opened on the title slide; follow with "Questions?" beneath it
+   a. **Section divider slide**: task title only, large centred heading; include a brief visual context cue (e.g. icon, colour block description, or thematic illustration note)
+   b. **Context slide**: facts as a card grid or icon-list layout; one line of concept framing below; list any dependencies as a short visual checklist; include media asset references if present
+   c. **Procedure slide(s)**: steps as a numbered visual flow; split across slides if more than 4 steps; note irreversible steps with a caution marker; include `actions` as indented sub-items
+   d. **Screenshot slide(s)**: one slide per screenshot image if present; caption with the step it relates to; reference path: `images/{task_record_id}/{filename}`; always insert images at their native aspect ratio: never stretch, crop, or scale to fill the slide; use "fit" sizing with centred alignment and empty space around the image if needed
+   e. **Completion slide**: "How do you know you're done?": render completion signals as a visual checklist, not a plain bullet list
+5. **Summary slide**: task titles in a visual numbered card row or timeline layout
+6. **Closing slide**: a visually prominent **closing statement**: "You have just [workflow.objective]": large, standalone, and distinct from the summary slide; this is the closing of the social contract opened on the title slide; follow with "Questions?" beneath it
 
 ---
 
 ## Style rules
 - Tone: professional, direct, second-person ("you will", "select", "click")
 - Maximum 25 words of body text per slide; prefer visual layouts over text
-- No plain bullet lists — always use a card grid, icon list, flow diagram, or table instead
+- No plain bullet lists: always use a card grid, icon list, flow diagram, or table instead
 - Speaker notes: add below each slide (under a `> Notes:` blockquote) with talking points, timing cues, and facilitator tips
-- Do not use em dashes; use commas or colons instead
+- Do not use em dashes (—) anywhere. Hard rule, no exceptions. Use commas or colons instead
 - Include the workflow record_id and version in the footer of the title slide
 - Ensure content is clear, concise, and visually engaging for live training; adhere to learning best practices; ensure sections are properly linked to create a throughline across the whole product
 
@@ -1136,16 +1136,16 @@ Use the following structure:
 """,
 
     "ilt_facilitators_guide": """\
-# Export Package — ILT Facilitators Guide
+# Export Package: ILT Facilitators Guide
 
 You are generating a facilitator guide for an instructor-led training (ILT) session from a Blueprinted workflow export package.
 
 This ZIP contains:
-- `data.json` — full structured workflow and task content
-- `images/` — screenshots and diagrams (reference these to direct facilitators' attention)
-- `logos/` — client logo file (e.g. `client-logo.png`); use it if present
-- `styles.md` — visual design specification (colours, typography, spacing, buttons)
-- `editorial.md` — writing rules, product name spelling, and tone guidance
+- `data.json`: full structured workflow and task content
+- `images/`: screenshots and diagrams (reference these to direct facilitators' attention)
+- `logos/`: client logo file (e.g. `client-logo.png`); use it if present
+- `styles.md`: visual design specification (colours, typography, spacing, buttons)
+- `editorial.md`: writing rules, product name spelling, and tone guidance
 
 Read `styles.md` and `editorial.md` before generating output. They are authoritative. Where any instruction in this prompt conflicts with those files, the guidance in those files takes precedence.
 
@@ -1161,11 +1161,11 @@ Before generating output, understand what each entity is.
 
 A Workflow is a composite outcome made of ordered Tasks. It has:
 
-- `title` — learner-facing name
-- `objective` — the organisation-defined outcome the workflow produces
-- `record_id` — unique identifier
-- `version` — content version number
-- `tasks[]` — ordered list of Task references
+- `title`: learner-facing name
+- `objective`: the organisation-defined outcome the workflow produces
+- `record_id`: unique identifier
+- `version`: content version number
+- `tasks[]`: ordered list of Task references
 
 Task order is strict and reflects capability dependencies only.
 
@@ -1173,15 +1173,15 @@ Task order is strict and reflects capability dependencies only.
 
 A Task is an atomic, self-contained unit of performance. It produces exactly one observable outcome. A Task has:
 
-- `title` — verb-driven learner-facing name
-- `outcome` — the observable result when the task is complete
-- `facts[]` — literal information the learner must know before executing the task (discrete, verifiable statements)
-- `concepts[]` — the mental models required to understand WHY the steps work
-- `procedure_name` — the name of the step sequence
-- `steps[]` — ordered atomic instructions
-- `dependencies[]` — conditions or access requirements that must be true before this task can be executed
-- `task_assets[]` — optional media objects (see Media below)
-- `irreversible` — boolean; true means the task cannot be undone
+- `title`: verb-driven learner-facing name
+- `outcome`: the observable result when the task is complete
+- `facts[]`: literal information the learner must know before executing the task (discrete, verifiable statements)
+- `concepts[]`: the mental models required to understand WHY the steps work
+- `procedure_name`: the name of the step sequence
+- `steps[]`: ordered atomic instructions
+- `dependencies[]`: conditions or access requirements that must be true before this task can be executed
+- `task_assets[]`: optional media objects (see Media below)
+- `irreversible`: boolean; true means the task cannot be undone
 
 Facts without Concepts produce rote behaviour. Concepts without Facts produce abstraction. Neither produces capability without the Procedure. Present all three.
 
@@ -1189,11 +1189,11 @@ Facts without Concepts produce rote behaviour. Concepts without Facts produce ab
 
 Each Step inside a Task has:
 
-- `text` — (required) the primary action in imperative form
-- `actions[]` — (optional) sub-steps describing HOW to execute the step
-- `completion` — (required) the observable signal confirming the step is complete
-- `notes` — (optional) additional context or warnings
-- `screenshots[]` — (optional) image filenames in `images/{task_record_id}/`
+- `text`: (required) the primary action in imperative form
+- `actions[]`: (optional) sub-steps describing HOW to execute the step
+- `completion`: (required) the observable signal confirming the step is complete
+- `notes`: (optional) additional context or warnings
+- `screenshots[]`: (optional) image filenames in `images/{task_record_id}/`
 
 ### Primer
 
@@ -1207,9 +1207,9 @@ Primers establish orientation and context before the learner encounters task pro
 
 Each task asset object has:
 
-- `url` — fully-qualified external URL
-- `type` — one of: `video`, `demo`, `image`, `audio`, `module`, `link`
-- `label` — short descriptive label
+- `url`: fully-qualified external URL
+- `type`: one of: `video`, `demo`, `image`, `audio`, `module`, `link`
+- `label`: short descriptive label
 
 Reference media assets in the facilitator notes for the relevant task. Include the label text and note the resource type (video, interactive demo, etc.) so the facilitator knows when to direct participants to it. Do not embed URLs in participant-facing content.
 
@@ -1217,17 +1217,17 @@ Reference media assets in the facilitator notes for the relevant task. Include t
 
 ## Before you generate
 
-Before drafting any content, search online for common mistakes, failure points, and misconceptions that people new to this process typically encounter. Use the workflow title, task titles, and domain as search terms. Incorporate what you find into the facilitator notes — specifically in the Talking points and Walkthrough steps for each task. Cite or paraphrase specific failure patterns; do not use generic advice.
+Before drafting any content, search online for common mistakes, failure points, and misconceptions that people new to this process typically encounter. Use the workflow title, task titles, and domain as search terms. Incorporate what you find into the facilitator notes: specifically in the Talking points and Walkthrough steps for each task. Cite or paraphrase specific failure patterns; do not use generic advice.
 
 ---
 
 ## Your output
 
-Produce a detailed facilitators guide as a Microsoft Word document (DOCX). Use heading styles (Heading 1, Heading 2, Heading 3), bulleted and numbered lists, and bold/italic formatting as appropriate — do not produce plain text or Markdown. Structure:
+Produce a detailed facilitators guide as a Microsoft Word document (DOCX). Use heading styles (Heading 1, Heading 2, Heading 3), bulleted and numbered lists, and bold/italic formatting as appropriate: do not produce plain text or Markdown. Structure:
 
 ### Front matter
 - Workflow title and objective
-- **Social contract statement — opening**: render this prominently and in full as a standalone block: "By the end of this session participants will have [workflow.objective]" — this is the facilitator's commitment to the learner and must appear verbatim at the top of the front matter, before any other content
+- **Social contract statement: opening**: render this prominently and in full as a standalone block: "By the end of this session participants will have [workflow.objective]": this is the facilitator's commitment to the learner and must appear verbatim at the top of the front matter, before any other content
 - Total estimated duration (estimate 5 minutes per step across all tasks, plus 10 minutes intro and 5 minutes close)
 - Materials checklist (projector, participant workbooks, access to the software, etc.)
 - Learning objectives (one per task outcome)
@@ -1241,12 +1241,12 @@ Use this repeating structure:
 - *Duration estimate:* [N] minutes
 - *Key message:* one sentence summarising why this task matters (from concepts)
 - *Preparation:* what the facilitator must have ready before starting this task; note any media assets to cue up
-- *Talking points:* expand on the facts and concepts — 3-5 bullet points with fuller explanation than the slides show
-- *Walkthrough steps:* numbered list mirroring the task steps; add facilitator notes on what to watch for, when to pause, and — drawing on your pre-generation research — the specific failure patterns and misconceptions that newcomers to this process commonly encounter at each step; note irreversible steps with a caution marker
+- *Talking points:* expand on the facts and concepts: 3-5 bullet points with fuller explanation than the slides show
+- *Walkthrough steps:* numbered list mirroring the task steps; add facilitator notes on what to watch for, when to pause, and: drawing on your pre-generation research: the specific failure patterns and misconceptions that newcomers to this process commonly encounter at each step; note irreversible steps with a caution marker
 - *Discussion prompt:* one open question relating the task to participants' real work
 
 ### Close
-- **Social contract statement — closing**: render this prominently as a standalone block before anything else in the close section: "Participants have just [workflow.objective]" — this closes the commitment made at the start; it must be explicit and standalone, not buried in a summary paragraph
+- **Social contract statement: closing**: render this prominently as a standalone block before anything else in the close section: "Participants have just [workflow.objective]": this closes the commitment made at the start; it must be explicit and standalone, not buried in a summary paragraph
 - Summary of the session (task titles and one-line outcomes)
 - Next steps / recommended follow-up
 - Evaluation prompt (what to ask participants to assess learning)
@@ -1254,9 +1254,9 @@ Use this repeating structure:
 ---
 
 ## Style rules
-- Tone: direct, collegial — written for a subject-matter expert facilitating peers
+- Tone: direct, collegial: written for a subject-matter expert facilitating peers
 - Use second-person for participant instructions, third-person for facilitator guidance
-- Do not use em dashes; use commas or colons
+- Do not use em dashes (—) anywhere. Hard rule, no exceptions. Use commas or colons instead
 - Include workflow record_id and version in the document footer
 - Images: insert at native size and aspect ratio; never stretch or distort; if an image is wider than the text column, scale it down proportionally (maintain aspect ratio); do not set explicit height values independently of width
 - Ensure that the content is clear, concise, and visually engaging for live training; adhere to learning best practices; ensure sections are properly linked to create a throughline across the whole product
@@ -1290,21 +1290,51 @@ Use this repeating structure:
 """,
 
     "self_paced_html": """\
-# Export Package — Self-Paced HTML Course
+# Export Package: Self-Paced HTML Course
 
 You are generating a self-paced e-learning course in HTML format from a Blueprinted workflow export package.
 
 This ZIP contains:
 
-- `data.json` — full structured workflow and task content
-- `images/` — screenshots and diagrams (referenced by task_record_id)
-- `logos/` — client logo file (e.g. `client-logo.png`); use it if present
-- `styles.md` — visual design specification (colours, typography, spacing, buttons)
-- `editorial.md` — writing rules, product name spelling, and tone guidance
+- `data.json`: full structured workflow and task content
+- `images/`: screenshots and diagrams (referenced by task_record_id)
+- `logos/`: client logo file (e.g. `client-logo.png`); use it if present
+- `styles.md`: visual design specification (colours, typography, spacing, buttons)
+- `editorial.md`: writing rules, product name spelling, and tone guidance
 
 Read both files before writing any HTML or CSS. They are authoritative. Where
 any instruction in this prompt conflicts with `styles.md` or `editorial.md`,
 the guidance in those files takes precedence.
+
+---
+
+## Important: two-phase generation: do not skip this step
+
+**Do not generate any HTML yet.**
+
+Before producing the course, you must first generate the "In practice" scenario text for each task and have it reviewed by the person who uploaded this package.
+
+**Phase 1: scenario review (do this first):**
+
+Before writing any scenario, invent a single character who will appear in every task's scenario throughout the course. Give them a first name, a job title, a named organisation, a department, and a location. This character must be consistent across all tasks: the learner follows the same person from task 1 to the final task. Output the character profile first, as a single short paragraph, so it can be reviewed alongside the scenarios.
+
+When choosing the character's details, select randomly from the approved lists below. Do not use your own suggestions or training-data defaults — always pick from these lists.
+
+**First names:** Tom, Ben, Oliver, Ethan, Liam, James, Nate, Leo, Finn, Glen, Craig, Aaron, Wei, Yusuf, Kenji, Mateo, Kofi, Emma, Sophie, Claire, Rachel, Laura, Hannah, Megan, Amy, Fiona, Naomi, Jade, Zoe, Beth, Aisha, Ingrid, Ananya, Alex, Sam, Jordan, Taylor, Casey, Morgan, Riley, Jamie, Quinn, Blake, Ryan, Dylan, Connor, Derek, Shane, Karl, Ivan, Tariq, Soren, Felipe, Riku, Caleb, Owen, Brett, Dean, Kate, Molly, Nina, Tara, Leah, Chloe, Helen, Petra, Yuki, Fatima, Siobhan, Renata, Lucia, Drew, Robin, Reece, Hayden, Finley, Sage, Avery, Cameron, Dana, Kendall
+
+**Surnames:** Clarke, Murphy, Nguyen, Thomson, Okafor, Fernandez, Yamamoto, Hassan, Reid, Walsh, Kowalski, Johansson, Dube, Petrov, O'Brien, Chen, Svensson, Mbeki, Nakamura, Patel, Turner, Mitchell, Cooper, Bailey, Hughes, Watson, Morrison, Fischer, Andersen, Diallo, Santos, Kimura, Brennan, Osei, Larsson, Hoffmann, Chowdhury, Reyes, Flanagan, Varga
+
+**Organisations:** Meridian Systems, Corepath Solutions, Nexvale Group, Trident Infrastructure, Bridgeway Technologies, Ironshore Networks, Crestwood Partners, Stonebridge Consulting, Verity Group, Halcyon Technologies, Thornfield Solutions, Archway Networks, Clearwater Systems, Fairmont Industries, Harborview Group, Pinnacle Group, Redstone Technologies, Helix Solutions, Cascade Partners, Apex Infrastructure, Summit Networks, Keystone Consulting, Horizon Group, Tidal Systems, Driftwood Partners, Pillar Technologies, Bedrock Systems, Lodestar Group, Vantage Point Consulting, Crossroads Solutions
+
+**Locations:** Manchester, Glasgow, Bristol, Leeds, Liverpool, Edinburgh, Cardiff, Dublin, Birmingham, Sheffield, Newcastle, Nottingham, Auckland, Wellington, Christchurch, Dunedin, Brisbane, Perth, Adelaide, Melbourne, Toronto, Vancouver, Calgary, Ottawa, Montreal, Winnipeg, Singapore, Amsterdam, Johannesburg, Nairobi, Boston, Philadelphia, Baltimore, Pittsburgh, Atlanta, Charlotte, Nashville, Raleigh, Tampa, New Orleans, Chicago, Detroit, Minneapolis, Columbus, Indianapolis, Kansas City, Milwaukee, Cleveland, St. Louis, Dallas, Houston, Austin, Phoenix, Denver, Salt Lake City, Portland, Seattle, Las Vegas, Miami
+
+Then, for each task in `data.json`, in order, output the proposed "In practice" scenario as plain text in the chat: not as HTML. Each scenario must feature the same character established above. Follow the scenario content rules in the "Real-world scenario" section below. After outputting all scenarios, stop and ask: "Please review the character and scenarios above for accuracy and suitability. Confirm they are appropriate for your audience, or provide any corrections or replacements, and I will proceed to generate the full course."
+
+Wait for an explicit confirmation or correction before proceeding.
+
+**Phase 2: full course generation:**
+
+Once the scenarios have been confirmed (or corrected), generate the complete HTML course using the confirmed scenario text for each "In practice" card. Do not regenerate or alter confirmed scenarios during this phase.
 
 If a logo file is present in `logos/`, display it on the cover page (top-left or top-right of the header, maintaining native aspect ratio, max-height 60px) and in the footer of every page alongside the workflow record_id and version. Reference it with a relative path: `logos/client-logo.{ext}`. If no logo is present, leave those positions empty.
 
@@ -1318,11 +1348,11 @@ Before generating output, understand what each entity is.
 
 A Workflow is a composite outcome made of ordered Tasks. It has:
 
-- `title` — learner-facing name
-- `objective` — the organisation-defined outcome the workflow produces
-- `record_id` — unique identifier
-- `version` — content version number
-- `tasks[]` — ordered list of Task references
+- `title`: learner-facing name
+- `objective`: the organisation-defined outcome the workflow produces
+- `record_id`: unique identifier
+- `version`: content version number
+- `tasks[]`: ordered list of Task references
 
 A workflow does not contain steps, prerequisites, or learning-sequence guidance. Task order is strict and reflects capability dependencies only.
 
@@ -1330,15 +1360,15 @@ A workflow does not contain steps, prerequisites, or learning-sequence guidance.
 
 A Task is an atomic, self-contained unit of performance. It produces exactly one observable outcome. A Task has:
 
-- `title` — verb-driven learner-facing name
-- `outcome` — the observable result when the task is complete
-- `facts[]` — literal information the learner must know before executing the task (not opinions, not background; facts are discrete, verifiable statements)
-- `concepts[]` — the mental models required to understand WHY the steps work (concepts answer "what is this" and "why does it behave this way")
-- `procedure_name` — the name of the step sequence
-- `steps[]` — ordered atomic instructions (see below)
-- `dependencies[]` — conditions, completed tasks, or access requirements that must be true before this task can be executed
-- `task_assets[]` — optional media objects (see Media below)
-- `irreversible` — boolean flag; true means the task cannot be undone
+- `title`: verb-driven learner-facing name
+- `outcome`: the observable result when the task is complete
+- `facts[]`: literal information the learner must know before executing the task (not opinions, not background; facts are discrete, verifiable statements)
+- `concepts[]`: the mental models required to understand WHY the steps work (concepts answer "what is this" and "why does it behave this way")
+- `procedure_name`: the name of the step sequence
+- `steps[]`: ordered atomic instructions (see below)
+- `dependencies[]`: conditions, completed tasks, or access requirements that must be true before this task can be executed
+- `task_assets[]`: optional media objects (see Media below)
+- `irreversible`: boolean flag; true means the task cannot be undone
 
 Facts, Concepts, and Steps are owned entirely by their Task. They are not shared between Tasks.
 
@@ -1348,11 +1378,11 @@ Facts without Concepts produce rote behaviour. Concepts without Facts produce ab
 
 Each Step inside a Task has:
 
-- `text` — (required) the primary action in imperative form
-- `actions[]` — (optional) sub-steps describing HOW to execute the step in a specific tool or environment
-- `completion` — (required) the observable signal confirming the step is complete
-- `notes` — (optional) additional context or warnings
-- `screenshots[]` — (optional) list of image filenames in `images/{task_record_id}/`
+- `text`: (required) the primary action in imperative form
+- `actions[]`: (optional) sub-steps describing HOW to execute the step in a specific tool or environment
+- `completion`: (required) the observable signal confirming the step is complete
+- `notes`: (optional) additional context or warnings
+- `screenshots[]`: (optional) list of image filenames in `images/{task_record_id}/`
 
 Each Step describes exactly one action. Completion signals are objective, not subjective ("The success banner appears" not "You feel confident").
 
@@ -1360,9 +1390,9 @@ Each Step describes exactly one action. Completion signals are objective, not su
 
 A Primer is pre-reading material attached to the workflow. Primers establish orientation and context before the learner encounters task procedures. They are not tasks and do not have steps. Each primer has:
 
-- `title` — heading for the primer card
-- `summary` — one or two sentences describing what the primer covers
-- `explanation` — full text content, rendered as formatted paragraphs
+- `title`: heading for the primer card
+- `summary`: one or two sentences describing what the primer covers
+- `explanation`: full text content, rendered as formatted paragraphs
 
 Primers reduce cognitive load in the task pages by front-loading conceptual orientation. Render them before the task sequence begins.
 
@@ -1370,9 +1400,9 @@ Primers reduce cognitive load in the task pages by front-loading conceptual orie
 
 Each task asset object has:
 
-- `url` — fully-qualified external URL
-- `type` — one of: `video`, `demo`, `image`, `audio`, `module`, `link`
-- `label` — short descriptive label
+- `url`: fully-qualified external URL
+- `type`: one of: `video`, `demo`, `image`, `audio`, `module`, `link`
+- `label`: short descriptive label
 
 For `type: video`, render an embedded video player or a clearly labelled link card using the label text.
 
@@ -1389,19 +1419,53 @@ Task-level assets appear after the Concepts section and before the procedure tab
 This HTML output must be interactive and visually driven throughout. Avoid rendering content as static text where an interactive or visual treatment is possible. Apply this principle to every section:
 
 - **Primers**: do not render primer explanation text as prose paragraphs. Before rendering each primer, read its explanation and classify what kind of content it contains, then choose the matching visual treatment:
-  - **Grouped concepts or categories** (e.g. "there are three types of X", "the four components are"): render as an interactive card group — one card per item, laid out in a responsive grid. Each card shows the item name/label on the front. On click/tap the card expands or flips to reveal the full description.
-  - **A process, sequence, or lifecycle** (e.g. steps, stages, phases, a workflow): render as an animated step-flow or timeline — numbered nodes connected by lines or arrows, each node expanding on click to show detail. Animate the progression left-to-right or top-to-bottom using CSS transitions triggered on page load or on scroll into view.
+  - **Grouped concepts or categories** (e.g. "there are three types of X", "the four components are"): render as an interactive card group: one card per item, laid out in a responsive grid. Each card shows the item name/label on the front. On click/tap the card expands or flips to reveal the full description.
+  - **A process, sequence, or lifecycle** (e.g. steps, stages, phases, a workflow): render as an animated step-flow or timeline: numbered nodes connected by lines or arrows, each node expanding on click to show detail. Animate the progression left-to-right or top-to-bottom using CSS transitions triggered on page load or on scroll into view.
   - **A comparison or set of options** (e.g. "option A vs option B", trade-offs, when to use which): render as a side-by-side comparison card layout with a clear visual divider.
   - **A definition or single concept with depth**: render as a large visual card with a bold title, a one-line summary visible immediately, and the full explanation revealed via an expand toggle.
   - **Mixed content**: split the explanation into its logical parts and apply the appropriate visual treatment to each part independently.
   Use HTML5, CSS animations, and vanilla JS freely to express these layouts. Animated SVG paths, CSS keyframe animations, and interactive state transitions are all permitted and encouraged where they serve the content. No external libraries.
-- **Facts**: render as interactive flip cards. Front face shows a short label or key phrase (derived from the fact). Back face reveals the full fact statement on click/tap. Use vanilla JS — no external libraries. If there are fewer than 3 facts, use highlighted callout cards instead of flip cards.
-- **Concepts**: render as an accordion — each concept is a collapsed row showing the first sentence as a preview; clicking expands the full explanation. Do not render concepts as static prose paragraphs.
+- **Configuration and option steps**: Before rendering any task's procedure section, inspect the task content for two special step patterns.
+
+  A **configuration step** is one where the learner sets multiple parameter values (e.g. schedule type, retention count, destination path, job mode) that together produce a combined outcome. Signals: the step's `actions[]` lists configuration fields, and the `completion` describes a result that depends on multiple chosen values; notes contain "if X then Y" relationships describing how setting values interact.
+
+  If a configuration step is detected, render a **Configuration Explorer** immediately above the procedure table for that task:
+  - One selector per configurable parameter: use `<select>` dropdowns or a segmented button group
+  - Populate each selector's options from the step's actions text and notes; derive concise human-readable labels for each option (not raw technical tokens)
+  - Below all selectors, display a live outcome sentence in a visually distinct callout (accent border, light background tint). Derive a sentence template from the task content: e.g. "Your [job type] backup will run [schedule] and retain [retention] restore points." Update it instantly on any selector change via vanilla JS event listeners
+  - The procedure table remains fully visible below the Configuration Explorer: the explorer is an orientation aid, not a replacement for the steps
+
+  An **option-selection step** is one where the learner must choose between 2–5 discrete modes, types, or approaches before executing the procedure. Signals: a concept or fact states "there are N types of X", describes mutually exclusive options, or the procedure has conditional paths depending on which approach is chosen (e.g. different destination types, agent vs agentless modes, job types).
+
+  If an option-selection pattern is detected, render **Option Selector Cards** above the Facts section for that task:
+  - A row (or wrapping grid) of visually distinct card buttons: one per option: styled with the accent palette from `styles.md`
+  - Clicking a card: highlights it (accent border + background tint), slides open a detail panel directly below showing the option's description, implications, and which procedure steps apply; all other panels collapse
+  - Only one card selected at a time; default to the first card selected on page load
+  - If procedure steps are conditional on the selected option, dim non-applicable rows (opacity: 0.3) and show applicable rows at full opacity; update dynamically on card change
+  - Keyboard accessible: left/right arrow keys move between cards, Enter/Space selects
+
+  **Content-type quick reference**: use this table to decide which pattern applies:
+
+  | Signal in data.json | Pattern |
+  |---|---|
+  | Step actions list config fields + completion describes combined outcome | Configuration Explorer |
+  | Concept/fact describes N mutually exclusive types, modes, or approaches | Option Selector Cards |
+  | Primer: grouped concepts or categories | Interactive card group |
+  | Primer: process, sequence, or lifecycle | Animated step-flow / timeline |
+  | Primer: comparison or trade-off | Side-by-side comparison layout |
+  | Primer: single concept with depth | Expandable definition card |
+  | Facts: 3 or more | Flip cards |
+  | Facts: fewer than 3 | Highlighted callout cards |
+
+  **Icons**: use inline SVG for all icons (gear, calendar, checkmark, warning triangle, arrow). Never load an icon library or any resource from a CDN. Embed SVG markup directly in the HTML. Unicode characters (✓ ⚠ →) are acceptable as a fallback for simple inline indicators only.
+
+- **Facts**: render as interactive flip cards. Front face shows a short label or key phrase (derived from the fact). Back face reveals the full fact statement on click/tap. Use vanilla JS: no external libraries. If there are fewer than 3 facts, use highlighted callout cards instead of flip cards.
+- **Concepts**: render as an accordion: each concept is a collapsed row showing the first sentence as a preview; clicking expands the full explanation. Do not render concepts as static prose paragraphs.
 - **Dependencies**: render as a visual checklist with checkbox-style indicators (purely decorative, not functional), not a plain bullet list.
-- **Procedure steps**: the existing table format is acceptable, but enhance it — highlight the active/focused row on hover, and use a distinct visual treatment for the completion signal column (coloured badge or pill, not plain text).
+- **Procedure steps**: the existing table format is acceptable, but enhance it: highlight the active/focused row on hover, and use a distinct visual treatment for the completion signal column (coloured badge or pill, not plain text).
 - **Overall**: every page should feel designed, not word-processed. Use whitespace, colour, and interaction to guide the learner's attention. Never render a section as a plain paragraph list when a card, accordion, or interactive component is available.
 
-All interactive components must be implemented in vanilla JS with embedded CSS. No external libraries.
+All interactive components must be implemented in vanilla JS with embedded CSS. No external libraries or CDN dependencies of any kind.
 
 ---
 
@@ -1415,7 +1479,24 @@ images/             ← copy the images/ folder from this ZIP as-is
 logos/              ← copy the logos/ folder from this ZIP as-is
 ```
 
-Do not inline images as base64. All `<img>` src attributes and logo references must use relative paths that resolve within the ZIP (e.g. `images/{task_record_id}/{filename}`, `logos/client-logo.png`). When a learner extracts the ZIP and opens `index.html` in a browser, all images and logos must load correctly. CSS and JavaScript remain embedded in `index.html` — no external CDN dependencies.
+Do not inline images as base64. All `<img>` src attributes and logo references must use relative paths that resolve within the ZIP (e.g. `images/{task_record_id}/{filename}`, `logos/client-logo.png`). When a learner extracts the ZIP and opens `index.html` in a browser, all images and logos must load correctly. CSS and JavaScript remain embedded in `index.html`: no external CDN dependencies.
+
+---
+
+## Page model: critical constraint
+
+This output is **not a single-page application**. Do not build a monolithic HTML document where all content exists in the DOM simultaneously and sections are shown or hidden by toggling `display`, `visibility`, `opacity`, `height`, `pointer-events`, or any other CSS or JS property. That approach produces a slow, fragile document that breaks screen readers, search, and print.
+
+Instead, implement a **page-based navigation model**:
+
+- The document is divided into discrete named page views, each a separate `<section>` or `<div>` with a unique `id`
+- Only the active page is visible; all others have `display: none`
+- Navigating to a page sets the target to `display: block` (or `flex`/`grid` as appropriate) and hides all others: a single JS function handles this for every transition
+- Each page transition scrolls to the top of the content area and applies a short CSS opacity fade (150ms)
+- The active page `id` is reflected in the URL hash so the browser back/forward buttons work and the page can be bookmarked or reloaded
+- The sidebar highlights the currently active page
+
+There is no scrolling between pages. A learner should never need to scroll to find a navigation button. Prev / Next controls are always visible within the viewport.
 
 ---
 
@@ -1425,130 +1506,268 @@ Do not inline images as base64. All `<img>` src attributes and logo references m
 
 This page forms the opening of the social contract with the learner. It must make the commitment unmistakable.
 
-- Client logo if present in `logos/` — top of page, native aspect ratio, max-height 60px
+- Client logo if present in `logos/`: top of page, native aspect ratio, max-height 60px
 - Workflow title (large heading)
-- **Social contract statement — opening**: render this as a large, visually dominant, standalone element — not a paragraph, not a subtitle. The exact text: **"By the end of this course you will have [workflow.objective]"** — style it as the most prominent thing on the page after the title; use a distinct background block, large type, or a visually separated callout so it cannot be overlooked or confused with supporting text
-- If primers are present: a "Before you begin" note with a link to the primers section
-- Task titles as a visual numbered card row with clickable navigation links — not a plain ordered list
+- **Social contract statement: opening**: render this as a large, visually dominant, standalone element: not a paragraph, not a subtitle. The exact text: **"By the end of this course you will have [workflow.objective]"**: style it as the most prominent thing on the page after the title; use a distinct background block, large type, or a visually separated callout so it cannot be overlooked or confused with supporting text
+- Task titles as a visual numbered card row: display only, not clickable links. Do not add any navigation links or anchors to this list.
 - Progress bar showing 0 / total tasks
-- "Start" button
+- A single "Start →" button: this is the only navigation control on this page. Do not add any other buttons, links, or shortcuts (no "read the primers first", no "skip to task N", no anchor links into the course).
 
-### 2. Primers section (render only if primers[] is non-empty)
+### 2. Character introduction page
 
-- Section heading: "Before You Begin"
-- Each primer is rendered as a self-contained visual module. Before generating the HTML for each primer, classify its explanation content and apply the correct visual treatment as defined in the Interactive-first design principle above. The explanation field must never be rendered as a plain block of prose. Use HTML5 animations, CSS transitions, and interactive JS components freely — the goal is that a learner looking at a primer immediately understands the structure of the content through its visual form, before reading a word.
-- The summary field is always visible as a subtitle beneath the primer title.
-- A "Continue to Tasks" button appears after all primers.
+This page introduces the course character established in Phase 1. It appears after the cover and before the primers, giving the learner a human anchor for the scenarios they will encounter in each task.
 
-### 3. Task pages (one per task)
+- Heading: "Who you'll be following" (or a similarly inviting heading)
+- Display the character's name, job title, organisation, department, and location as a visually distinct profile card: not a plain paragraph
+- 2–3 sentences of narrative prose introducing the character's professional context and the circumstances that have brought them to this course
+- "Continue →" button that navigates to the first primer (if primers exist) or the first task
 
-Each task page renders in sequence. Navigation is via Previous / Next buttons and the sidebar. Each task page must include:
+### 3. Primers (one page per primer: render only if primers[] is non-empty)
 
-**a. Task header**
+Each primer is its own page. Do not combine primers onto a single page. If there are three primers, there are three primer pages.
 
-- Task number (e.g. "Task 2 of 5") and title
-- Outcome: displayed as a styled callout — "When you complete this task: [outcome text]"
-- If `irreversible` is true: display a prominent warning banner — "This task includes irreversible changes. Review all steps before proceeding."
+Each primer page:
 
-**b. Dependencies (render only if dependencies[] is non-empty)**
+- Primer title as the page heading; primer summary as a subtitle
+- The primer explanation rendered using the classified visual treatment defined in the Interactive-first design principle: never as plain prose
+- "← Back" and "Next →" navigation buttons; the final primer's Next button navigates to the first task
+
+### 4. Task pages
+
+Each task is split across three consecutive pages. Do not combine these onto a single page. A learner navigates through all three pages for each task before moving to the next task.
+
+---
+
+#### Page A: Task introduction
+
+- Task number and title (e.g. "Task 2 of 5: Configure backup schedule")
+- Outcome: styled callout: "When you complete this task: [outcome text]"
+- If `irreversible` is true: prominent warning banner: "This task includes irreversible changes. Review all steps before proceeding."
+
+**"In practice" scenario** (content rules in the Real-world scenario section below):
+
+In Phase 2, render the confirmed scenario text on this page as a visually distinct collapsible card:
+
+- Heading: "In practice"
+- A subtle icon (inline SVG: a building, person at desk, or similar; no CDN)
+- The scenario text rendered as short paragraphs with comfortable line spacing
+- A "Show / Hide" toggle; default state is expanded
+- Visually distinct from the surrounding content: different background tint or left border in the accent colour
+
+**Dependencies** (render only if dependencies[] is non-empty):
 
 - Heading: "Before you start"
-- Visual checklist with decorative checkbox indicators — not a plain bullet list
+- Visual checklist with decorative checkbox indicators: not a plain bullet list
 
-**c. Facts**
+**Facts:**
 
 - Heading: "What you need to know"
-- Render as interactive flip cards (see Interactive-first design principle above). Facts are discrete and literal — each card represents exactly one fact.
+- Render as interactive flip cards (see Interactive-first design principle). Facts are discrete and literal: each card represents exactly one fact.
 
-**d. Concepts**
+- "Next: Why this works →" button navigates to Page B
 
+---
+
+#### Page B: Concepts
+
+- Task number and title repeated as a sub-heading so the learner knows where they are
 - Heading: "Why this works"
-- Render as an accordion (see Interactive-first design principle above). Each row shows a short preview; clicking reveals the full concept explanation.
+- Render all concepts as an accordion (see Interactive-first design principle). Each row shows a short preview; clicking expands the full explanation.
+- Task-level media (render only if task_assets[] is non-empty): heading "Supporting resources"; render each asset using the Media rules above
 
-**e. Task-level media (render only if task_assets[] is non-empty)**
+- "← Back" button returns to Page A; "Next: The procedure →" button navigates to Page C
 
-- Heading: "Supporting resources"
-- Render each asset using the Media rules above
+---
 
-**f. Procedure table**
+#### Page C: Procedure
 
-- Heading: [procedure_name]
-- Table with columns: # | Step | Actions | Completion signal
-- Each row:
-  - **#**: step number
-  - **Step**: step.text
-  - **Actions**: if step.actions[] is non-empty, render as a numbered sub-list; otherwise render an em-dash
-  - **Completion signal**: step.completion, styled in a distinct colour
-- If a step has notes, render them as a warning/note callout below the row
-- If a step is flagged irreversible at the step level, add a caution icon in the step column
+- Task number and title repeated as a sub-heading
+- Configuration Explorer and/or Option Selector Cards if applicable (see Interactive-first design principle)
+- The full procedure step-through (spec below)
 
-**Step screenshots**
+**g. Procedure step-through**
 
-If a step has one screenshot, render it inline below the step row with alt text set to step.text.
+Do not render the procedure as a table. Render it as a full-width interactive step-through where only one step is visible at a time and imagery is the primary element.
 
-    src: images/{task_record_id}/{filename}
+**Structure of the step-through container:**
 
-Apply `max-width: 100%; height: auto; display: block; cursor: zoom-in` to every `<img>` tag. Never set both width and height explicitly. Never use `object-fit: cover` or `object-fit: fill`. Images must always render at their native aspect ratio.
+At the top of the procedure section, display the heading ([procedure_name]) and a segmented progress track: a thin horizontal bar divided into N equal segments (one per step), with the current segment filled in the accent colour. Segment count updates as the learner advances.
 
-**Lightbox**: every procedure image (single screenshot or carousel image) must open a lightbox when clicked. Implement a single shared lightbox overlay in vanilla JS — one instance for the whole page, reused for all images. The lightbox must:
+Each individual step panel uses a **responsive two-column layout**:
 
-- Cover the full viewport with a dark semi-transparent backdrop (e.g. `rgba(0,0,0,0.85)`)
-- Display the full-resolution image centred, scaled to fit the viewport while maintaining native aspect ratio (`max-width: 90vw; max-height: 90vh; object-fit: contain`)
+- **Desktop (≥ 700px)**: CSS grid with two columns: text column on the left (`1fr`), image column on the right (`1fr`). Both columns are full height, vertically aligned to the top. The step navigation controls span both columns at the bottom.
+- **Mobile (< 700px)**: single column, stacked: image first, then text content below. Use a `@media (max-width: 699px)` breakpoint to override the grid to a single column and reorder so the image pane appears before the text column (`order: -1` on the image pane).
+
+**Left column (text)**: in this order:
+
+1. **Step header**:
+   - A large step-number badge (e.g. a circle or pill containing "3")
+   - step.text rendered as a prominent heading: this is the primary instruction the learner acts on
+
+2. **Actions** (render only when step.actions[] is non-empty):
+   - A numbered sub-list of the action sub-steps, indented beneath the step heading
+
+3. **Concept in context**: see spec below (item 4)
+
+4. **Irreversible warning**, **Notes**, **Completion signal**: see specs below (items 5–7)
+
+**Right column (image)**: render only when the step has screenshots:
+
+- Apply to every `<img>`: `width: 100%; height: auto; display: block; object-fit: contain; border-radius: 6px`. Never set both width and height explicitly. Never use `object-fit: cover` or `object-fit: fill`. Images must always render at their native aspect ratio.
+- Image `src`: `images/{task_record_id}/{filename}`. Image `alt`: step.text.
+- Every screenshot opens the lightbox on click; apply `cursor: zoom-in`.
+- When a step has no screenshots, the right column is absent: the text column expands to full width.
+
+**One screenshot**: display it filling the right column width.
+
+**Two or more screenshots**: render a carousel scoped to this step filling the right column:
+- One image visible at a time at full column width
+- Previous / Next arrow buttons positioned left and right of the image
+- Position indicator below the image ("2 / 4" style, not dots)
+- Implemented in vanilla JS with inline CSS: no external libraries
+- Each carousel instance is fully independent (multiple steps on the same page operate independently)
+- Arrow button click handlers must call `event.stopPropagation()` so they do not bubble to step-level or page-level navigation handlers
+- Each image in the carousel also opens the lightbox on click
+
+---
+
+The remaining left-column elements, in order below the actions list:
+
+4. **Concept in context** (render only when directly applicable: do not force one onto every step):
+   Before rendering this element, ask: does executing this step correctly depend on understanding a specific concept from this task's `concepts[]`? A concept is directly applicable when misunderstanding it would cause the learner to execute the step incorrectly, choose the wrong value, or not understand what the completion signal means. If yes, render a small inline concept hook immediately below the actions list:
+   - A subtle expandable chip: label "Why this works: [concept name]": styled in a lighter background with a left accent border, smaller than body type
+   - Clicking/tapping expands to reveal the concept's explanation inline, without navigating away from the step. Collapse on second click.
+   - Only the concept(s) that directly apply to this specific step: not every concept in the task
+   - If no concept from `concepts[]` is directly load-bearing for this step, render nothing here
+
+5. **Irreversible warning** (render only when the step is flagged irreversible):
+   - A prominent caution banner in Ignis red or Suma orange tint, with an inline SVG warning icon: "This step cannot be undone. Review carefully before proceeding."
+
+6. **Notes** (render only when step.notes is present):
+   - A styled note/warning callout block (distinct background, left border accent)
+
+7. **Completion signal**:
+   - Always present; rendered last before the navigation controls
+   - Label: "Done when:" in muted text
+   - The completion text: displayed in a visually prominent pill or callout with a Viridis green tint background and an inline SVG checkmark icon
+   - This must be clearly visible before the learner clicks Next: it is the gate check
+
+8. **Step navigation controls** (always rendered at the bottom of each step panel):
+   - Left button: "← Back": disabled and visually subdued on step 1
+   - Centre label: "Step [n] of [N]"
+   - Right button: "Next →": on all steps except the last; on the last step render "Mark task complete →" which triggers task completion and advances the page-level progress indicator
+   - Transition between steps: a short CSS opacity fade (150ms ease)
+   - Do not bind left/right arrow keys to step navigation: page-level ← → keys handle task page navigation and must not conflict with step navigation
+
+**Lightbox**: implement a single shared lightbox overlay in vanilla JS: one instance for the entire page, reused for all step images. The lightbox must:
+
+- Cover the full viewport with a dark semi-transparent backdrop (`rgba(0,0,0,0.85)`)
+- Display the full-resolution image centred, scaled to fit the viewport maintaining native aspect ratio (`max-width: 90vw; max-height: 90vh; object-fit: contain`)
 - Show a close button (×) in the top-right corner of the overlay
 - Close on: close button click, backdrop click, or Escape key
 - Trap focus while open; restore focus to the triggering image on close
 - Animate open and close with a short CSS opacity/scale transition
 - Require no external libraries
 
-If a step has two or more screenshots, render a minimal inline carousel directly below the step row. The carousel must:
+**h. Task footer (Page C only)**
 
-- Display one image at a time at full column width
-- Show Previous / Next arrow buttons (left and right of the image)
-- Show a position indicator below the image ("1 / 3" style, not dots)
-- Require no external libraries — implemented with vanilla JS and inline CSS
-- Be scoped to the step it belongs to (multiple carousels on the same page must operate independently)
-- Initialise with image 1 of N visible
-- Call event.stopPropagation() on arrow button click events so carousel navigation does not trigger page-level left/right arrow key handlers
-- Each image in the carousel must also trigger the lightbox on click
-
-**g. Task footer**
-
-- "Task complete" button that marks the task done and advances the progress indicator; on the final task this button advances to the closing page
+- The final step's "Mark task complete →" button marks the task done, updates the progress indicator, and navigates to Page A of the next task. On the final task it advances to the closing page.
 
 ---
 
-### 4. Closing page
+### 5. Closing page
 
 This page closes the social contract opened on the cover. It must be as visually prominent and standalone as the cover page social contract statement.
 
-- **Social contract statement — closing**: render as the dominant element of the page: **"You have just [workflow.objective]"** — same visual weight and treatment as the opening statement on the cover; a distinct background block or large-type callout; it must feel conclusive and affirming, not like a footnote
-- Below it: a visual summary row of all task titles (numbered cards or a timeline) — this is secondary to the closing statement, not equal to it
+- **Social contract statement: closing**: render as the dominant element of the page: **"You have just [workflow.objective]"**: same visual weight and treatment as the opening statement on the cover; a distinct background block or large-type callout; it must feel conclusive and affirming, not like a footnote
+- Below it: a visual summary row of all task titles (numbered cards or a timeline): this is secondary to the closing statement, not equal to it
 - "Return to start" link at the bottom
 - Footer: workflow record_id | Version [version] | Generated by Blueprinted; include logo if present
 
 ---
 
+## Real-world scenario content rules
+
+These rules apply to the "In practice" scenario text generated for each task during Phase 1.
+
+Before generating each scenario, perform a web search for recent real-world incidents, outages, data loss events, compliance requirements, or case studies relevant to this task's technology domain. Look for examples from the past 2–3 years that illustrate why a professional would need to perform exactly this kind of task. Specific, current details make scenarios credible: training data alone tends to produce generic examples. If web search is unavailable or returns nothing relevant, use training data but keep the scenario grounded and specific.
+
+Write the scenario as narrative prose: 3 to 5 short paragraphs. This is storytelling, not a briefing document. It should read the way a case study or a well-written trade article opens: it puts a real person in a real place under real pressure. Do not write in the style of "This scenario involves a storage administrator who needs to...". Write it in third-person narrative: show the situation unfolding.
+
+The tone is professional and grounded. Never describe how a character feels, their emotional state, or their internal reaction to events. Do not use literary or flowery language: no metaphors, no atmospheric description, no dramatic phrasing. Write what happened and what is at stake, not how it felt. If a sentence could belong in a novel, rewrite it as a sentence that could belong in a trade publication.
+
+Each scenario must feature the same character established at the start of Phase 1. The scenario must:
+
+- **Show how the character finds out**: the scenario must open from the character's point of view: specifically, the moment they become aware that this task needs doing. This is not a background summary of a situation; it is the character encountering the problem. Be specific about the trigger: an email arrives, a monitoring alert fires, a colleague stops by their desk, a ticket lands in the queue, they notice something anomalous themselves. The learner should understand not just what the problem is, but how it landed on this person. Do not open with context: open with the moment of discovery.
+- **Build the pressure**: describe the event or circumstance that has made this specific task urgent right now: a recent incident, a compliance deadline, a failed audit, a growth event, a near-miss. Draw on web search findings to make this feel current and earned.
+- **End with intent**: close with a sentence describing what the character is about to do and what success looks like: mapped directly to the task's `outcome` field. This should feel like the moment before action, not a summary.
+
+---
+
 ## Navigation and interaction
 
-- Sidebar: task list with completion indicators (dot or checkmark per task); primers appear as a separate section above the task list; closing page listed at the bottom as "Complete"
-- Previous / Next buttons on every page
-- Cover page "Start" button navigates to primers (if present) or first task
-- Final task "Task complete" button advances to the closing page
-- Keyboard navigation: left arrow = previous, right arrow = next (page level only; carousels handle their own arrow events independently)
-- Progress indicator: "Task N of N complete" updated as tasks are marked done
-- Smooth scroll-to-top on page transition
+**Page order** (every page is a distinct view: see Page model above):
+
+1. Cover
+2. Character introduction
+3. Primer 1, Primer 2, … (one page each, if primers exist)
+4. For each task: Page A (Introduction) → Page B (Concepts) → Page C (Procedure)
+5. Closing page
+
+**Sidebar**: shows the character intro, each primer by title, each task by title with a completion indicator (dot or checkmark), and the closing page at the bottom. The currently active page is highlighted. Task sub-pages (A/B/C) are not individually listed in the sidebar: the task entry in the sidebar links to Page A of that task.
+
+**Linear navigation only: critical constraint**: every page has exactly one way to move forward: a single Next/Continue/Start button. Do not add any secondary navigation shortcuts, deep links, anchor tags, or buttons that jump to a non-adjacent page. This includes: but is not limited to: "read the primers first" links on the cover, clickable task titles that skip ahead, "jump to task N" shortcuts, and "skip intro" buttons. The learner moves through the course one page at a time in sequence. The sidebar shows progress and allows the learner to go back to previously visited pages, but must never provide a shortcut past unvisited content.
+
+**Previous / Next buttons**: present on every page. Never absent. Always within the viewport without scrolling.
+
+**Cover page**: one button only: "Start →": navigates to the character introduction page.
+
+**Character introduction page**: one button only: "Continue →": navigates to Primer 1 (if primers exist) or Task 1 Page A.
+
+**Keyboard navigation**: left arrow = previous page, right arrow = next page. Step-through navigation within a task uses button clicks only: do not bind arrow keys to step navigation.
+
+**Progress indicator**: "Task N of N complete": updated when a learner completes Page C of a task (clicks "Mark task complete →").
+
+**URL hash**: update the hash on every page transition so the browser back/forward buttons work (e.g. `#cover`, `#character`, `#primer-1`, `#task-1-intro`, `#task-1-concepts`, `#task-1-procedure`, `#complete`).
+
+**Scroll**: scroll to the top of the content area on every page transition.
 
 ---
 
 ## Design requirements
 
 ### Interactive components
-All interactive components (flip cards, accordions, carousels, expand/collapse toggles) must:
+All interactive components (flip cards, accordions, step-through panels, expand/collapse toggles) must:
 - Be implemented entirely in vanilla JS with embedded CSS
-- Work correctly when multiple instances of the same component type appear on the same page (scoped state — no shared global variables per component type)
+- Work correctly when multiple instances of the same component type appear on the same page (scoped state: no shared global variables per component type)
 - Be keyboard accessible: Enter/Space to activate, Escape to collapse where applicable
 - Animate smoothly (CSS transitions, not abrupt show/hide)
-- Degrade gracefully — if JS is disabled, content must still be readable (use `<details>`/`<summary>` as a fallback pattern where appropriate)
+- Degrade gracefully: if JS is disabled, content must still be readable (use `<details>`/`<summary>` as a fallback pattern where appropriate)
+
+#### Flip card implementation: mandatory pattern
+
+Do not implement flip cards using CSS 3D transforms (`transform-style: preserve-3d`, `backface-visibility`, `rotateY`). Browser support for the 3D rendering context is inconsistent, vendor-prefix requirements vary, and fixed-height containers clip back-face content when it is taller than the front face.
+
+Use the **CSS grid stack + crossfade** pattern instead:
+
+- The card has two children: `.front` and `.back`
+- Both children are given `grid-area: 1 / 1`, placing them in the same grid cell while remaining in normal document flow: the container naturally sizes to whichever face is taller, no fixed heights, no clipping
+- Default state: `.front` has `opacity: 1`, `.back` has `opacity: 0; pointer-events: none`
+- Flipped state (toggled by JS adding a `.flipped` class to the card): `.front` has `opacity: 0; pointer-events: none; transform: scaleX(-1)`, `.back` has `opacity: 1; pointer-events: auto`
+- Apply `transition: opacity 200ms ease, transform 200ms ease` to both faces
+- The mirror-scale on the front gives the visual impression of a card turning over without requiring a 3D context
+
+#### Page layout: mandatory pattern
+
+Every `.page` element (the discrete page views defined in the Page model) must use:
+
+```css
+.page { display: none; flex-direction: column; min-height: 100vh; }
+.page.active { display: flex; }
+.page .content-area { flex: 1; }
+```
+
+This ensures the page-nav bar and page footer are always pushed to the bottom of the viewport regardless of content height. Never use `display: block` on a `.page` element: a short-content page will leave the footer floating mid-screen. The cover page's mid-section content (task card row, progress bar) must be wrapped in a `.content-area` div so the same flex rule applies.
 
 ### Visual style
 Apply the colour palette, typography scale, button specifications, and spacing
@@ -1560,12 +1779,12 @@ Key constraints specific to this HTML output format:
 - All CSS and JS embedded inline in index.html. No external CDN dependencies,
   including fonts. Use the CSS font stack defined in `styles.md` with system
   font fallbacks only. Images and logos are referenced as relative paths —
-  never base64-encoded — so they resolve correctly when the ZIP is extracted.
+  never base64-encoded: so they resolve correctly when the ZIP is extracted.
 - Content column: max-width 800px, centred.
 - Line-height: 1.7 for body copy.
 - Fully responsive at all viewport widths. This is non-negotiable. Every element
-  in the output — sidebar, content column, card grids, flip cards, accordions,
-  procedure tables, carousels, navigation buttons, progress indicators — must
+  in the output: sidebar, content column, card grids, flip cards, accordions,
+  procedure tables, carousels, navigation buttons, progress indicators: must
   reflow correctly from 320px (small phone) to 1440px (desktop). Use CSS
   flexbox or grid with wrapping for all multi-column layouts; never use fixed
   pixel widths on containers. Test every interactive component at mobile width:
@@ -1577,6 +1796,10 @@ Key constraints specific to this HTML output format:
   sequentially without page breaks inside procedure tables.
 - Apply spacing values from the vertical spacing scale in `styles.md` for all
   margin and padding. Do not interpolate between scale values.
+- Add `li em, td em { white-space: nowrap; }` to the global stylesheet. This
+  prevents italic product name fragments (e.g. the *for Microsoft Windows*
+  portion of a Veeam product name) from wrapping independently of the
+  surrounding text inside list items or table cells.
 
 ### Semantic colour use
 Use the colour roles defined in `styles.md` consistently:
@@ -1598,13 +1821,17 @@ editorial guide.
 
 Rules specific to this HTML output that are not covered in `editorial.md`:
 
-- Do not use em dashes anywhere in generated interface text, headings, or
-  framing sentences (em dashes are permitted only within authored step text
-  and concept text that arrives verbatim from data.json)
-- Do not editorialize step text — render step.text exactly as authored in the
+- Do not use em dashes (—) anywhere: not in headings, framing text, generated copy, or any other output. Covered in editorial.md. Hard rule, no exceptions
+- Do not editorialize step text: render step.text exactly as authored in the
   data; do not paraphrase, improve, or reframe it
 - Section headings must follow the exact wording defined in the Page structure
   section of this prompt; do not substitute synonyms
+- Product names that contain `<em>` tags (e.g. Veeam Agent <em>for Microsoft
+  Windows</em>) must never be split across flex children or broken by a line
+  wrap. Wherever a product name appears inside a list item, table cell, or any
+  flex or grid container, wrap the entire product name in
+  `<span style="white-space: nowrap">` so the italicised portion cannot be
+  separated from the preceding words by a line break or flex reflow
 
 ---
 
@@ -1641,16 +1868,16 @@ Display: Workflow record_id | Version [version] | Generated by Blueprinted
 """,
 
     "helpsheet": """\
-# Export Package — Helpsheet
+# Export Package: Helpsheet
 
-You are generating a helpsheet — a practical just-in-time reference document intended for learners who have already completed training and need a quick process reminder at the point of work. It is not a teaching document. Do not explain concepts, provide background, or include introductory material. The learner knows what the task is; they need to remember how to do it.
+You are generating a helpsheet: a practical just-in-time reference document intended for learners who have already completed training and need a quick process reminder at the point of work. It is not a teaching document. Do not explain concepts, provide background, or include introductory material. The learner knows what the task is; they need to remember how to do it.
 
 This ZIP contains:
-- `data.json` — full structured workflow and task content
-- `images/` — screenshots (include only the most essential ones, max 1 per task)
-- `logos/` — client logo file (e.g. `client-logo.png`); use it if present
-- `styles.md` — visual design specification (colours, typography, spacing, buttons)
-- `editorial.md` — writing rules, product name spelling, and tone guidance
+- `data.json`: full structured workflow and task content
+- `images/`: screenshots (include only the most essential ones, max 1 per task)
+- `logos/`: client logo file (e.g. `client-logo.png`); use it if present
+- `styles.md`: visual design specification (colours, typography, spacing, buttons)
+- `editorial.md`: writing rules, product name spelling, and tone guidance
 
 Read `styles.md` and `editorial.md` before generating output. They are authoritative. Where any instruction in this prompt conflicts with those files, the guidance in those files takes precedence.
 
@@ -1666,41 +1893,41 @@ Before generating output, understand what each entity is.
 
 A Workflow is a composite outcome made of ordered Tasks. It has:
 
-- `title` — learner-facing name
-- `objective` — the organisation-defined outcome the workflow produces
-- `tasks[]` — ordered list of Task references
+- `title`: learner-facing name
+- `objective`: the organisation-defined outcome the workflow produces
+- `tasks[]`: ordered list of Task references
 
 ### Task
 
 A Task is an atomic, self-contained unit of performance. It produces exactly one observable outcome. A Task has:
 
-- `title` — verb-driven learner-facing name
-- `outcome` — the observable result when the task is complete
-- `facts[]` — background knowledge (do not render on the helpsheet; excluded by design)
-- `concepts[]` — mental models (do not render on the helpsheet; excluded by design)
-- `procedure_name` — the name of the step sequence
-- `steps[]` — ordered atomic instructions
-- `dependencies[]` — conditions or access requirements (render only if critical to execution)
-- `task_assets[]` — optional media objects (see Media below)
-- `irreversible` — boolean; true means the task cannot be undone; always flag this
+- `title`: verb-driven learner-facing name
+- `outcome`: the observable result when the task is complete
+- `facts[]`: background knowledge (do not render on the helpsheet; excluded by design)
+- `concepts[]`: mental models (do not render on the helpsheet; excluded by design)
+- `procedure_name`: the name of the step sequence
+- `steps[]`: ordered atomic instructions
+- `dependencies[]`: conditions or access requirements (render only if critical to execution)
+- `task_assets[]`: optional media objects (see Media below)
+- `irreversible`: boolean; true means the task cannot be undone; always flag this
 
 ### Step
 
 Each Step inside a Task has:
 
-- `text` — (required) the primary action in imperative form
-- `actions[]` — (optional) sub-steps; condense to key CLI commands, menu paths, or keyboard shortcuts only
-- `completion` — (required) the observable signal confirming the step is complete
-- `notes` — (optional) warnings only; include if safety-critical; omit general context
-- `screenshots[]` — (optional) image filenames; include at most one per task if it aids orientation
+- `text`: (required) the primary action in imperative form
+- `actions[]`: (optional) sub-steps; condense to key CLI commands, menu paths, or keyboard shortcuts only
+- `completion`: (required) the observable signal confirming the step is complete
+- `notes`: (optional) warnings only; include if safety-critical; omit general context
+- `screenshots[]`: (optional) image filenames; include at most one per task if it aids orientation
 
 ### Media (task_assets)
 
 Each task asset object has:
 
-- `url` — fully-qualified external URL
-- `type` — one of: `video`, `demo`, `image`, `audio`, `module`, `link`
-- `label` — short descriptive label
+- `url`: fully-qualified external URL
+- `type`: one of: `video`, `demo`, `image`, `audio`, `module`, `link`
+- `label`: short descriptive label
 
 On a helpsheet, render media as a single labelled reference line at the end of the task section only if the asset is directly needed at the point of work (e.g. a link to a required tool or demo environment). Do not include videos or conceptual reading links.
 
@@ -1711,17 +1938,17 @@ On a helpsheet, render media as a single labelled reference line at the end of t
 Produce a single-page (A4) quick-reference helpsheet in Markdown. It must be dense but scannable. Prioritise process over explanation at every decision point.
 
 ### Structure
-- **Header** — workflow title, one-sentence objective, software name/version if present
-- **For each task** — a compact section:
+- **Header**: workflow title, one-sentence objective, software name/version if present
+- **For each task**: a compact section:
   - Task title (bold heading)
   - If `irreversible` is true: a brief caution note before the steps
   - Steps: numbered, condensed to the essential action only (omit explanatory text; keep the verb and the object)
   - Key commands/actions: inline code blocks for any CLI commands, menu paths, or keyboard shortcuts from the `actions` field
-  - One screenshot if present and critical to understanding; render at native aspect ratio — never stretch or distort; scale down proportionally if wider than the column, never set height independently of width
-  - "Done when:" — one-line completion signal taken from the final step's `completion` field
+  - One screenshot if present and critical to understanding; render at native aspect ratio: never stretch or distort; scale down proportionally if wider than the column, never set height independently of width
+  - "Done when:": one-line completion signal taken from the final step's `completion` field
   - Media reference line if applicable (see Media above)
 
-- **Footer** — workflow record_id and version, export date
+- **Footer**: workflow record_id and version, export date
 
 ---
 
@@ -1729,7 +1956,7 @@ Produce a single-page (A4) quick-reference helpsheet in Markdown. It must be den
 - Maximum two A4 pages when printed at 10pt
 - No preamble, no introductory paragraphs, no concepts or facts sections
 - Terse imperative sentences only ("Click Save", "Run `sudo systemctl restart`")
-- Do not use em dashes
+- Do not use em dashes (—) anywhere. Hard rule, no exceptions
 - Use a two-column layout if there are more than 4 tasks (indicate this with a note at the top of the file)
 - Bold the first word of each step (the verb)
 
@@ -1832,7 +2059,7 @@ standalone decorative element in marketing contexts at reduced opacity:
 | #ED2B3D   | Ignis  | Error, danger      |
 | #FE8A25   | Suma   | Warning, orange    |
 | #FFD839   | Sol    | Caution, yellow    |
-| #FCF8EB   | —      | Warning background |
+| #FCF8EB   |:      | Warning background |
 
 ### Neutral Family
 
@@ -1848,7 +2075,7 @@ standalone decorative element in marketing contexts at reduced opacity:
 
 ### Gradients
 
-**Green gradients** — use for hero backgrounds and feature sections:
+**Green gradients**: use for hero backgrounds and feature sections:
 - Primary dark 135deg
 - Primary light 135deg
 - Secondary 180deg / 135deg
@@ -1892,8 +2119,8 @@ All sizes in pixels. Format: font-size / line-height.
 
 | Style       | Size / Line-height | Notes                        |
 |-------------|--------------------|------------------------------|
-| Display 100 | 100 / —            | Hero display only            |
-| Display 60  | 60 / —             | Large display                |
+| Display 100 | 100 /:            | Hero display only            |
+| Display 60  | 60 /:             | Large display                |
 | H1          | 50 / 60            |                              |
 | H2          | 55 / 52            |                              |
 | H3          | 36 / 44            |                              |
@@ -1903,7 +2130,7 @@ All sizes in pixels. Format: font-size / line-height.
 | Text 18     | 18 / 24            |                              |
 | Paragraph   | 16 / 24            | Body copy default            |
 | Caption     | 14 / 20            | Labels, footnotes            |
-| Eyebrow     | — / 28 at size 24  | Section labels above headings|
+| Eyebrow     |: / 28 at size 24  | Section labels above headings|
 
 ### Paragraph Styles
 
@@ -2005,7 +2232,7 @@ Use only these values for margin and padding. Do not interpolate.
 
 ## Things to Avoid
 
-- Do not use 3D styling on book covers or document covers — use 2D only
+- Do not use 3D styling on book covers or document covers: use 2D only
 - Container values with images or icons must be even numbers divisible by two
 - Do not introduce colours outside the defined palette
 - Do not use ES Build substitutes without falling back to Source Sans Pro
@@ -2023,7 +2250,7 @@ When generating HTML from this style guide:
 4. Apply the neutral family for backgrounds: #000000 or #232323 for dark
    surfaces, #F0F0F0 or #F9F9F9 for light surfaces.
 5. Use Ignis (#ED2B3D) for error/danger states and Suma (#FE8A25) for warnings.
-6. Respect the vertical spacing scale strictly — 8px increments only.
+6. Respect the vertical spacing scale strictly: 8px increments only.
 7. All buttons must have 6px border-radius.
 8. Body copy default: 16px / 24px line-height, Source Sans Pro Regular.
 9. Do not introduce drop shadows, gradients, or decorative elements not
@@ -2032,7 +2259,7 @@ When generating HTML from this style guide:
 
 
 _EDITORIAL_STYLE_GUIDE = """\
-# Veeam Editorial Style Guide — Learning Content Edition
+# Veeam Editorial Style Guide: Learning Content Edition
 ## Extracted and adapted for Blueprinted HTML course output
 
 This file is derived from the Veeam Editorial Style Guide 2024. It has been
@@ -2053,7 +2280,7 @@ Use American English throughout.
 - center (not centre)
 - backup (not back-up)
 
-### Tone — LEARNING OVERRIDE
+### Tone: LEARNING OVERRIDE
 The original style guide is written for marketing collateral and partner
 communications. That tone is inappropriate for learning content.
 
@@ -2118,9 +2345,7 @@ Always use the Oxford (serial) comma in lists of three or more items.
 - Incorrect: facts, concepts and steps
 
 ### Em dash
-Use sparingly in learning content. When used, place one space on each side.
-- Acceptable use: to introduce a clarification mid-sentence
-- Do not use as a bullet substitute or list opener
+Do not use em dashes (—) anywhere. Not in headings, body copy, step text, callouts, or any other output. Replace with a comma, colon, or rewrite the sentence. This is a hard rule with no exceptions.
 
 ### En dash
 Use to express ranges without spaces: 9–10 minutes, steps 3–5.
@@ -2131,7 +2356,7 @@ step-by-step procedure. No space around a hyphen.
 
 ### Ampersand
 Do not use & in body copy or step text. Spell out "and."
-Exception: Veeam Backup & Replication — the ampersand is part of the
+Exception: Veeam Backup & Replication: the ampersand is part of the
 official product name and must be retained.
 
 ### Symbols
@@ -2207,7 +2432,7 @@ Veeam Agents *for Microsoft Windows*, *Mac*, *Linux*, *IBM AIX* and *Oracle Sola
 - Veeam Explorer *for Microsoft Teams*
 - Veeam Explorer *for Oracle*
 - Veeam Explorer *for PostgreSQL*
-- Veeam Explorer for Storage Snapshots (no italics — multi-partner exception)
+- Veeam Explorer for Storage Snapshots (no italics: multi-partner exception)
 
 ### Plug-ins (the "for" portion is always italicised)
 
@@ -2278,7 +2503,7 @@ Never use "Google Cloud Platform." Use "Google Cloud" only.
 
 ---
 
-## Learning content — additional rules
+## Learning content: additional rules
 
 These rules apply specifically to Blueprinted-generated HTML output and are
 not in the original Veeam style guide.
@@ -2513,7 +2738,7 @@ def workflow_export_package(
 
 @router.get("/api/present/{token_id}")
 def present_fetch(token_id: str):
-    """Public endpoint — authenticated by the one-time token, no session required."""
+    """Public endpoint: authenticated by the one-time token, no session required."""
     with db() as conn:
         tok = conn.execute(
             "SELECT * FROM presentation_tokens WHERE id=?", (token_id,)

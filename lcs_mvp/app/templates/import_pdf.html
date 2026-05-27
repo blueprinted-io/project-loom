@@ -109,13 +109,19 @@
 </div>
 {% endif %}
 
-<form method="post" action="/import/pdf/prepare" enctype="multipart/form-data" class="card">
+<form method="post" action="/import/pdf/prepare" enctype="multipart/form-data" class="card"
+      onsubmit="var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='Uploading…'">
   <h2 style="margin-top:0">Upload new document</h2>
   <p class="muted" style="margin-top:0">If a document has already been uploaded by another user it will appear in the library above — no need to upload it again.</p>
 
   <div>
     <label>PDF file</label>
-    <input type="file" name="pdf" accept="application/pdf" required />
+    <input type="file" name="pdf" accept="application/pdf" required id="pdf-input"
+           onclick="document.getElementById('pdf-hint').style.display='block'"
+           onchange="document.getElementById('pdf-hint').style.display='none'" />
+    <div id="pdf-hint" class="muted" style="font-size:0.8em; margin-top:4px; display:none">
+      Reading file… large PDFs can take a few seconds to register.
+    </div>
     <div class="muted" style="font-size:0.8em; margin-top:4px">Text-based PDFs only. Scanned documents are not supported.</div>
   </div>
 

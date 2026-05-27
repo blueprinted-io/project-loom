@@ -595,6 +595,20 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE ingestions ADD COLUMN file_path TEXT")
         if "domain" not in ingestion_cols:
             conn.execute("ALTER TABLE ingestions ADD COLUMN domain TEXT NOT NULL DEFAULT ''")
+        if "job_progress_message" not in ingestion_cols:
+            conn.execute("ALTER TABLE ingestions ADD COLUMN job_progress_message TEXT")
+
+        # Fix: submitted versions superseded by a confirmed version should be deprecated,
+        # not left visible in the review queue.
+        conn.execute("""
+            UPDATE tasks SET status='deprecated', updated_at=datetime('now'), updated_by='migration'
+            WHERE status='submitted'
+              AND EXISTS (
+                SELECT 1 FROM tasks t2
+                WHERE t2.record_id = tasks.record_id
+                  AND t2.status = 'confirmed'
+              )
+        """)
 
         # primers + workflow_primer_refs (added when Primers feature was introduced)
         existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}

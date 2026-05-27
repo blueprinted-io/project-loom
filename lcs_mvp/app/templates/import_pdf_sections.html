@@ -9,7 +9,11 @@
   <div class="spinner" style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--primary,#2563eb);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
   <div>
     <div style="font-weight:600">Analysing document structure…</div>
-    <div class="muted" style="font-size:0.85em; margin-top:2px">Large files can take a minute. This page will update automatically.</div>
+    {% if ing.job_progress_message %}
+      <div class="muted" style="font-size:0.85em; margin-top:2px">{{ ing.job_progress_message }}</div>
+    {% else %}
+      <div class="muted" style="font-size:0.85em; margin-top:2px">Large files can take a minute. This page will update automatically.</div>
+    {% endif %}
   </div>
 </div>
 <style>@keyframes spin{to{transform:rotate(360deg)}}</style>

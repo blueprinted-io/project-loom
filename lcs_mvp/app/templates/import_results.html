@@ -39,15 +39,13 @@
       <tr>
         <th>Title</th>
         <th style="width:120px">Domain</th>
-        <th style="width:100px">Status</th>
       </tr>
     </thead>
     <tbody>
       {% for t in tasks %}
       <tr>
         <td><a href="/tasks/{{ t.record_id }}/{{ t.version }}">{{ t.title }}</a></td>
-        <td class="muted">{{ t.domain or '—' }}</td>
-        <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
+        <td class="muted">{{ t.domain or '' }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -63,15 +61,13 @@
       <tr>
         <th>Title</th>
         <th style="width:120px">Domain</th>
-        <th style="width:100px">Status</th>
       </tr>
     </thead>
     <tbody>
       {% for p in primers %}
       <tr>
         <td><a href="/primers/{{ p.record_id }}/{{ p.version }}">{{ p.title }}</a></td>
-        <td class="muted">{{ p.domain or '—' }}</td>
-        <td><span class="badge badge-{{ p.status }}">{{ p.status }}</span></td>
+        <td class="muted">{{ p.domain or '' }}</td>
       </tr>
       {% endfor %}
     </tbody>

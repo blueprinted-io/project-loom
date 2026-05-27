@@ -116,14 +116,44 @@ def import_pdf_form(request: Request):
 # PDF import — step 1: upload, hash, create record, fire chunking background task
 # ---------------------------------------------------------------------------
 
+_CHUNKING_TIMEOUT_SECONDS = 600  # 10 minutes
+
+
 def _run_chunking_background(ingestion_id: str, out_path: str, db_path: str) -> None:
     """Background task: parse PDF, scanned check, chunk, store results."""
+    import time
     conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
-        pages = _pdf_extract_pages(out_path)
+        # Get page count quickly (reads page tree only, no text extraction)
+        try:
+            from pypdf import PdfReader as _PdfReader
+            _total_pages = len(_PdfReader(out_path).pages)
+        except Exception:
+            _total_pages = 0
+        _progress = f"Reading PDF — 0 of {_total_pages} pages extracted" if _total_pages else "Reading PDF…"
+        conn.execute("UPDATE ingestions SET job_progress_message=? WHERE id=?", (_progress, ingestion_id))
+        conn.commit()
+
+        _start = time.monotonic()
+
+        def _on_page(idx: int, total: int) -> None:
+            if time.monotonic() - _start > _CHUNKING_TIMEOUT_SECONDS:
+                raise RuntimeError(
+                    f"Document parsing timed out after {_CHUNKING_TIMEOUT_SECONDS // 60} minutes. "
+                    "The PDF may contain complex or corrupted pages. "
+                    "Try splitting the document into smaller files and importing each part separately."
+                )
+            if idx % 10 == 0 or idx == total:
+                conn.execute(
+                    "UPDATE ingestions SET job_progress_message=? WHERE id=?",
+                    (f"Reading PDF — {idx} of {total} pages extracted", ingestion_id),
+                )
+                conn.commit()
+
+        pages = _pdf_extract_pages(out_path, on_page=_on_page)
 
         if _pdf_is_scanned(pages):
             conn.execute(
@@ -133,8 +163,16 @@ def _run_chunking_background(ingestion_id: str, out_path: str, db_path: str) -> 
             conn.commit()
             return
 
+        conn.execute("UPDATE ingestions SET job_progress_message=? WHERE id=?",
+                     ("Identifying document structure…", ingestion_id))
+        conn.commit()
+
         outline = _pdf_extract_outline(out_path)
         chunks = _chunk_by_structure(pages, outline) if outline else _chunk_text(pages, max_chars=12000)
+
+        conn.execute("UPDATE ingestions SET job_progress_message=? WHERE id=?",
+                     (f"Splitting into {len(chunks)} sections…", ingestion_id))
+        conn.commit()
 
         now = utc_now_iso()
         for idx, ch in enumerate(chunks):
@@ -172,24 +210,42 @@ def _run_chunking_background(ingestion_id: str, out_path: str, db_path: str) -> 
 
 
 @router.post("/import/pdf/prepare")
-def import_pdf_prepare(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    pdf: UploadFile = File(...),
-    actor_note: str = Form("Imported from PDF"),
-):
+async def import_pdf_prepare(request: Request, background_tasks: BackgroundTasks):
     require(request.state.role, "import:pdf")
     actor = request.state.user
+    content_length = request.headers.get("content-length", "unknown")
+    logger.info("PDF upload started — content-length: %s bytes", content_length)
 
-    # Save upload and compute hash — this is the only synchronous work
+    # Parse form with a 200MB per-part limit — Starlette's default is 1MB which
+    # silently rejects large PDFs before the route handler ever receives them.
+    try:
+        form = await request.form(max_part_size=200 * 1024 * 1024)
+    except Exception as exc:
+        logger.error("PDF upload form parse failed: %s", exc)
+        raise HTTPException(status_code=400, detail=f"Upload failed: {exc}") from exc
+    logger.info("PDF upload form parsed — filename: %s", form.get("pdf") and getattr(form.get("pdf"), "filename", "?"))
+
+    pdf = form.get("pdf")
+    actor_note = str(form.get("actor_note") or "Imported from PDF")
+
+    if not pdf or not hasattr(pdf, "filename"):
+        raise HTTPException(status_code=400, detail="No PDF file received.")
+
+    # Stream file to disk while computing SHA256 — avoids loading 70MB+ into memory
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", pdf.filename or "upload.pdf")
     file_id = str(uuid.uuid4())
     out_path = os.path.join(UPLOADS_DIR, f"{file_id}__{safe_name}")
-    file_bytes = pdf.file.read()
+    import hashlib as _hashlib
+    hasher = _hashlib.sha256()
     with open(out_path, "wb") as f:
-        f.write(file_bytes)
-    sha = _sha256_bytes(file_bytes)
+        while True:
+            chunk = await pdf.read(65536)  # 64KB chunks
+            if not chunk:
+                break
+            f.write(chunk)
+            hasher.update(chunk)
+    sha = hasher.hexdigest()
 
     db_path = DB_PATH_CTX.get()
 
@@ -1408,13 +1464,13 @@ def import_results(request: Request, ingestion_id: str):
 
         tasks = conn.execute(
             "SELECT record_id, version, title, status, domain FROM tasks "
-            "WHERE ingestion_id=? AND version=1 ORDER BY title",
+            "WHERE ingestion_id=? AND version=1 AND status='draft' ORDER BY title",
             (ingestion_id,),
         ).fetchall()
 
         primers = conn.execute(
             "SELECT record_id, version, title, status, domain FROM primers "
-            "WHERE ingestion_id=? AND version=1 ORDER BY title",
+            "WHERE ingestion_id=? AND version=1 AND status='draft' ORDER BY title",
             (ingestion_id,),
         ).fetchall()
 
